@@ -316,6 +316,18 @@ body {
   inset-inline-end: 0.9rem;
 }
 
+/* The WebHID hint is the title's alone, small and quiet under the prompt. */
+#overlay .overlay-effects {
+  margin-top: 1.5rem;
+  color: rgb(239 228 200 / 50%);
+  font-size: 0.9rem;
+  letter-spacing: 0.06em;
+}
+
+#overlay:not([data-screen="title"]) .overlay-effects {
+  display: none;
+}
+
 #overlay .overlay-hint {
   margin-top: 1rem;
   color: rgb(239 228 200 / 55%);

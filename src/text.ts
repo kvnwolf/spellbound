@@ -12,6 +12,8 @@ export const text = {
     reconnected: "Pulsa cualquier botón para continuar",
     waiting: "Conecta tu DualSense para continuar",
   },
+  /** On the title until the DualSense's WebHID effects are granted: the first click asks for them. */
+  effectsHint: "Haz clic en la página para activar los efectos del DualSense",
   hud: {
     defeat: "Derrota",
     draw: "Empate",

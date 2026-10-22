@@ -238,6 +238,33 @@ export const tuning = {
     wandTip: { forward: 0.55, height: 1.15, right: 0.28 },
   },
 
+  /**
+   * DualSense haptics. Rumble pulses start at these motor strengths (0 to 1;
+   * the left motor is the heavy one, the right the light one) and fade out
+   * over `seconds`. Colours are 0-255 RGB for the lightbar.
+   */
+  haptics: {
+    /** A short, light tick on every cast. */
+    cast: { left: 0.08, right: 0.45, seconds: 0.08 },
+    /**
+     * Gamepad API dual-rumble, used only without WebHID: it is replayed this
+     * often while the rumble changes, each play lasting `effectSeconds`.
+     */
+    fallback: { effectSeconds: 0.12, resendSeconds: 0.05 },
+    /** A heavy thump when the local Duelist is hit. */
+    hitTaken: { left: 0.7, right: 0.5, seconds: 0.25 },
+    lightbar: {
+      /** The local Duelist's crimson, as their robe. */
+      base: { b: 36, g: 28, r: 138 },
+      /** A hit taken flashes a hot white-gold... */
+      flash: { b: 180, g: 230, r: 255 },
+      /** ...fading back to the base over this long. */
+      flashSeconds: 0.35,
+    },
+    /** Harder and longer for the strong Stupefy that Staggers. */
+    strongHitTaken: { left: 1, right: 0.8, seconds: 0.45 },
+  },
+
   hud: {
     /** How long "¡Duelo!" stays up once control is given. */
     duelCalloutSeconds: 0.9,

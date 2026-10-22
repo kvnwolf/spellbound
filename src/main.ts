@@ -10,6 +10,8 @@ import type { Controller } from "./controllers/controller";
 import { idleController } from "./controllers/controller";
 import { createDebugCasterController } from "./controllers/debug-caster";
 import { createHumanController } from "./controllers/human-controller";
+import { createDualSenseEffects } from "./dualsense-effects";
+import { createHapticsDirector } from "./dualsense/haptics";
 import { readDualSense, scanGamepads } from "./dualsense/input";
 import type { DualSenseSnapshot } from "./dualsense/input";
 import { createMenuInput } from "./dualsense/menu-input";
@@ -92,6 +94,9 @@ const start = async () => {
   };
 
   const menuInput = createMenuInput(tuning.menu);
+  // Rumble, lightbar and player LEDs (ADR-0001): WebHID once granted, else dual-rumble.
+  const effects = createDualSenseEffects(element("#overlay", HTMLElement));
+  const haptics = createHapticsDirector(localId, tuning.haptics);
   let lastPad: PadKind = "none";
 
   // The DualSense is read once per frame; the human Controller reads that
@@ -385,6 +390,11 @@ const start = async () => {
 
     const simSeconds = playing ? seconds * timeScale : 0;
     const { alpha, events } = advance(simSeconds);
+
+    effects.send(
+      haptics.frame({ events, live: playing, seconds, snapshot: current }),
+      scan.kind === "dualsense" ? scan.gamepad : undefined
+    );
 
     if (playing) {
       send({ seconds, type: "tick" });
