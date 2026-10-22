@@ -150,9 +150,10 @@ export const createCameraRig = (
           (settings.distance + separation)
         : 0;
 
-      const aimX = target ? (self.aimPoint.x - target.x) * lever : 0;
-      const aimY = target ? (self.aimPoint.y - chestHeight) * lever : 0;
-      const aimZ = target ? (self.aimPoint.z - target.z) * lever : 0;
+      const aim = target === undefined ? undefined : self.aimPoint;
+      const aimX = aim && target ? (aim.x - target.x) * lever : 0;
+      const aimY = aim ? (aim.y - chestHeight) * lever : 0;
+      const aimZ = aim && target ? (aim.z - target.z) * lever : 0;
 
       const wantedYaw = Math.atan2(wanted.x, wanted.z);
       const wantedArm = Math.hypot(wanted.x, wanted.z);
