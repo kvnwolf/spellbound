@@ -5,7 +5,7 @@ import type { Tuning } from "../tuning";
 import { createDuel } from "./duel";
 import type { ArenaLayout, Duel, DuelEvent, DuelistState } from "./duel";
 import { rightOf } from "./geometry";
-import type { Aim } from "./geometry";
+import type { Aim, Point3 } from "./geometry";
 import { idleIntent } from "./intent";
 import type { Intent } from "./intent";
 
@@ -1055,5 +1055,293 @@ describe("Rounds and the Duel", () => {
     // After the Knockout plays out, the Duel stays over: no third Round.
     run(duel, secondsToTicks(10));
     expect(duel.snapshot().round).toMatchObject({ number: 2, phase: "over" });
+  });
+});
+
+const chargeHeavy = intent({ heavySpell: true });
+
+/**
+ * The hero holds the Heavy Spell for `seconds` (whole ticks), then lets go
+ * for one tick; returns every event from the press to the release.
+ */
+const chargeAndRelease = (duel: Duel, seconds: number): DuelEvent[] => [
+  ...run(duel, secondsToTicks(seconds), { hero: chargeHeavy }),
+  ...run(duel, 1),
+];
+
+/** The hero Charges for `seconds` and releases at the rival; returns the cast and its hit. */
+const confringoHit = (seconds: number) => {
+  const duel = fight();
+  const events = [...chargeAndRelease(duel, seconds), ...settle(duel)];
+
+  return {
+    cast: ofType(events, "spell-cast")[0],
+    duel,
+    events,
+    hit: ofType(events, "spell-hit")[0],
+  };
+};
+
+/** How far the rival has been pushed back from their spawn. */
+const pushedBack = (duel: Duel) => {
+  const { x, z } = duelist(duel, "rival").position;
+
+  return Math.hypot(x, z + 5);
+};
+
+/**
+ * Whether the rival has only moved from their spawn along the ground
+ * direction of `velocity` (a Spell's flight), and forward along it.
+ */
+const movedAlong = (duel: Duel, velocity: Point3 | undefined) => {
+  const { x, z } = duelist(duel, "rival").position;
+  const moved = { x, z: z + 5 };
+  const flight = { x: velocity?.x ?? 0, z: velocity?.z ?? 0 };
+  const cross = moved.x * flight.z - moved.z * flight.x;
+  const dot = moved.x * flight.x + moved.z * flight.z;
+
+  return Math.abs(cross) / Math.hypot(flight.x, flight.z) < 1e-9 && dot > 0;
+};
+
+/** The hero holds the Heavy Spell one tick past the safe window; returns those ticks' events. */
+const overcharge = (duel: Duel): DuelEvent[] =>
+  run(duel, secondsToTicks(tuning.confringo.safeSeconds) + 1, {
+    hero: chargeHeavy,
+  });
+
+/** The launch velocity of a quick Confringo aimed just outside the edge of a rival 14 m away. */
+const confringoLaunch = (settings: Tuning) => {
+  const duel = duelAimedBeyondEdge(14, 0.015, settings);
+  const [cast] = ofType(chargeAndRelease(duel, 0.3), "spell-cast");
+
+  return cast?.spell.velocity;
+};
+
+describe("Confringo and Charge", () => {
+  it("Charges while the Heavy Spell is held and casts Confringo on release", () => {
+    const duel = fight();
+
+    const [charging] = hold(duel, chargeHeavy, 0.4).duelists;
+    const released = run(duel, 1);
+
+    expect(charging?.chargeSeconds).toBeCloseTo(0.4);
+    // Half the time to a full Charge is half a Charge.
+    expect(ofType(released, "spell-cast")).toMatchObject([
+      {
+        spell: {
+          casterId: "hero",
+          charge: 0.5,
+          empowered: false,
+          kind: "confringo",
+        },
+      },
+    ]);
+    expect(duelist(duel, "hero").chargeSeconds).toBe(0);
+  });
+
+  it("fills the Charge in 0.8 s and caps it there", () => {
+    const duel = fight();
+
+    const events = chargeAndRelease(duel, 1.2);
+
+    expect(ofType(events, "spell-cast")[0]?.spell.charge).toBe(1);
+  });
+
+  it("deals heavy damage scaled by the Charge: a tap is weak, a full Charge strong", () => {
+    const tap = confringoHit(0.2);
+    const full = confringoHit(1.2);
+
+    expect(tap.hit?.damage).toBeGreaterThan(tuning.confringo.damage.min);
+    expect(tap.hit?.damage).toBeLessThan(full.hit?.damage ?? 0);
+    expect(full.hit).toMatchObject({
+      damage: tuning.confringo.damage.full,
+      spell: { kind: "confringo" },
+      targetId: "rival",
+    });
+    expect(duelist(full.duel, "rival").health).toBe(
+      tuning.duelist.health - tuning.confringo.damage.full
+    );
+  });
+
+  it("knocks the Duelist it hits back along its flight, farther with more Charge", () => {
+    const tap = confringoHit(0.2);
+    const full = confringoHit(1.2);
+
+    expect(pushedBack(full.duel)).toBeCloseTo(tuning.confringo.knockback.full);
+    expect(pushedBack(tap.duel)).toBeGreaterThan(0);
+    expect(pushedBack(tap.duel)).toBeLessThan(pushedBack(full.duel));
+    expect(movedAlong(full.duel, full.cast?.spell.velocity)).toBeTruthy();
+  });
+
+  it("stops the Duelist it knocks back from moving or casting until they come to a stop", () => {
+    const duel = fight();
+    const events = chargeAndRelease(duel, 1.2);
+    const velocity = ofType(events, "spell-cast")[0]?.spell.velocity;
+
+    for (
+      let tick = 0;
+      tick < secondsToTicks(1.5) && ofType(events, "spell-hit").length === 0;
+      tick += 1
+    ) {
+      events.push(...run(duel, 1));
+    }
+
+    const sliding = run(
+      duel,
+      secondsToTicks(tuning.confringo.knockback.seconds) - 1,
+      { rival: rivalTries }
+    );
+
+    // Trying to strafe did nothing: the slide alone moved them.
+    const slidOnly = movedAlong(duel, velocity);
+    run(duel, 1);
+    const recovered = run(duel, 2, { rival: rivalTries });
+
+    expect(duelist(duel, "rival").knockbackSeconds).toBe(0);
+    expect(ofType(sliding, "spell-cast")).toStrictEqual([]);
+    expect(slidOnly).toBeTruthy();
+    expect(ofType(recovered, "spell-cast")).toMatchObject([
+      { spell: { casterId: "rival" } },
+    ]);
+  });
+
+  it("slows the Duelist's movement while Charging", () => {
+    const walking = fightLookingDownTheArena();
+    const charging = fightLookingDownTheArena();
+    const forward = { x: 0, y: 1 };
+
+    hold(walking, intent({ move: forward }), 0.5);
+    hold(charging, intent({ heavySpell: true, move: forward }), 0.5);
+
+    const walked = 5 - duelist(walking, "hero").position.z;
+    const crept = 5 - duelist(charging, "hero").position.z;
+
+    expect(crept / walked).toBeCloseTo(tuning.confringo.chargeMoveScale);
+  });
+
+  describe.each([0.75, 0.8, 0.9])("released after %s s", (seconds) => {
+    it("is a Perfect Release: a full Charge, empowered, with a Perfect Release event", () => {
+      const { cast, events, hit } = confringoHit(seconds);
+
+      expect(ofType(events, "perfect-release")).toStrictEqual([
+        { duelistId: "hero", spell: cast?.spell, type: "perfect-release" },
+      ]);
+      expect(cast?.spell).toMatchObject({
+        charge: 1,
+        empowered: true,
+        kind: "confringo",
+      });
+      expect(hit?.damage).toBeGreaterThan(tuning.confringo.damage.full);
+    });
+  });
+
+  describe.each([0.7, 0.95])("released after %s s", (seconds) => {
+    it("is no Perfect Release", () => {
+      const { cast, events, hit } = confringoHit(seconds);
+
+      expect(ofType(events, "perfect-release")).toStrictEqual([]);
+      expect(cast?.spell.empowered).toBeFalsy();
+      expect(hit?.damage).toBeLessThanOrEqual(tuning.confringo.damage.full);
+    });
+  });
+
+  it("knocks back farther after a Perfect Release", () => {
+    const perfect = confringoHit(0.8);
+    const full = confringoHit(1.2);
+
+    expect(pushedBack(perfect.duel)).toBeGreaterThan(pushedBack(full.duel));
+  });
+
+  it("holds a full Charge safely until 1.5 s", () => {
+    const duel = fight();
+
+    const events = run(duel, secondsToTicks(1.5), { hero: chargeHeavy });
+
+    expect(ofType(events, "backfire")).toStrictEqual([]);
+    expect(duelist(duel, "hero").chargeSeconds).toBeCloseTo(1.5);
+  });
+
+  it("Overcharges past 1.5 s and Backfires: no Spell, and the caster Staggered for about 1 s", () => {
+    const duel = fight();
+
+    const events = [...overcharge(duel), ...run(duel, 1)];
+
+    expect(ofType(events, "backfire")).toMatchObject([{ duelistId: "hero" }]);
+    expect(ofType(events, "spell-cast")).toStrictEqual([]);
+    expect(duelist(duel, "hero").chargeSeconds).toBe(0);
+    expect(duelist(duel, "hero").staggerSeconds).toBeCloseTo(
+      tuning.confringo.backfireStaggerSeconds,
+      1
+    );
+  });
+
+  it("leaves a Backfired caster unable to move or cast for about 1 s", () => {
+    const duel = fight();
+    const start = duelist(duel, "hero").position;
+    const tries = intent({ lightSpell: true, move: { x: 1, y: 0 } });
+    overcharge(duel);
+
+    const staggered = run(duel, secondsToTicks(0.9), { hero: tries });
+    const moved = duelist(duel, "hero").position;
+    run(duel, secondsToTicks(0.2));
+    const recovered = run(duel, 2, { hero: tries });
+
+    expect(ofType(staggered, "spell-cast")).toStrictEqual([]);
+    expect(moved).toStrictEqual(start);
+    expect(ofType(recovered, "spell-cast")).toHaveLength(1);
+  });
+
+  it("loses the Charge when knocked back mid-Charge", () => {
+    const duel = fight();
+    // The rival starts Charging as the hero taps a quick Confringo at them.
+    const rivalCharges = intent({ heavySpell: true });
+
+    const events = [
+      ...run(duel, secondsToTicks(0.1), {
+        hero: chargeHeavy,
+        rival: rivalCharges,
+      }),
+      ...run(duel, secondsToTicks(1), { rival: rivalCharges }),
+      ...run(duel, 1),
+    ];
+
+    expect(ofType(events, "spell-hit")).toMatchObject([{ targetId: "rival" }]);
+    expect(
+      ofType(events, "spell-cast").filter(
+        ({ spell }) => spell.casterId === "rival"
+      )
+    ).toStrictEqual([]);
+  });
+
+  it("does not cast the Light Spell while Charging", () => {
+    const duel = fight();
+
+    const events = run(duel, secondsToTicks(0.5), {
+      hero: intent({ heavySpell: true, lightSpell: true }),
+    });
+
+    expect(ofType(events, "spell-cast")).toStrictEqual([]);
+  });
+
+  it("homes in on the Target while Locked On, like Stupefy", () => {
+    const duel = fight();
+    toggleLock(duel);
+
+    const events = chargeAndRelease(duel, 0.3);
+
+    expect(ofType(events, "spell-cast")[0]?.spell.homing).toMatchObject({
+      targetId: "rival",
+    });
+  });
+
+  it("bends toward an opponent at the edge of the crosshair, like Stupefy", () => {
+    const bendOnly: Tuning = {
+      ...tuning,
+      aimAssist: { ...tuning.aimAssist, friction: 1 },
+    };
+
+    expect(confringoLaunch(bendOnly)).not.toStrictEqual(
+      confringoLaunch(withoutAimAssist)
+    );
   });
 });

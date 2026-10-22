@@ -73,6 +73,7 @@ const createFlickDetector = (
  * - R3: toggles Lock-on, once per press. The right stick is ignored for a
  *   moment after the click, which tends to knock it.
  * - □: the Light Spell.
+ * - △: the Heavy Spell, held to Charge and released to cast.
  *
  * Everything advances once per Intent, which the Duel asks for every tick.
  */
@@ -116,6 +117,8 @@ export const createHumanController = (
       const turn = aimResponse.step(stick, tickSeconds);
 
       return {
+        // △ Charges Confringo while held; the simulation reads the hold over time.
+        heavySpell: pad.buttons.triangle,
         // □ casts Stupefy; the simulation turns the held button into presses.
         lightSpell: pad.buttons.square,
         lockOn,

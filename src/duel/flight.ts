@@ -21,8 +21,8 @@ export interface FlightBodies {
   /** Radius and height of a Duelist's body. */
   readonly bodyRadius: number;
   readonly bodyHeight: number;
-  /** Radius of a Spell's sphere. */
-  readonly spellRadius: number;
+  /** Radius of a Spell's sphere, which differs by kind (Confringo is a big, slow blast). */
+  readonly radiusOf: (spell: SpellState) => number;
 }
 
 export type FlightOutcome =
@@ -150,7 +150,7 @@ const firstObstacle = (
         spell.position.z - target.position.z,
       ],
       [delta.x, delta.z],
-      bodies.bodyRadius + bodies.spellRadius
+      bodies.bodyRadius + bodies.radiusOf(spell)
     );
 
     if (at === undefined) {
@@ -175,7 +175,7 @@ const firstObstacle = (
     const at = firstWithin(
       [spell.position.x - column.center.x, spell.position.z - column.center.z],
       [delta.x, delta.z],
-      column.radius + bodies.spellRadius
+      column.radius + bodies.radiusOf(spell)
     );
 
     if (at !== undefined) {
@@ -234,7 +234,7 @@ const meeting = (
       (a.velocity.y - b.velocity.y) * seconds,
       (a.velocity.z - b.velocity.z) * seconds,
     ],
-    bodies.spellRadius * 2
+    bodies.radiusOf(a) + bodies.radiusOf(b)
   );
 
   if (at === undefined) {

@@ -13,6 +13,7 @@ import {
   sightBlocked,
   towardPoint,
 } from "./aim";
+import { chargeLevel, chargeStage } from "./charge";
 import type { Difficulty } from "./difficulty";
 import { fly } from "./flight";
 import {
@@ -101,11 +102,20 @@ export interface DuelistState {
   readonly health: number;
   /** Seconds left Staggered, unable to move or cast; 0 when free to act. */
   readonly staggerSeconds: number;
+  /**
+   * How long the Heavy Spell has been Charging, in seconds since the press;
+   * 0 when not Charging. A full Charge takes `tuning.confringo.fullSeconds`,
+   * and past `safeSeconds` it Backfires (see `chargeStage`).
+   */
+  readonly chargeSeconds: number;
+  /** Seconds left sliding back from a Confringo hit, unable to move or cast; 0 when not. */
+  readonly knockbackSeconds: number;
   /** Knocked Out this Round: down, and out of the fight until the next Round. */
   readonly knockedOut: boolean;
 }
 
-export type SpellKind = "stupefy";
+/** Stupefy is the Light Spell; Confringo the Heavy Spell. */
+export type SpellKind = "confringo" | "stupefy";
 
 /** A Spell in flight. Ids are unique for the whole Duel, so views can track one across ticks. */
 export interface SpellState {
@@ -115,6 +125,10 @@ export interface SpellState {
   readonly team: TeamId;
   /** The stronger cast that ends a chain of consecutive Light Spells; it Staggers. */
   readonly strong: boolean;
+  /** The Charge (0 to 1) a Confringo was released with, which scales its damage and knockback; 0 for Stupefy. */
+  readonly charge: number;
+  /** A Confringo released with a Perfect Release: more damage and knockback. */
+  readonly empowered: boolean;
   readonly position: Point3;
   /** Metres per second. Spells fly straight, unless homing. */
   readonly velocity: Point3;
@@ -168,6 +182,18 @@ export type DuelEvent =
   /** The intro's countdown ended: Duelists are in control. */
   | { readonly type: "round-start"; readonly round: number }
   | { readonly type: "spell-cast"; readonly spell: SpellState }
+  /** A Heavy Spell was released in the Perfect Release window; `spell` is the empowered cast. */
+  | {
+      readonly type: "perfect-release";
+      readonly duelistId: DuelistId;
+      readonly spell: SpellState;
+    }
+  /** A Duelist held a full Charge too long: no Spell, and they are Staggered. `position` is their Wand tip. */
+  | {
+      readonly type: "backfire";
+      readonly duelistId: DuelistId;
+      readonly position: Point3;
+    }
   /** A Duelist Locked On to a Target, or switched to a new one. */
   | {
       readonly type: "lock-on";
@@ -370,12 +396,36 @@ interface Bookkeeping {
   hiddenTicks: number;
   /** Ticks left of a recentre after R3 found nothing to lock on to. */
   recentreTicks: number;
+  /** The Heavy Spell button was down last tick: a Charge starts on the press. */
+  heavyHeld: boolean;
+  /** Ticks the current Charge has been held, the press included; 0 when not Charging. */
+  chargeTicks: number;
+  /**
+   * A Confringo knockback in progress: sliding `distance` metres along
+   * `direction` over `ticks` ticks, `ticksLeft` of them still to go.
+   */
+  knockback:
+    | {
+        readonly direction: GroundPoint;
+        readonly distance: number;
+        readonly ticks: number;
+        ticksLeft: number;
+      }
+    | undefined;
 }
+
+/** What a Duelist lets go of this tick: a Light Spell, or a Heavy Spell after Charging for `chargeSeconds`. */
+type Release =
+  | { readonly kind: "stupefy" }
+  | { readonly kind: "confringo"; readonly chargeSeconds: number };
 
 const freshBookkeeping = (): Bookkeeping => ({
   chain: 0,
+  chargeTicks: 0,
+  heavyHeld: false,
   held: false,
   hiddenTicks: 0,
+  knockback: undefined,
   queued: false,
   recentreTicks: 0,
   recoveryTicks: 0,
@@ -406,7 +456,7 @@ const scale = (vector: Point3, by: number): Point3 => ({
 export const createDuel = (config: DuelConfig): Duel => {
   const { arena, tuning } = config;
   const { bodyRadius } = tuning.duelist;
-  const { round: rounds, stupefy } = tuning;
+  const { confringo, round: rounds, stupefy } = tuning;
   const tickSeconds = 1 / tuning.tickRate;
   const stride = tuning.duelist.walkSpeed * tickSeconds;
   const ticksOf = (seconds: number) => Math.round(seconds * tuning.tickRate);
@@ -548,9 +598,11 @@ export const createDuel = (config: DuelConfig): Duel => {
     const spawned: DuelistState[] = config.duelists.map((setup) => ({
       aim: { pitch: tuning.aim.pitch.rest, yaw: 0 },
       aimPoint: { x: setup.spawn.x, y: 0, z: setup.spawn.z },
+      chargeSeconds: 0,
       facing: defaultForward,
       health: tuning.duelist.health,
       id: setup.id,
+      knockbackSeconds: 0,
       knockedOut: false,
       lockNudge: noNudge,
       position: setup.spawn,
@@ -930,6 +982,56 @@ export const createDuel = (config: DuelConfig): Duel => {
   };
 
   /**
+   * What a Spell does to the Duelist it hits: damage, and how many metres it
+   * knocks them back. Confringo scales both with its Charge, from a tap's
+   * minimum to a full Charge's, and a Perfect Release empowers both.
+   */
+  const impactOf = (spell: SpellState) => {
+    if (spell.kind === "stupefy") {
+      return {
+        amount: spell.strong ? stupefy.strongDamage : stupefy.damage,
+        knockback: 0,
+      };
+    }
+
+    const empower = spell.empowered ? confringo.perfectScale : 1;
+
+    const scaled = (range: { readonly full: number; readonly min: number }) =>
+      (range.min + (range.full - range.min) * spell.charge) * empower;
+
+    return {
+      amount: scaled(confringo.damage),
+      knockback: scaled(confringo.knockback),
+    };
+  };
+
+  /**
+   * One tick of a knockback slide, as the offset to move by. The speed falls
+   * steadily to zero: the steps (2 * ticksLeft - 1) / ticks² sum to exactly
+   * the knockback distance over the slide.
+   */
+  const slide = (book: Bookkeeping): GroundPoint => {
+    const { knockback } = book;
+
+    if (!knockback) {
+      return { x: 0, z: 0 };
+    }
+
+    const share =
+      (2 * knockback.ticksLeft - 1) / (knockback.ticks * knockback.ticks);
+
+    const step = knockback.distance * share;
+
+    knockback.ticksLeft -= 1;
+
+    if (knockback.ticksLeft === 0) {
+      book.knockback = undefined;
+    }
+
+    return { x: knockback.direction.x * step, z: knockback.direction.z * step };
+  };
+
+  /**
    * Spells in flight travel against where everyone stood at the start of the
    * tick. Duelists can only be hit while the Round is being fought, so a
    * Spell still in the air after a Knockout flies over the fallen. Returns
@@ -942,7 +1044,8 @@ export const createDuel = (config: DuelConfig): Duel => {
         arena,
         bodyHeight: tuning.duelist.height,
         bodyRadius,
-        spellRadius: stupefy.radius,
+        radiusOf: (spell) =>
+          spell.kind === "confringo" ? confringo.radius : stupefy.radius,
         targets:
           draft.round.phase === "fighting"
             ? draft.duelists.filter((each) => !each.knockedOut)
@@ -957,12 +1060,27 @@ export const createDuel = (config: DuelConfig): Duel => {
     for (const outcome of flight.outcomes) {
       if (outcome.kind === "hit") {
         const { spell, targetId } = outcome;
-        const amount = spell.strong ? stupefy.strongDamage : stupefy.damage;
+        const { amount, knockback } = impactOf(spell);
         damage.set(targetId, (damage.get(targetId) ?? 0) + amount);
 
         // The strong Stupefy Staggers: no moving or casting for a moment.
         if (spell.strong) {
           books(targetId).staggerTicks = ticksOf(stupefy.staggerSeconds);
+        }
+
+        // Confringo knocks the Duelist it hits back along its flight.
+        if (knockback > 0) {
+          const ticks = ticksOf(confringo.knockback.seconds);
+
+          books(targetId).knockback = {
+            direction: direction(
+              { x: 0, z: 0 },
+              { x: spell.velocity.x, z: spell.velocity.z }
+            ),
+            distance: knockback,
+            ticks,
+            ticksLeft: ticks,
+          };
         }
 
         draft.events.push({
@@ -1060,22 +1178,105 @@ export const createDuel = (config: DuelConfig): Duel => {
   };
 
   /**
+   * The Heavy Spell's Charge for one Duelist free to act this tick. A press
+   * starts a Charge and holding builds it; letting go releases Confringo with
+   * the Charge it reached. Returns the release, if any.
+   */
+  const charge = (
+    book: Bookkeeping,
+    intent: Intent,
+    pressed: boolean
+  ): Release | undefined => {
+    if (book.chargeTicks > 0 && intent.heavySpell) {
+      book.chargeTicks += 1;
+    } else if (book.chargeTicks > 0) {
+      const chargeSeconds = book.chargeTicks / tuning.tickRate;
+      book.chargeTicks = 0;
+
+      return { chargeSeconds, kind: "confringo" };
+    } else if (pressed) {
+      book.chargeTicks = 1;
+    }
+
+    return undefined;
+  };
+
+  /**
+   * A Duelist who cannot act this tick (Staggered, knocked back, Knocked
+   * Out or outside the fight): no casting, and any Charge is lost. A
+   * knockback still slides them on, whatever else is going on.
+   */
+  const sidelined = (
+    self: DuelistState,
+    book: Bookkeeping,
+    obstacles: readonly Obstacle[]
+  ): DuelistState => {
+    book.queued = false;
+    book.chargeTicks = 0;
+
+    const pushed = book.knockback ? slide(book) : undefined;
+
+    return {
+      ...self,
+      chargeSeconds: 0,
+      knockbackSeconds: (book.knockback?.ticksLeft ?? 0) * tickSeconds,
+      position: pushed
+        ? collide(
+            { x: self.position.x + pushed.x, z: self.position.z + pushed.z },
+            bodyRadius,
+            obstacles,
+            arena
+          )
+        : self.position,
+      staggerSeconds: book.staggerTicks * tickSeconds,
+    };
+  };
+
+  /**
+   * Overcharge: a Charge held past its safe window Backfires. No Spell
+   * leaves the Wand, and the caster is Staggered.
+   */
+  const backfire = (
+    self: DuelistState,
+    book: Bookkeeping,
+    events: DuelEvent[]
+  ): DuelistState => {
+    book.chargeTicks = 0;
+    book.queued = false;
+    book.staggerTicks = ticksOf(confringo.backfireStaggerSeconds);
+    events.push({
+      duelistId: self.id,
+      position: wandTip(self, tuning),
+      type: "backfire",
+    });
+
+    return {
+      ...self,
+      chargeSeconds: 0,
+      knockbackSeconds: 0,
+      staggerSeconds: book.staggerTicks * tickSeconds,
+    };
+  };
+
+  /**
    * Duelists aim, move and decide to cast. Looking around works during the
-   * intro's countdown and while Staggered; moving and casting only while
-   * fighting, standing and not Staggered.
+   * intro's countdown and while Staggered; moving, Charging and casting only
+   * while fighting, standing, not Staggered and not knocked back. Anything
+   * that takes control away also loses a Charge in progress.
    */
   const act = (
     draft: Draft,
     intentOf: (id: DuelistId) => Intent
-  ): Set<DuelistId> => {
-    const casters = new Set<DuelistId>();
+  ): Map<DuelistId, Release> => {
+    const releases = new Map<DuelistId, Release>();
     const byId = new Map(draft.duelists.map((each) => [each.id, each]));
     const { phase } = draft.round;
 
-    const acted = draft.duelists.map((standing) => {
+    const acted = draft.duelists.map((standing): DuelistState => {
       const intent = intentOf(standing.id);
       const book = books(standing.id);
       const pressed = intent.lightSpell && !book.held;
+      const heavyPressed = intent.heavySpell && !book.heavyHeld;
 
       const canLook =
         (phase === "fighting" || phase === "intro") && !standing.knockedOut;
@@ -1085,37 +1286,16 @@ export const createDuel = (config: DuelConfig): Duel => {
         : standing;
 
       const canAct =
-        phase === "fighting" && !self.knockedOut && book.staggerTicks === 0;
+        phase === "fighting" &&
+        !self.knockedOut &&
+        book.staggerTicks === 0 &&
+        book.knockback === undefined;
 
       book.held = intent.lightSpell;
+      book.heavyHeld = intent.heavySpell;
       book.recoveryTicks = Math.max(book.recoveryTicks - 1, 0);
       book.staggerTicks = Math.max(book.staggerTicks - 1, 0);
       book.ticksSinceCast += 1;
-
-      const staggerSeconds = book.staggerTicks * tickSeconds;
-
-      if (!canAct) {
-        book.queued = false;
-
-        return { ...self, staggerSeconds };
-      }
-
-      if (wantsToCast(book, pressed)) {
-        casters.add(self.id);
-      }
-
-      const move = clampLength(intent.move, 1);
-
-      const target =
-        self.targetId === null ? undefined : byId.get(self.targetId);
-
-      const wanted = walk(
-        self.position,
-        self.aim.yaw,
-        target?.position,
-        move.x * stride,
-        move.y * stride
-      );
 
       // Other Duelists block at their position from the start of the tick, so
       // the result does not depend on the order Duelists are processed in.
@@ -1125,48 +1305,112 @@ export const createDuel = (config: DuelConfig): Duel => {
 
       const obstacles = [...arena.cover, ...arena.obstructions, ...others];
 
+      if (!canAct) {
+        return sidelined(self, book, obstacles);
+      }
+
+      const heavy = charge(book, intent, heavyPressed);
+      const chargeSeconds = book.chargeTicks / tuning.tickRate;
+
+      // Overcharge: held past the safe window, the Charge Backfires. No
+      // Spell leaves the Wand, and the caster is Staggered.
+      if (chargeStage(chargeSeconds, confringo) === "overcharged") {
+        return backfire(self, book, draft.events);
+      }
+
+      if (heavy) {
+        releases.set(self.id, heavy);
+      }
+
+      // Charging (or releasing) holds the Light Spell back.
+      if (heavy || book.chargeTicks > 0) {
+        book.queued = false;
+      } else if (wantsToCast(book, pressed)) {
+        releases.set(self.id, { kind: "stupefy" });
+      }
+
+      const move = clampLength(intent.move, 1);
+
+      // Charging is a commitment: the Duelist creeps.
+      const speed =
+        book.chargeTicks > 0 ? stride * confringo.chargeMoveScale : stride;
+
+      const target =
+        self.targetId === null ? undefined : byId.get(self.targetId);
+
+      const wanted = walk(
+        self.position,
+        self.aim.yaw,
+        target?.position,
+        move.x * speed,
+        move.y * speed
+      );
+
       return {
         ...self,
+        chargeSeconds,
+        knockbackSeconds: 0,
         position: collide(wanted, bodyRadius, obstacles, arena),
-        staggerSeconds,
+        staggerSeconds: book.staggerTicks * tickSeconds,
       };
     });
 
     draft.duelists = settleAim(acted, draft.events);
 
-    return casters;
+    return releases;
   };
 
   /**
-   * New Stupefies leave the Wand toward the point under the crosshair. Casts
-   * close enough together form a chain; every `chainLength`-th one is strong.
+   * New Spells leave the Wand toward the point under the crosshair (or the
+   * Target, Locked On). Stupefies cast close enough together form a chain;
+   * every `chainLength`-th one is strong. Confringo carries the Charge it
+   * was released with; released in the Perfect Release window it is a full
+   * Charge, empowered, and the Perfect Release is reported.
    */
-  const cast = (draft: Draft, casters: Set<DuelistId>) => {
+  const cast = (draft: Draft, releases: Map<DuelistId, Release>) => {
     for (const self of draft.duelists) {
-      if (!casters.has(self.id)) {
+      const release = releases.get(self.id);
+
+      if (!release) {
         continue;
       }
 
       const book = books(self.id);
-      const chained = book.ticksSinceCast <= ticksOf(stupefy.chainWindow);
-      book.chain = chained ? book.chain + 1 : 1;
-      const strong = book.chain >= stupefy.chainLength;
+      let strong = false;
+      let power = 0;
+      let empowered = false;
 
-      if (strong) {
+      if (release.kind === "stupefy") {
+        const chained = book.ticksSinceCast <= ticksOf(stupefy.chainWindow);
+        book.chain = chained ? book.chain + 1 : 1;
+        strong = book.chain >= stupefy.chainLength;
+
+        if (strong) {
+          book.chain = 0;
+        }
+
+        book.recoveryTicks = ticksOf(stupefy.castInterval);
+      } else {
+        empowered = chargeStage(release.chargeSeconds, confringo) === "perfect";
+        power = empowered ? 1 : chargeLevel(release.chargeSeconds, confringo);
+        // A Heavy Spell breaks the Light Spell's rhythm.
         book.chain = 0;
+        book.recoveryTicks = ticksOf(confringo.recoverySeconds);
       }
 
       book.ticksSinceCast = 0;
-      book.recoveryTicks = ticksOf(stupefy.castInterval);
 
       const origin = wandTip(self, tuning);
       const launch = towardPoint(origin, self.aimPoint);
 
-      // Locked On: straight at the Target's chest where it stands now (no
-      // lead), with a weak homing a strafe can still beat. Free-aiming: to
-      // the point under the crosshair, bent by Aim Assist at launch only.
+      // Both Spells aim the same way. Locked On: straight at the Target's
+      // chest where it stands now (no lead), with a weak homing a strafe can
+      // still beat. Free-aiming: to the point under the crosshair, bent by
+      // Aim Assist at launch only.
       const spell: SpellState = {
         casterId: self.id,
+        charge: power,
+        empowered,
         homing:
           self.targetId === null
             ? null
@@ -1175,7 +1419,7 @@ export const createDuel = (config: DuelConfig): Duel => {
                 targetId: self.targetId,
               },
         id: nextSpellId,
-        kind: "stupefy",
+        kind: release.kind,
         position: origin,
         strong,
         team: self.team,
@@ -1183,13 +1427,21 @@ export const createDuel = (config: DuelConfig): Duel => {
           self.targetId === null
             ? assistedLaunch(self, origin, launch, draft.duelists)
             : launch,
-          stupefy.speed
+          release.kind === "confringo" ? confringo.speed : stupefy.speed
         ),
       };
 
       nextSpellId += 1;
       draft.spells = [...draft.spells, spell];
       draft.events.push({ spell, type: "spell-cast" });
+
+      if (empowered) {
+        draft.events.push({
+          duelistId: self.id,
+          spell,
+          type: "perfect-release",
+        });
+      }
     }
   };
 

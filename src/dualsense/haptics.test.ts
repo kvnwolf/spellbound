@@ -34,6 +34,8 @@ const duelSnapshot = (): DuelSnapshot =>
 
 const spell = (casterId: string, strong = false): SpellState => ({
   casterId,
+  charge: 0,
+  empowered: false,
   homing: null,
   id: 1,
   kind: "stupefy",

@@ -22,6 +22,7 @@ const duel = createDuel({
 
 const { maxPitchSpeed, maxYawSpeed } = tuning.input.look;
 const square = 2;
+const triangle = 3;
 const r3 = 11;
 
 const ticksToSettle = 120;
@@ -82,6 +83,20 @@ describe(createHumanController, () => {
     expect(intent.move.x).toBeCloseTo(Math.SQRT1_2);
     expect(intent.move.y).toBeCloseTo(Math.SQRT1_2);
     expect(intent.lightSpell).toBeTruthy();
+  });
+
+  it("holds the Heavy Spell for as long as △ is down", () => {
+    const { press, tick } = holding([0, 0, 0, 0]);
+
+    const before = tick();
+    press(triangle, true);
+    const held = [tick(), tick()];
+    press(triangle, false);
+    const released = tick();
+
+    expect(before.heavySpell).toBeFalsy();
+    expect(held.map((each) => each.heavySpell)).toStrictEqual([true, true]);
+    expect(released.heavySpell).toBeFalsy();
   });
 
   describe("the right stick turns the camera", () => {
@@ -249,6 +264,7 @@ describe(createHumanController, () => {
     });
 
     expect(intent).toStrictEqual({
+      heavySpell: false,
       lightSpell: false,
       lockOn: false,
       look: { pitch: 0, yaw: 0 },

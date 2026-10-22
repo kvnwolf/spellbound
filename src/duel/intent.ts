@@ -34,6 +34,12 @@ export interface Intent {
    */
   readonly lightSpell: boolean;
   /**
+   * The Heavy Spell button is held this tick. The simulation reads the hold
+   * over time: a press starts a Charge, holding builds it, releasing casts
+   * Confringo, and holding a full Charge too long Overcharges it into a Backfire.
+   */
+  readonly heavySpell: boolean;
+  /**
    * Toggles Lock-on this tick: true for the single tick of the press. Locks
    * on to the opponent nearest the crosshair, or releases the current Target.
    */
@@ -44,6 +50,7 @@ export interface Intent {
 
 /** The Intent of a Controller that does nothing. */
 export const idleIntent: Intent = {
+  heavySpell: false,
   lightSpell: false,
   lockOn: false,
   look: { pitch: 0, yaw: 0 },
