@@ -59,7 +59,8 @@ export const sampleDuelist = (
     x: lerp(previous.position.x, current.position.x, alpha),
     z: lerp(previous.position.z, current.position.z, alpha),
   },
-  staggered: current.staggerSeconds > 0,
+  // A Confringo knockback rocks the Duelist back like a Stagger.
+  staggered: current.staggerSeconds > 0 || current.knockbackSeconds > 0,
   targetId: current.targetId,
 });
 

@@ -21,6 +21,8 @@
  * frame-rate-independent exponential smoothing; the free camera follows the
  * aim directly, since the Controller already smooths the stick, and a lag
  * here would take the crosshair off the aim ray.
+ *
+ * On top of either framing, a full Charge pushes the field of view wider.
  */
 import { MathUtils, PerspectiveCamera } from "three/webgpu";
 
@@ -67,6 +69,11 @@ export interface CameraRig {
     seconds: number
   ) => void;
   readonly resize: (aspect: number) => void;
+  /**
+   * How far to push the field of view toward its full-Charge widening: 0
+   * none, 1 the full push. The rig eases toward it in `follow`.
+   */
+  readonly chargePush: (share: number) => void;
 }
 
 export interface CameraRigSettings {
@@ -177,6 +184,9 @@ export const createCameraRig = (
   let lastFreeAim: Aim | undefined;
   // The aim the free camera holds while the framing is on, or on its way out.
   let heldAim: Aim | undefined;
+  // The full-Charge field of view push: wanted, and eased toward.
+  let pushWanted = 0;
+  let push = 0;
 
   // Where the camera looks, turned sideways just enough that the local
   // Duelist stays inside the allowed share of the horizontal field of view.
@@ -395,6 +405,9 @@ export const createCameraRig = (
 
   return {
     camera,
+    chargePush: (share) => {
+      pushWanted = clamp(share, 0, 1);
+    },
     follow: (free, framing, seconds) => {
       lastFraming = framing ?? lastFraming;
 
@@ -437,6 +450,17 @@ export const createCameraRig = (
       );
 
       camera.position.set(eye.x, eye.y, eye.z);
+
+      // A full Charge widens the view a little: the held power is felt.
+      push +=
+        (pushWanted - push) *
+        (1 - Math.exp(-settings.chargePush.sharpness * seconds));
+      const fov = settings.fov + push * settings.chargePush.degrees;
+
+      if (Math.abs(camera.fov - fov) > 1e-4) {
+        camera.fov = fov;
+        camera.updateProjectionMatrix();
+      }
 
       camera.lookAt(
         camera.position.x + look.x,

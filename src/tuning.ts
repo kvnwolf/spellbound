@@ -48,6 +48,11 @@ export const tuning = {
 
   camera: {
     /**
+     * At full Charge the field of view widens by `degrees`, easing in and out
+     * at `sharpness` (per second): a push that makes the held power felt.
+     */
+    chargePush: { degrees: 5, sharpness: 7 },
+    /**
      * Keeping the view clear of Arena geometry. The camera is a disc of radius
      * `margin` that must stay inside the walls and out of every column, and
      * no column may stand between it and the local Duelist.
@@ -130,6 +135,10 @@ export const tuning = {
 
   /** Camera shake on Spell impacts, as trauma in [0, 1] added per hit (felt as trauma squared). */
   cameraShake: {
+    /** Trauma added when the local Duelist's Charge Backfires in their hand. */
+    backfire: 0.45,
+    /** Extra trauma for a Confringo hit, scaled by its Charge (a tap adds little). */
+    confringoBonus: 0.4,
     /** Trauma lost per second. */
     decay: 1.8,
     /** Shake frequency in Hz. */
@@ -305,6 +314,18 @@ export const tuning = {
   },
 
   hud: {
+    /**
+     * The Charge ring round the screen centre. Past the Perfect Release
+     * window it pulses ever faster as Overcharge nears, from `warnPulse.from`
+     * to `warnPulse.to` pulses per second; a release flies the ring out over
+     * `releaseSeconds` (longer for a Perfect Release or a Backfire).
+     */
+    chargeRing: {
+      backfireSeconds: 0.5,
+      perfectSeconds: 0.45,
+      releaseSeconds: 0.22,
+      warnPulse: { from: 2.5, to: 12 },
+    },
     /** How long "¡Duelo!" stays up once control is given. */
     duelCalloutSeconds: 0.9,
     /** The pale "damage taken" part of a Health bar lingers this long... */

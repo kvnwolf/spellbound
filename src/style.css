@@ -62,6 +62,116 @@ body {
   translate: -50% -50%;
 }
 
+/*
+ * The Charge ring round the screen centre (see charge-ring.ts), its own
+ * element beside the reticle. --level (0 to 1), --overcharge (0 to 1) and
+ * --throb (the warning pulse) are set per frame; data-stage follows the
+ * Charge and data-flourish marks how a release flew out.
+ */
+#charge-ring {
+  --level: 0;
+  --overcharge: 0;
+  --throb: 1;
+  --ember: #ff9a4a;
+  --danger: #ff3a24;
+
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  width: 84px;
+  height: 84px;
+  translate: -50% -50%;
+  pointer-events: none;
+}
+
+#charge-ring svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+#charge-ring circle {
+  fill: none;
+}
+
+#charge-ring .charge-track {
+  stroke: rgb(239 228 200 / 22%);
+  stroke-width: 3;
+}
+
+/* The Perfect Release window, straddling the top. */
+#charge-ring .charge-window {
+  stroke: var(--gold);
+  stroke-width: 6;
+  opacity: 0.5;
+}
+
+#charge-ring .charge-fill {
+  stroke: var(--ember);
+  stroke-width: 4;
+  stroke-dasharray: var(--level) 1;
+  filter: drop-shadow(0 0 3px rgb(255 122 42 / 80%));
+}
+
+/* The time left before Overcharge, emptying from full. */
+#charge-ring .charge-safe {
+  stroke: color-mix(
+    in oklab,
+    var(--gold),
+    var(--danger) calc(var(--overcharge) * 100%)
+  );
+  stroke-width: 3;
+  stroke-dasharray: calc(1 - var(--overcharge)) 1;
+  opacity: 0;
+}
+
+/* The Perfect Release point. */
+#charge-ring .charge-mark {
+  stroke: #fff4d0;
+  stroke-width: 2.5;
+  stroke-linecap: round;
+}
+
+/* In the Perfect Release window: now! White-gold and bright. */
+#charge-ring[data-stage="perfect"] .charge-fill {
+  stroke: #fff2c0;
+  stroke-width: 6;
+  filter: drop-shadow(0 0 7px rgb(255 214 122 / 95%));
+}
+
+#charge-ring[data-stage="perfect"] .charge-window {
+  opacity: 1;
+}
+
+/* Full and safe to hold: gold, reddening and throbbing toward Overcharge. */
+#charge-ring[data-stage="full"] .charge-fill {
+  stroke: color-mix(
+    in oklab,
+    var(--gold),
+    var(--danger) calc(var(--overcharge) * 100%)
+  );
+  opacity: var(--throb);
+}
+
+#charge-ring[data-stage="perfect"] .charge-safe,
+#charge-ring[data-stage="full"] .charge-safe {
+  opacity: var(--throb);
+}
+
+#charge-ring[data-flourish="perfect"] .charge-fill {
+  stroke: #fffbe8;
+  stroke-width: 8;
+}
+
+#charge-ring[data-flourish="backfire"] circle,
+#charge-ring[data-flourish="backfire"] .charge-mark {
+  stroke: var(--danger);
+}
+
+#charge-ring[hidden] {
+  display: none;
+}
+
 #overlay {
   position: fixed;
   inset: 0;

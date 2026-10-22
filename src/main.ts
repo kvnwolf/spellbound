@@ -15,6 +15,7 @@ import { createHapticsDirector } from "./dualsense/haptics";
 import { readDualSense, scanGamepads } from "./dualsense/input";
 import type { DualSenseSnapshot } from "./dualsense/input";
 import { createMenuInput } from "./dualsense/menu-input";
+import { chargeStage } from "./duel/charge";
 import type { Difficulty } from "./duel/difficulty";
 import { createDuel } from "./duel/duel";
 import type { DuelEvent, DuelistId, DuelSnapshot } from "./duel/duel";
@@ -25,6 +26,8 @@ import { createHud } from "./hud";
 import { createOverlay } from "./overlay";
 import { createCameraRig } from "./render/camera-rig";
 import { createCameraShake } from "./render/camera-shake";
+import { createChargeRing } from "./render/charge-ring";
+import { chargingWands } from "./render/charging-wands";
 import { createCourtyardScene, torchSpots } from "./render/courtyard-view";
 import { createDuelistView } from "./render/duelist-view";
 import { sampleDuelist } from "./render/interpolate";
@@ -140,16 +143,28 @@ const start = async () => {
 
   const shake = createCameraShake(tuning.cameraShake);
 
-  /** Impacts shake the camera: more when the local Duelist is the one hit. */
+  /**
+   * Impacts shake the camera: more when the local Duelist is the one hit,
+   * and more for a Charged Confringo. A Backfire jolts its caster.
+   */
   const shakeOnHits = (events: readonly DuelEvent[]) => {
-    const { hitDealt, hitTaken, strongBonus } = tuning.cameraShake;
+    const { backfire, confringoBonus, hitDealt, hitTaken, strongBonus } =
+      tuning.cameraShake;
 
     for (const event of events) {
+      if (event.type === "backfire" && event.duelistId === localId) {
+        shake.add(backfire);
+      }
+
       if (event.type !== "spell-hit") {
         continue;
       }
 
-      const bonus = event.spell.strong ? strongBonus : 0;
+      const bonus =
+        (event.spell.strong ? strongBonus : 0) +
+        (event.spell.kind === "confringo"
+          ? confringoBonus * event.spell.charge
+          : 0);
 
       if (event.targetId === localId) {
         shake.add(hitTaken + bonus);
@@ -207,6 +222,36 @@ const start = async () => {
   );
 
   const hudElement = element("#hud", HTMLElement);
+
+  const chargeRing = createChargeRing(
+    element("#charge-ring", HTMLElement),
+    { confringo: tuning.confringo, ring: tuning.hud.chargeRing },
+    localId
+  );
+
+  /**
+   * The local Duelist's Charge: the ring round the centre (only while the
+   * Round is fought, never over the Knockout shot) and the FOV push at full Charge.
+   */
+  const showCharge = (
+    snapshot: DuelSnapshot,
+    events: readonly DuelEvent[],
+    seconds: number,
+    inDuel: boolean
+  ) => {
+    const chargeSeconds =
+      snapshot.duelists.find((each) => each.id === localId)?.chargeSeconds ?? 0;
+
+    const stage = chargeStage(chargeSeconds, tuning.confringo);
+
+    rig.chargePush(stage === "perfect" || stage === "full" ? 1 : 0);
+    chargeRing.show(
+      chargeSeconds,
+      events,
+      seconds,
+      inDuel && snapshot.round.phase === "fighting"
+    );
+  };
 
   const hud = createHud(hudElement, localId, {
     ...tuning.hud,
@@ -420,9 +465,16 @@ const start = async () => {
 
     shakeOnHits(events);
     vfx.handle(events);
-    vfx.update(previous.spells, current.spells, alpha, simSeconds);
+    vfx.update(
+      previous.spells,
+      current.spells,
+      alpha,
+      simSeconds,
+      chargingWands(current.duelists, tuning)
+    );
     hud.show(current, events, seconds);
 
+    showCharge(current, events, seconds, inDuel);
     showDuelists(alpha, seconds);
 
     if (!inDuel) {

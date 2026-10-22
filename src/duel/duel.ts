@@ -436,7 +436,7 @@ const freshBookkeeping = (): Bookkeeping => ({
 const noNudge: Aim = { pitch: 0, yaw: 0 };
 
 /** Where a Duelist's Spells leave the Wand. */
-const wandTip = (self: DuelistState, tuning: Tuning): Point3 => {
+export const wandTip = (self: DuelistState, tuning: Tuning): Point3 => {
   const { forward, height, right } = tuning.duelist.wandTip;
   const side = rightOf(self.facing);
 
