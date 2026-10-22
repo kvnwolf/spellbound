@@ -22,6 +22,7 @@ import { createCourtyardScene } from "./render/courtyard-view";
 import { createDuelistView } from "./render/duelist-view";
 import { sampleDuelist } from "./render/interpolate";
 import type { DuelistSample } from "./render/interpolate";
+import { createFramePipeline } from "./render/pipeline";
 import { createWebGPURenderer } from "./render/renderer";
 import { createReticle } from "./render/reticle";
 import { text } from "./text";
@@ -84,6 +85,7 @@ const start = async () => {
   }
 
   const rig = createCameraRig(tuning.camera, tuning.duelist.chestHeight);
+  const frame = createFramePipeline(renderer, scene, rig.camera, tuning.render);
   const reticle = createReticle(element("#reticle", HTMLElement));
   const clock = createFixedStepClock(tuning.tickRate);
 
@@ -159,7 +161,7 @@ const start = async () => {
       reticle.show(localSample.aimPoint, rig.camera);
     }
 
-    renderer.render(scene, rig.camera);
+    frame.render();
   });
 };
 
