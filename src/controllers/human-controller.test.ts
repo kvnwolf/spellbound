@@ -99,6 +99,39 @@ describe(createHumanController, () => {
     expect(released.heavySpell).toBeFalsy();
   });
 
+  it("Dodges with ○, jumps with ✕, Shields with L1 and sprints with R1, while each is down", () => {
+    const { press, tick } = holding([0, 0, 0, 0]);
+    const idle = tick();
+    const buttons = { circle: 1, cross: 0, l1: 4, r1: 5 } as const;
+
+    for (const index of Object.values(buttons)) {
+      press(index, true);
+    }
+
+    const held = tick();
+
+    expect(idle).toMatchObject({
+      dodge: false,
+      jump: false,
+      shield: false,
+      sprint: false,
+    });
+    expect(held).toMatchObject({
+      dodge: true,
+      jump: true,
+      shield: true,
+      sprint: true,
+    });
+  });
+
+  it("leaves L3 unbound", () => {
+    const { press, tick } = holding([0, 0, 0, 0]);
+    const before = tick();
+    press(10, true);
+
+    expect(tick()).toStrictEqual(before);
+  });
+
   describe("the right stick turns the camera", () => {
     it("turns right with the stick right and looks up with the stick up", () => {
       const { tick } = holding([0, 0, 1, -1]);
@@ -264,11 +297,15 @@ describe(createHumanController, () => {
     });
 
     expect(intent).toStrictEqual({
+      dodge: false,
       heavySpell: false,
+      jump: false,
       lightSpell: false,
       lockOn: false,
       look: { pitch: 0, yaw: 0 },
       move: { x: 0, y: 0 },
+      shield: false,
+      sprint: false,
       switchTarget: 0,
     });
   });

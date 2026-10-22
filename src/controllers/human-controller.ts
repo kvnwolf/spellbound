@@ -74,6 +74,7 @@ const createFlickDetector = (
  *   moment after the click, which tends to knock it.
  * - □: the Light Spell.
  * - △: the Heavy Spell, held to Charge and released to cast.
+ * - ○: Dodge. ✕: jump. L1 (held): the Shield. R1 (held): sprint. L3 is unbound.
  *
  * Everything advances once per Intent, which the Duel asks for every tick.
  */
@@ -117,9 +118,11 @@ export const createHumanController = (
       const turn = aimResponse.step(stick, tickSeconds);
 
       return {
-        // △ Charges Confringo while held; the simulation reads the hold over time.
+        // Buttons are passed on as held; the simulation finds the presses
+        // (and reads △'s hold over time to Charge Confringo).
+        dodge: pad.buttons.circle,
         heavySpell: pad.buttons.triangle,
-        // □ casts Stupefy; the simulation turns the held button into presses.
+        jump: pad.buttons.cross,
         lightSpell: pad.buttons.square,
         lockOn,
         look: {
@@ -127,6 +130,8 @@ export const createHumanController = (
           yaw: turn.x * look.maxYawSpeed,
         },
         move: pad.leftStick,
+        shield: pad.buttons.l1,
+        sprint: pad.buttons.r1,
         switchTarget: settling ? 0 : flicks.read(stick),
       };
     },

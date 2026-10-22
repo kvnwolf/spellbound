@@ -8,11 +8,13 @@
 import type { ArenaLayout, DuelistId, SpellState, TeamId } from "./duel";
 import type { GroundPoint, Point3 } from "./geometry";
 
-/** A Duelist a Spell can hit: a standing cylinder on the Arena floor. */
+/** A Duelist a Spell can hit: a standing cylinder, lifted off the floor while they jump. */
 export interface FlightTarget {
   readonly id: DuelistId;
   readonly team: TeamId;
   readonly position: GroundPoint;
+  /** Height of the cylinder's base (the feet) above the floor. */
+  readonly elevation: number;
 }
 
 export interface FlightBodies {
@@ -158,10 +160,11 @@ const firstObstacle = (
     }
 
     // The body is a cylinder: a Spell passing over the head or under the
-    // floor line misses.
+    // feet (a jumping Duelist's) misses.
     const position = pointAt(spell, seconds, at);
+    const feet = target.elevation;
 
-    if (position.y >= 0 && position.y <= bodies.bodyHeight) {
+    if (position.y >= feet && position.y <= feet + bodies.bodyHeight) {
       contacts.push({
         at,
         outcome: { kind: "hit", position, spell, targetId: target.id },

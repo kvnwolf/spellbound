@@ -273,6 +273,63 @@ export const tuning = {
     rivalCastInterval: 0.6,
   },
 
+  /**
+   * Defence: the Dodge (○), the Shield and its Parry (L1), the jump (✕) and
+   * the sprint (R1, held), all paid for from the shared Stamina pool.
+   * Stamina is in points; costs are points, drains points per second.
+   */
+  defence: {
+    dodge: {
+      /** Stamina a Dodge costs; refused with less than this left. */
+      cost: 25,
+      /** How far the dash carries the Duelist, metres, over `seconds`. */
+      distance: 3.6,
+      /**
+       * A Dodge started when an incoming Spell would hit within this many
+       * seconds (had the Duelist stood still) is a Perfect Dodge.
+       */
+      perfectWindow: 0.2,
+      /** How long the dash lasts; the Duelist cannot be hit throughout. */
+      seconds: 0.35,
+    },
+    jump: {
+      /** Stamina a jump costs; refused with less than this left. */
+      cost: 12,
+      /** Downward acceleration while airborne, m/s². */
+      gravity: 18,
+      /**
+       * Upward launch speed, m/s. With `gravity` the feet clear about 1.8 m
+       * at the apex, about 0.9 s in the air: high enough to let a chest-high
+       * bolt pass under, if timed.
+       */
+      speed: 8,
+    },
+    shield: {
+      /** Stamina drained every second the Shield is up. */
+      drain: 22,
+      /**
+       * Raising the Shield no more than this many seconds before a Spell lands
+       * on it Parries: the Spell flies back at its caster.
+       */
+      parryWindow: 0.15,
+      /** Walking speed while the Shield is up, as a share of the normal speed. */
+      walkScale: 0.5,
+    },
+    sprint: {
+      /** Stamina drained every second spent sprinting (only while moving). */
+      drain: 20,
+      /** Running speed, as a multiple of the walking speed. */
+      speedScale: 1.6,
+    },
+    stamina: {
+      max: 100,
+      /** Stamina only starts regenerating this long after it was last spent. */
+      regenDelay: 0.6,
+      /** Points regained per second once regenerating. */
+      regenRate: 32,
+    },
+  },
+
   duelist: {
     /** A Duelist's body is a circle on the Arena floor for collision. */
     bodyRadius: 0.45,

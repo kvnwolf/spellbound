@@ -46,14 +46,32 @@ export interface Intent {
   readonly lockOn: boolean;
   /** While Locked On, switches to the next opponent left or right, for the single tick of the request. */
   readonly switchTarget: TargetSwitch;
+  /**
+   * The Dodge button is down this tick. The simulation Dodges on the press,
+   * in the direction of `move` (straight back with no direction held).
+   */
+  readonly dodge: boolean;
+  /** The jump button is down this tick; the simulation jumps on the press. */
+  readonly jump: boolean;
+  /**
+   * The Shield button is down this tick. The Shield goes up on the press (the
+   * moment that times a Parry) and stays up while held, until Stamina runs out.
+   */
+  readonly shield: boolean;
+  /** The sprint button is down this tick: sprinting lasts while it is held and Stamina lasts. */
+  readonly sprint: boolean;
 }
 
 /** The Intent of a Controller that does nothing. */
 export const idleIntent: Intent = {
+  dodge: false,
   heavySpell: false,
+  jump: false,
   lightSpell: false,
   lockOn: false,
   look: { pitch: 0, yaw: 0 },
   move: { x: 0, y: 0 },
+  shield: false,
+  sprint: false,
   switchTarget: 0,
 };

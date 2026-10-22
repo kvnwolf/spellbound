@@ -112,6 +112,20 @@ export interface DuelistState {
   readonly knockbackSeconds: number;
   /** Knocked Out this Round: down, and out of the fight until the next Round. */
   readonly knockedOut: boolean;
+  /**
+   * Between 0 and `tuning.defence.stamina.max`; full again every Round. The
+   * Shield, the Dodge, the jump and the sprint spend it, and it regenerates
+   * a moment after it was last spent.
+   */
+  readonly stamina: number;
+  /** How high the feet are off the Arena floor, metres: above 0 while jumping. */
+  readonly elevation: number;
+  /** Seconds left of a Dodge; the Duelist cannot be hit while it is above 0. */
+  readonly dodgeSeconds: number;
+  /** The Shield is up: Spells reaching the front half of the body are blocked (or Parried). */
+  readonly shielding: boolean;
+  /** Running at sprint speed this tick, draining Stamina. */
+  readonly sprinting: boolean;
 }
 
 /** Stupefy is the Light Spell; Confringo the Heavy Spell. */
@@ -242,7 +256,53 @@ export type DuelEvent =
       readonly round: number;
       readonly winner: TeamId | null;
     }
-  | { readonly type: "duel-end"; readonly winner: TeamId };
+  | { readonly type: "duel-end"; readonly winner: TeamId }
+  /** A Duelist left the floor. */
+  | { readonly type: "jump"; readonly duelistId: DuelistId }
+  /** A jumping Duelist touched down again. */
+  | { readonly type: "land"; readonly duelistId: DuelistId }
+  /** A Duelist started a Dodge, dashing along `direction` (a unit vector on the floor). */
+  | {
+      readonly type: "dodge";
+      readonly duelistId: DuelistId;
+      readonly direction: GroundPoint;
+    }
+  /**
+   * A Dodge started just before `spell` would have hit (had the Duelist stood
+   * still): what will build Focus.
+   */
+  | {
+      readonly type: "perfect-dodge";
+      readonly duelistId: DuelistId;
+      readonly spell: SpellState;
+    }
+  /** A Shield stopped a Spell; the Spell is gone. */
+  | {
+      readonly type: "spell-blocked";
+      readonly duelistId: DuelistId;
+      readonly spell: SpellState;
+      readonly position: Point3;
+    }
+  /**
+   * A Shield raised just before `spell` landed Parried it: `reflected` is
+   * the same Spell flying back at its caster, now cast by the Parrying Duelist.
+   */
+  | {
+      readonly type: "parry";
+      readonly duelistId: DuelistId;
+      readonly spell: SpellState;
+      readonly reflected: SpellState;
+      readonly position: Point3;
+    }
+  /** A defence was asked for without enough Stamina, and refused. */
+  | {
+      readonly type: "stamina-short";
+      readonly duelistId: DuelistId;
+      readonly action: DefenceAction;
+    };
+
+/** The defences paid for with Stamina. */
+export type DefenceAction = "dodge" | "jump" | "shield" | "sprint";
 
 /** The outcome of one tick: the new snapshot and the events emitted during it. */
 export interface DuelTick {
@@ -371,10 +431,10 @@ const nearest = (
   return best;
 };
 
-/** A Duelist's chest: where Lock-on and Aim Assist aim at them. */
+/** A Duelist's chest, wherever it is mid-jump: where Lock-on and Aim Assist aim at them. */
 const chestOf = (duelist: DuelistState, tuning: Tuning): Point3 => ({
   x: duelist.position.x,
-  y: tuning.duelist.chestHeight,
+  y: tuning.duelist.chestHeight + duelist.elevation,
   z: duelist.position.z,
 });
 
@@ -412,6 +472,25 @@ interface Bookkeeping {
         ticksLeft: number;
       }
     | undefined;
+  /** The defence buttons as they were last tick, so a press can be told from a hold. */
+  buttons: Readonly<Record<DefenceAction, boolean>>;
+  /**
+   * The Shield and the sprint start on a press and last while the button is
+   * held; running out of Stamina (and, for the Shield, a Dodge or a Stagger)
+   * ends them until the next press. So a held L1 never re-raises the Shield
+   * by itself, which would otherwise be a free Parry.
+   */
+  shieldHeld: boolean;
+  sprintHeld: boolean;
+  /** The tick the Shield last went up on: the Parry window counts from it. */
+  shieldRaisedTick: number;
+  /** Ticks left of the current Dodge, and how far it carries the Duelist each tick. */
+  dodgeTicks: number;
+  dodgeStep: GroundPoint;
+  /** Upward speed while airborne, m/s (negative falling). */
+  verticalSpeed: number;
+  /** Ticks to wait before Stamina regenerates again. */
+  regenTicks: number;
 }
 
 /** What a Duelist lets go of this tick: a Light Spell, or a Heavy Spell after Charging for `chargeSeconds`. */
@@ -420,8 +499,11 @@ type Release =
   | { readonly kind: "confringo"; readonly chargeSeconds: number };
 
 const freshBookkeeping = (): Bookkeeping => ({
+  buttons: { dodge: false, jump: false, shield: false, sprint: false },
   chain: 0,
   chargeTicks: 0,
+  dodgeStep: { x: 0, z: 0 },
+  dodgeTicks: 0,
   heavyHeld: false,
   held: false,
   hiddenTicks: 0,
@@ -429,8 +511,13 @@ const freshBookkeeping = (): Bookkeeping => ({
   queued: false,
   recentreTicks: 0,
   recoveryTicks: 0,
+  regenTicks: 0,
+  shieldHeld: false,
+  shieldRaisedTick: 0,
+  sprintHeld: false,
   staggerTicks: 0,
   ticksSinceCast: Number.POSITIVE_INFINITY,
+  verticalSpeed: 0,
 });
 
 const noNudge: Aim = { pitch: 0, yaw: 0 };
@@ -442,7 +529,7 @@ export const wandTip = (self: DuelistState, tuning: Tuning): Point3 => {
 
   return {
     x: self.position.x + self.facing.x * forward + side.x * right,
-    y: height,
+    y: height + self.elevation,
     z: self.position.z + self.facing.z * forward + side.z * right,
   };
 };
@@ -453,10 +540,43 @@ const scale = (vector: Point3, by: number): Point3 => ({
   z: vector.z * by,
 });
 
+/**
+ * Which way a Dodge dashes, as a unit vector on the floor: the move
+ * direction, relative to where the Duelist looks (the camera) while
+ * free-aiming, or to the line toward the Target while Locked On. With no
+ * direction held, straight back.
+ */
+const dodgeHeading = (
+  self: DuelistState,
+  move: Vec2,
+  target: DuelistState | undefined
+): GroundPoint => {
+  const stick = Math.hypot(move.x, move.y) > 0 ? move : { x: 0, y: -1 };
+
+  const ahead = target
+    ? direction(self.position, target.position)
+    : forwardOf(self.aim.yaw);
+
+  const side = rightOf(ahead);
+
+  return direction(
+    { x: 0, z: 0 },
+    {
+      x: ahead.x * stick.y + side.x * stick.x,
+      z: ahead.z * stick.y + side.z * stick.x,
+    }
+  );
+};
+
 export const createDuel = (config: DuelConfig): Duel => {
   const { arena, tuning } = config;
   const { bodyRadius } = tuning.duelist;
   const { confringo, round: rounds, stupefy } = tuning;
+
+  /** The radius of a Spell's sphere, for collisions. */
+  const spellRadius = (spell: SpellState) =>
+    spell.kind === "confringo" ? confringo.radius : stupefy.radius;
+
   const tickSeconds = 1 / tuning.tickRate;
   const stride = tuning.duelist.walkSpeed * tickSeconds;
   const ticksOf = (seconds: number) => Math.round(seconds * tuning.tickRate);
@@ -599,6 +719,8 @@ export const createDuel = (config: DuelConfig): Duel => {
       aim: { pitch: tuning.aim.pitch.rest, yaw: 0 },
       aimPoint: { x: setup.spawn.x, y: 0, z: setup.spawn.z },
       chargeSeconds: 0,
+      dodgeSeconds: 0,
+      elevation: 0,
       facing: defaultForward,
       health: tuning.duelist.health,
       id: setup.id,
@@ -606,7 +728,10 @@ export const createDuel = (config: DuelConfig): Duel => {
       knockedOut: false,
       lockNudge: noNudge,
       position: setup.spawn,
+      shielding: false,
+      sprinting: false,
       staggerSeconds: 0,
+      stamina: tuning.defence.stamina.max,
       targetHiddenSeconds: 0,
       targetId: null,
       team: setup.team,
@@ -936,6 +1061,9 @@ export const createDuel = (config: DuelConfig): Duel => {
     winner: null,
   };
 
+  /** The number of the tick being built (the snapshot's tick once it is done). */
+  const tickInProgress = () => current.tick + 1;
+
   /** The tick being built: stages below read and replace its fields in order. */
   interface Draft {
     duelists: readonly DuelistState[];
@@ -945,6 +1073,403 @@ export const createDuel = (config: DuelConfig): Duel => {
     winner: TeamId | null;
     readonly events: DuelEvent[];
   }
+
+  const { defence } = tuning;
+
+  /** Stamina as it is spent through one tick. */
+  interface Purse {
+    stamina: number;
+    spent: boolean;
+  }
+
+  const spend = (purse: Purse, amount: number) => {
+    purse.stamina = Math.max(purse.stamina - amount, 0);
+    purse.spent = true;
+  };
+
+  /** Stamina regenerates only once nothing has been spent for a moment. */
+  const regenerate = (book: Bookkeeping, purse: Purse) => {
+    if (purse.spent) {
+      book.regenTicks = ticksOf(defence.stamina.regenDelay);
+    } else if (book.regenTicks > 0) {
+      book.regenTicks -= 1;
+    } else {
+      purse.stamina = Math.min(
+        purse.stamina + defence.stamina.regenRate * tickSeconds,
+        defence.stamina.max
+      );
+    }
+  };
+
+  const refuse = (self: DuelistState, action: DefenceAction, draft: Draft) =>
+    draft.events.push({ action, duelistId: self.id, type: "stamina-short" });
+
+  /** The jump's flight: gravity pulls an airborne Duelist down until they land. Returns the new elevation. */
+  const fall = (self: DuelistState, book: Bookkeeping, draft: Draft) => {
+    if (self.elevation === 0 && book.verticalSpeed <= 0) {
+      return 0;
+    }
+
+    book.verticalSpeed -= defence.jump.gravity * tickSeconds;
+
+    const elevation = Math.max(
+      self.elevation + book.verticalSpeed * tickSeconds,
+      0
+    );
+
+    if (elevation === 0) {
+      book.verticalSpeed = 0;
+      draft.events.push({ duelistId: self.id, type: "land" });
+    }
+
+    return elevation;
+  };
+
+  /**
+   * The Spell that would hit `self` within the Perfect Dodge window if they
+   * stood still, if any: every opposing Spell in the air flown ahead along
+   * its current line against `self`'s body.
+   */
+  const threatTo = (
+    self: DuelistState,
+    spells: readonly SpellState[]
+  ): SpellState | undefined => {
+    const ahead = fly(
+      spells.filter((spell) => spell.team !== self.team),
+      {
+        arena,
+        bodyHeight: tuning.duelist.height,
+        bodyRadius,
+        radiusOf: spellRadius,
+        targets: [self],
+      },
+      defence.dodge.perfectWindow
+    );
+
+    for (const outcome of ahead.outcomes) {
+      if (outcome.kind === "hit") {
+        return outcome.spell;
+      }
+    }
+
+    return undefined;
+  };
+
+  /** Starts a Dodge, if there is Stamina for it; a Perfect Dodge when a Spell is about to land. */
+  const startDodge = (
+    self: DuelistState,
+    move: Vec2,
+    target: DuelistState | undefined,
+    purse: Purse,
+    draft: Draft
+  ) => {
+    if (purse.stamina < defence.dodge.cost) {
+      refuse(self, "dodge", draft);
+
+      return;
+    }
+
+    const book = books(self.id);
+    spend(purse, defence.dodge.cost);
+    book.dodgeTicks = ticksOf(defence.dodge.seconds);
+    const heading = dodgeHeading(self, move, target);
+    const reach = defence.dodge.distance / book.dodgeTicks;
+    book.dodgeStep = { x: heading.x * reach, z: heading.z * reach };
+    draft.events.push({
+      direction: heading,
+      duelistId: self.id,
+      type: "dodge",
+    });
+
+    const threat = threatTo(self, draft.spells);
+
+    if (threat) {
+      draft.events.push({
+        duelistId: self.id,
+        spell: threat,
+        type: "perfect-dodge",
+      });
+    }
+  };
+
+  /** Leaves the floor, if there is Stamina for it. */
+  const startJump = (self: DuelistState, purse: Purse, draft: Draft) => {
+    if (purse.stamina < defence.jump.cost) {
+      refuse(self, "jump", draft);
+
+      return;
+    }
+
+    spend(purse, defence.jump.cost);
+    books(self.id).verticalSpeed = defence.jump.speed;
+    draft.events.push({ duelistId: self.id, type: "jump" });
+  };
+
+  /**
+   * Whether a held action (the Shield or the sprint) carries on this tick:
+   * it starts on a press with any Stamina left, lasts while `held` (and
+   * while `allowed`), and once it ends, only a new press starts it again.
+   */
+  const keepHolding = (
+    self: DuelistState,
+    action: "shield" | "sprint",
+    {
+      allowed,
+      held,
+      pressed,
+      running,
+    }: {
+      readonly allowed: boolean;
+      readonly held: boolean;
+      readonly pressed: boolean;
+      readonly running: boolean;
+    },
+    purse: Purse,
+    draft: Draft
+  ): boolean => {
+    if (!allowed || !held) {
+      return false;
+    }
+
+    if (!pressed) {
+      return running;
+    }
+
+    if (purse.stamina > 0) {
+      return true;
+    }
+
+    refuse(self, action, draft);
+
+    return false;
+  };
+
+  /**
+   * What holding the Shield and sprinting cost this tick. A Shield going up
+   * notes the tick, which the Parry window counts from. Out of Stamina, the
+   * Shield drops and the sprint ends, until pressed again.
+   */
+  const drain = (
+    book: Bookkeeping,
+    shielding: boolean,
+    sprinting: boolean,
+    purse: Purse
+  ) => {
+    if (shielding && !book.shieldHeld) {
+      book.shieldRaisedTick = tickInProgress();
+    }
+
+    book.shieldHeld = shielding;
+
+    if (shielding) {
+      spend(purse, defence.shield.drain * tickSeconds);
+    }
+
+    if (sprinting) {
+      spend(purse, defence.sprint.drain * tickSeconds);
+    }
+
+    if (purse.stamina === 0) {
+      book.shieldHeld = false;
+      book.sprintHeld = false;
+    }
+  };
+
+  /** The walking stride's multiplier: slower behind the Shield, faster sprinting. */
+  const paceOf = (shielding: boolean, sprinting: boolean) => {
+    if (shielding) {
+      return defence.shield.walkScale;
+    }
+
+    return sprinting ? defence.sprint.speedScale : 1;
+  };
+
+  /** What a Duelist's defence settled this tick, for `act` to move and cast by. */
+  interface Guard {
+    readonly state: Pick<
+      DuelistState,
+      "dodgeSeconds" | "elevation" | "shielding" | "sprinting" | "stamina"
+    >;
+    /** How far a Dodge carries the Duelist this tick; it replaces walking. */
+    readonly dash: GroundPoint | undefined;
+    /** The walking stride's multiplier: faster sprinting, slower behind the Shield. */
+    readonly pace: number;
+    /** No casting mid-Dodge or behind the Shield. */
+    readonly canCast: boolean;
+    /** Off the floor (or leaving it this tick): only the Light Spell can be cast. */
+    readonly airborne: boolean;
+  }
+
+  /**
+   * Defence for one Duelist this tick: the jump's flight, then Dodge, jump,
+   * Shield and sprint from the Intent, and the Stamina they spend. Dodge and
+   * jump happen on the press, never in the air or mid-Dodge; the Shield goes
+   * up on the press (which is what times a Parry) and the sprint starts on
+   * it, both lasting while held. Anything costing more Stamina than is left
+   * is refused. Gravity and regeneration run even when the Duelist cannot
+   * act (Staggered, or outside the fight).
+   */
+  const defend = (
+    self: DuelistState,
+    intent: Intent,
+    canAct: boolean,
+    target: DuelistState | undefined,
+    draft: Draft
+  ): Guard => {
+    const book = books(self.id);
+    const was = book.buttons;
+    const pressed = (action: DefenceAction) => intent[action] && !was[action];
+
+    book.buttons = {
+      dodge: intent.dodge,
+      jump: intent.jump,
+      shield: intent.shield,
+      sprint: intent.sprint,
+    };
+
+    const purse: Purse = { spent: false, stamina: self.stamina };
+    const elevation = fall(self, book, draft);
+    const grounded = elevation === 0 && book.verticalSpeed === 0;
+    book.dodgeTicks = Math.max(book.dodgeTicks - 1, 0);
+
+    if (canAct && grounded && book.dodgeTicks === 0 && pressed("dodge")) {
+      startDodge(self, intent.move, target, purse, draft);
+    }
+
+    const dodging = book.dodgeTicks > 0;
+
+    if (canAct && grounded && !dodging && pressed("jump")) {
+      startJump(self, purse, draft);
+    }
+
+    // The Shield drops mid-Dodge, when Staggered or on release.
+    const shielding = keepHolding(
+      self,
+      "shield",
+      {
+        allowed: canAct && !dodging,
+        held: intent.shield,
+        pressed: pressed("shield"),
+        running: book.shieldHeld,
+      },
+      purse,
+      draft
+    );
+
+    book.sprintHeld = keepHolding(
+      self,
+      "sprint",
+      {
+        allowed: canAct,
+        held: intent.sprint,
+        pressed: pressed("sprint"),
+        running: book.sprintHeld,
+      },
+      purse,
+      draft
+    );
+
+    // Sprinting only costs anything while actually running, and holding a
+    // Charge (△) keeps the Duelist to a creep.
+    const sprinting =
+      book.sprintHeld &&
+      book.chargeTicks === 0 &&
+      !intent.heavySpell &&
+      !shielding &&
+      !dodging &&
+      Math.hypot(intent.move.x, intent.move.y) > 0;
+
+    drain(book, shielding, sprinting, purse);
+    regenerate(book, purse);
+
+    return {
+      airborne: elevation > 0 || book.verticalSpeed > 0,
+      canCast: !dodging && !shielding,
+      dash: dodging ? book.dodgeStep : undefined,
+      pace: paceOf(shielding, sprinting),
+      state: {
+        dodgeSeconds: book.dodgeTicks * tickSeconds,
+        elevation,
+        shielding: book.shieldHeld,
+        sprinting,
+        stamina: purse.stamina,
+      },
+    };
+  };
+
+  /**
+   * What a Spell that reached `self` does: Parried back at its caster when
+   * the Shield went up within the Parry window before it landed, blocked by
+   * a Shield that was up earlier, or a hit. The Shield covers the front half
+   * of the body, the side the Duelist faces: a Spell landing behind that
+   * line gets through.
+   */
+  const meetShield = (
+    self: DuelistState,
+    spell: SpellState,
+    contact: Point3,
+    draft: Draft
+  ): "blocked" | "hit" | "parried" => {
+    const front =
+      (contact.x - self.position.x) * self.facing.x +
+        (contact.z - self.position.z) * self.facing.z >=
+      0;
+
+    if (!self.shielding || !front) {
+      return "hit";
+    }
+
+    const raisedFor =
+      (tickInProgress() - books(self.id).shieldRaisedTick) * tickSeconds;
+
+    if (raisedFor > defence.shield.parryWindow) {
+      draft.events.push({
+        duelistId: self.id,
+        position: contact,
+        spell,
+        type: "spell-blocked",
+      });
+
+      return "blocked";
+    }
+
+    // Reflected: the same Spell, now the Parrying Duelist's, flying straight
+    // back at its caster's chest (or back the way it came if they are down).
+    const caster = draft.duelists.find((each) => each.id === spell.casterId);
+
+    const speed = Math.hypot(
+      spell.velocity.x,
+      spell.velocity.y,
+      spell.velocity.z
+    );
+
+    const heading =
+      caster && !caster.knockedOut
+        ? towardPoint(contact, chestOf(caster, tuning))
+        : unit3(scale(spell.velocity, -1));
+
+    const reflected: SpellState = {
+      ...spell,
+      casterId: self.id,
+      homing: null,
+      id: nextSpellId,
+      position: contact,
+      team: self.team,
+      velocity: scale(heading, speed),
+    };
+
+    nextSpellId += 1;
+    draft.spells = [...draft.spells, reflected];
+    draft.events.push({
+      duelistId: self.id,
+      position: contact,
+      reflected,
+      spell,
+      type: "parry",
+    });
+
+    return "parried";
+  };
 
   /** The Round's clock: intro → fighting, knockout → result → the next intro, or over. */
   const advanceClock = (draft: Draft) => {
@@ -1044,11 +1569,13 @@ export const createDuel = (config: DuelConfig): Duel => {
         arena,
         bodyHeight: tuning.duelist.height,
         bodyRadius,
-        radiusOf: (spell) =>
-          spell.kind === "confringo" ? confringo.radius : stupefy.radius,
+        radiusOf: spellRadius,
+        // A Dodging Duelist cannot be hit: Spells fly straight through.
         targets:
           draft.round.phase === "fighting"
-            ? draft.duelists.filter((each) => !each.knockedOut)
+            ? draft.duelists.filter(
+                (each) => !each.knockedOut && each.dodgeSeconds === 0
+              )
             : [],
       },
       tickSeconds
@@ -1058,6 +1585,20 @@ export const createDuel = (config: DuelConfig): Duel => {
     const damage = new Map<DuelistId, number>();
 
     for (const outcome of flight.outcomes) {
+      const struck =
+        outcome.kind === "hit"
+          ? draft.duelists.find((each) => each.id === outcome.targetId)
+          : undefined;
+
+      // A Shield in the way blocks or Parries it instead.
+      if (
+        outcome.kind === "hit" &&
+        struck &&
+        meetShield(struck, outcome.spell, outcome.position, draft) !== "hit"
+      ) {
+        continue;
+      }
+
       if (outcome.kind === "hit") {
         const { spell, targetId } = outcome;
         const { amount, knockback } = impactOf(spell);
@@ -1259,6 +1800,40 @@ export const createDuel = (config: DuelConfig): Duel => {
   };
 
   /**
+   * Charging and casting for a Duelist free to act this tick, returning the
+   * Spell they let go of, if any. Mid-Dodge or behind the Shield no Spell is
+   * cast, and in the air only the Light Spell: a Charge in progress is lost,
+   * and none starts. Charging (or releasing) holds the Light Spell back.
+   */
+  const spellsOf = (
+    book: Bookkeeping,
+    intent: Intent,
+    guard: Guard,
+    pressed: boolean,
+    heavyPressed: boolean
+  ): Release | undefined => {
+    const canCharge = guard.canCast && !guard.airborne;
+
+    if (!canCharge) {
+      book.chargeTicks = 0;
+    }
+
+    const heavy = canCharge ? charge(book, intent, heavyPressed) : undefined;
+
+    if (heavy) {
+      return heavy;
+    }
+
+    if (!guard.canCast || book.chargeTicks > 0) {
+      book.queued = false;
+
+      return undefined;
+    }
+
+    return wantsToCast(book, pressed) ? { kind: "stupefy" } : undefined;
+  };
+
+  /**
    * Duelists aim, move and decide to cast. Looking around works during the
    * intro's countdown and while Staggered; moving, Charging and casting only
    * while fighting, standing, not Staggered and not knocked back. Anything
@@ -1297,6 +1872,14 @@ export const createDuel = (config: DuelConfig): Duel => {
       book.staggerTicks = Math.max(book.staggerTicks - 1, 0);
       book.ticksSinceCast += 1;
 
+      const target =
+        self.targetId === null ? undefined : byId.get(self.targetId);
+
+      // Defence runs first, and even for a Duelist who cannot act: a jump
+      // still falls and Stamina still regenerates.
+      const guard = defend(self, intent, canAct, target, draft);
+      const defended = { ...self, ...guard.state };
+
       // Other Duelists block at their position from the start of the tick, so
       // the result does not depend on the order Duelists are processed in.
       const others = draft.duelists
@@ -1306,48 +1889,46 @@ export const createDuel = (config: DuelConfig): Duel => {
       const obstacles = [...arena.cover, ...arena.obstructions, ...others];
 
       if (!canAct) {
-        return sidelined(self, book, obstacles);
+        return sidelined(defended, book, obstacles);
       }
 
-      const heavy = charge(book, intent, heavyPressed);
+      const release = spellsOf(book, intent, guard, pressed, heavyPressed);
       const chargeSeconds = book.chargeTicks / tuning.tickRate;
 
       // Overcharge: held past the safe window, the Charge Backfires. No
       // Spell leaves the Wand, and the caster is Staggered.
       if (chargeStage(chargeSeconds, confringo) === "overcharged") {
-        return backfire(self, book, draft.events);
+        return backfire(defended, book, draft.events);
       }
 
-      if (heavy) {
-        releases.set(self.id, heavy);
-      }
-
-      // Charging (or releasing) holds the Light Spell back.
-      if (heavy || book.chargeTicks > 0) {
-        book.queued = false;
-      } else if (wantsToCast(book, pressed)) {
-        releases.set(self.id, { kind: "stupefy" });
+      if (release) {
+        releases.set(self.id, release);
       }
 
       const move = clampLength(intent.move, 1);
 
-      // Charging is a commitment: the Duelist creeps.
+      // Charging is a commitment: the Duelist creeps (and cannot sprint).
       const speed =
-        book.chargeTicks > 0 ? stride * confringo.chargeMoveScale : stride;
+        book.chargeTicks > 0
+          ? stride * confringo.chargeMoveScale
+          : stride * guard.pace;
 
-      const target =
-        self.targetId === null ? undefined : byId.get(self.targetId);
-
-      const wanted = walk(
-        self.position,
-        self.aim.yaw,
-        target?.position,
-        move.x * speed,
-        move.y * speed
-      );
+      // A Dodge dashes along its own line instead of walking.
+      const wanted = guard.dash
+        ? {
+            x: self.position.x + guard.dash.x,
+            z: self.position.z + guard.dash.z,
+          }
+        : walk(
+            self.position,
+            self.aim.yaw,
+            target?.position,
+            move.x * speed,
+            move.y * speed
+          );
 
       return {
-        ...self,
+        ...defended,
         chargeSeconds,
         knockbackSeconds: 0,
         position: collide(wanted, bodyRadius, obstacles, arena),
