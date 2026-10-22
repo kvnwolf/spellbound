@@ -90,8 +90,8 @@ const wire = {
   },
   /** Seeds the CRC of every output report. */
   crcSeed: 0xa2,
-  /** 63 bytes on the wire, the report id included. */
-  usb: { dataLength: 62, reportId: 0x02 },
+  /** 48 bytes on the wire, the report id included: the 47 the descriptor declares. */
+  usb: { dataLength: 47, reportId: 0x02 },
 } as const;
 
 /** The parts of WebHID's `HIDCollectionInfo` the transport is told from. */
@@ -278,6 +278,42 @@ const frame = (
   data.set([crc, crc >>> 8, crc >>> 16, crc >>> 24], crcAt);
 
   return { data, reportId };
+};
+
+/**
+ * The size in bytes, after the report id, that the HID descriptor declares
+ * for output report `reportId`; undefined when it declares none.
+ */
+export const outputReportBytes = (
+  collections: readonly HidCollectionLike[],
+  reportId: number
+): number | undefined => {
+  const report = collections
+    .flatMap((each) => each.outputReports ?? [])
+    .find((each) => each.reportId === reportId);
+
+  return report && Math.ceil(reportBits(report) / 8);
+};
+
+/**
+ * Makes `report` exactly the size the descriptor declares for its id, padding
+ * with zeros or trimming the tail: WebHID rejects any other length. A report
+ * the descriptor does not declare is returned as it is.
+ */
+export const fitToDescriptor = (
+  report: OutputReport,
+  collections: readonly HidCollectionLike[]
+): OutputReport => {
+  const bytes = outputReportBytes(collections, report.reportId);
+
+  if (bytes === undefined || bytes === report.data.length) {
+    return report;
+  }
+
+  const data = new Uint8Array(bytes);
+  data.set(report.data.subarray(0, bytes));
+
+  return { data, reportId: report.reportId };
 };
 
 /**

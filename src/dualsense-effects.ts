@@ -12,6 +12,7 @@
 import {
   encodeLightbarRelease,
   encodeOutputReport,
+  fitToDescriptor,
   transportOf,
 } from "./dualsense/output";
 import type {
@@ -47,7 +48,7 @@ const outputKey = (output: DualSenseOutput) =>
 const createWebHidSink = (
   device: HIDDevice,
   transport: Transport,
-  onLost: () => void
+  onLost: (reason: Error) => void
 ) => {
   let sequence = 0;
   let sentKey: string | undefined;
@@ -56,7 +57,9 @@ const createWebHidSink = (
 
   const write = async (report: OutputReport) => {
     sequence = (sequence + 1) % 16;
-    await device.sendReport(report.reportId, report.data);
+    // Exactly the size the descriptor declares, or WebHID refuses the write.
+    const fitted = fitToDescriptor(report, device.collections);
+    await device.sendReport(fitted.reportId, fitted.data);
   };
 
   const pump = async () => {
@@ -74,8 +77,8 @@ const createWebHidSink = (
           await write(encodeOutputReport(output, transport, sequence));
         }
       }
-    } catch {
-      onLost();
+    } catch (error) {
+      onLost(error instanceof Error ? error : new Error(String(error)));
     } finally {
       busy = false;
     }
@@ -87,8 +90,8 @@ const createWebHidSink = (
     release: async () => {
       try {
         await write(encodeLightbarRelease(transport, sequence));
-      } catch {
-        onLost();
+      } catch (error) {
+        onLost(error instanceof Error ? error : new Error(String(error)));
       }
     },
     send: (output: DualSenseOutput) => {
@@ -224,8 +227,15 @@ export const createDualSenseEffects = (overlay: HTMLElement) => {
       return;
     }
 
-    const opened = createWebHidSink(device, transport, () => {
-      sink = undefined;
+    const opened = createWebHidSink(device, transport, (reason) => {
+      // Once per lost sink, not per frame: the sink is gone, so nothing writes again.
+      if (sink === opened) {
+        sink = undefined;
+        console.warn(
+          "DualSense effects: a write failed, falling back to rumble until the controller reconnects or the page reloads",
+          reason
+        );
+      }
     });
 
     sink = opened;

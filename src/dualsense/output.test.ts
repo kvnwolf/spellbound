@@ -4,6 +4,8 @@ import {
   crc32,
   encodeLightbarRelease,
   encodeOutputReport,
+  fitToDescriptor,
+  outputReportBytes,
   transportOf,
 } from "./output";
 import type { DualSenseOutput } from "./output";
@@ -40,8 +42,8 @@ describe(encodeOutputReport, () => {
       const report = encodeOutputReport(rumbling, "usb", 0);
 
       expect(report.reportId).toBe(0x02);
-      // 63 bytes on the wire, the report id included.
-      expect(report.data).toHaveLength(62);
+      // The 47 bytes the DualSense's descriptor declares for report 0x02.
+      expect(report.data).toHaveLength(47);
       expect(nonZero(report.data)).toStrictEqual([
         // Compatible vibration, haptics select, right and left trigger effects.
         [0, 0x0f],
@@ -200,6 +202,85 @@ describe(transportOf, () => {
   });
 });
 
+describe(outputReportBytes, () => {
+  it("sums the declared items of the report with that id, in bytes", () => {
+    expect(
+      outputReportBytes(
+        [
+          {
+            ...gamepadCollection,
+            outputReports: [
+              declared(0x02, 47),
+              {
+                items: [
+                  { reportCount: 4, reportSize: 8 },
+                  { reportCount: 8, reportSize: 4 },
+                ],
+                reportId: 0x05,
+              },
+            ],
+          },
+        ],
+        0x05
+      )
+    ).toBe(8);
+  });
+
+  it("finds the report in any collection", () => {
+    expect(
+      outputReportBytes(
+        [
+          { ...gamepadCollection, outputReports: [declared(0x31, 77)] },
+          { ...gamepadCollection, outputReports: [declared(0x02, 47)] },
+        ],
+        0x02
+      )
+    ).toBe(47);
+  });
+
+  it("is undefined when the descriptor does not declare the report", () => {
+    expect(
+      outputReportBytes(
+        [{ ...gamepadCollection, outputReports: [declared(0x31, 77)] }],
+        0x02
+      )
+    ).toBeUndefined();
+    expect(outputReportBytes([], 0x02)).toBeUndefined();
+  });
+});
+
+/** A descriptor that declares output report 0x02 as `bytes` bytes. */
+const declaring = (bytes: number) => [
+  { ...gamepadCollection, outputReports: [declared(0x02, bytes)] },
+];
+
+describe(fitToDescriptor, () => {
+  const report = { data: new Uint8Array([1, 2, 3, 4]), reportId: 0x02 };
+
+  it("pads a short report with zeros up to the declared size", () => {
+    const fitted = fitToDescriptor(report, declaring(6));
+
+    expect(fitted.reportId).toBe(0x02);
+    expect([...fitted.data]).toStrictEqual([1, 2, 3, 4, 0, 0]);
+  });
+
+  it("trims the tail of a long report down to the declared size", () => {
+    expect([...fitToDescriptor(report, declaring(3)).data]).toStrictEqual([
+      1, 2, 3,
+    ]);
+  });
+
+  it("leaves a report of the declared size as it is", () => {
+    expect([...fitToDescriptor(report, declaring(4)).data]).toStrictEqual([
+      1, 2, 3, 4,
+    ]);
+  });
+
+  it("leaves the report as it is when the descriptor does not declare it", () => {
+    expect(fitToDescriptor(report, [])).toBe(report);
+  });
+});
+
 describe(encodeLightbarRelease, () => {
   it("over Bluetooth, fades out the pairing light so the lightbar can be driven", () => {
     const report = encodeLightbarRelease("bluetooth", 1);
@@ -222,6 +303,7 @@ describe(encodeLightbarRelease, () => {
     const report = encodeLightbarRelease("usb", 0);
 
     expect(report.reportId).toBe(0x02);
+    expect(report.data).toHaveLength(47);
     expect(nonZero(report.data)).toStrictEqual([
       [38, 0x02],
       [41, 0x02],
