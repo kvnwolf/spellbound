@@ -389,6 +389,10 @@ export const tuning = {
     healthLagDelay: 0.35,
     /** ...then drains at this many Health points per second. */
     healthLagRate: 60,
+    /** How long "¡Parry!" stays up after the local Duelist Parries. */
+    parryCalloutSeconds: 0.8,
+    /** The Stamina bar flashes this long when a defence is refused for want of Stamina. */
+    staminaShortSeconds: 0.35,
   },
 
   input: {
@@ -497,6 +501,47 @@ export const tuning = {
     stickPress: 0.6,
     /** It must come back inside this before it can step again: one tilt, one step. */
     stickRelease: 0.35,
+  },
+
+  /**
+   * How Protego looks: a translucent half-dome in front of the Duelist that
+   * shimmers while up, flares where a Spell is blocked, and the bright flash
+   * of a Parry. Colours are hex; radiance values are scene-linear HDR, so
+   * what is above the bloom threshold glows.
+   */
+  protego: {
+    /** Centre of the dome above the feet, and its radius, metres. */
+    centreHeight: 1.05,
+    color: "#8fd3ff",
+    /** Exponential rate, per second, at which the dome grows in and fades out. */
+    fadeSharpness: 18,
+    /** Radiance a blocked Spell adds over the whole dome, decaying with time constant `flareSeconds` (a Parry flares twice as bright). */
+    flare: 2.4,
+    flareSeconds: 0.3,
+    parry: {
+      color: "#fff1c2",
+      /** The flash's sprite grows from `startSize` to `endSize` metres. */
+      endSize: 3.4,
+      /** Peak candela of the Parry's light, fading over `seconds`... */
+      light: 90,
+      /** ...reaching this far, metres. */
+      lightRange: 12,
+      /** Radiance of the flash at its peak. */
+      radiance: 7,
+      seconds: 0.35,
+      startSize: 0.4,
+    },
+    radius: 0.95,
+    /** The dome swells from this share of its size to full as it goes up. */
+    raiseScale: 0.6,
+    /** Fresnel exponent: higher hugs the dome's rim more tightly. */
+    rimPower: 2.2,
+    /** Peak radiance at the rim. */
+    rimRadiance: 1.6,
+    /** The shimmer: bands rippling up the dome at `shimmerSpeed`, `shimmerScale` bands per metre. */
+    shimmerRadiance: 0.45,
+    shimmerScale: 9,
+    shimmerSpeed: 1.6,
   },
 
   /** The render pipeline: tone, bloom and anti-aliasing quality knobs. */

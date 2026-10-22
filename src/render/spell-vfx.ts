@@ -704,6 +704,15 @@ export const createSpellVfx = (): SpellVfx => {
       } else if (event.type === "spells-cancelled") {
         const [first] = event.spells;
         burst(event.position, bursts.cancel, palettes[first.kind]);
+      } else if (event.type === "spell-blocked") {
+        const stop =
+          event.spell.kind === "confringo" ? bursts.confringoStop : bursts.stop;
+
+        burst(event.position, stop, palettes[event.spell.kind]);
+      } else if (event.type === "parry") {
+        // The reflected Spell's trail starts from the Shield, not the Wand.
+        castPoints.set(event.reflected.id, event.position);
+        burst(event.position, bursts.hit, palettes[event.spell.kind]);
       }
     }
   };

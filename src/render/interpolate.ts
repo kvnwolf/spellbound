@@ -19,6 +19,10 @@ export interface DuelistSample {
   /** States are not blended: they switch on the tick that changes them. */
   readonly knockedOut: boolean;
   readonly staggered: boolean;
+  /** Height of the feet off the floor, mid-jump. */
+  readonly elevation: number;
+  readonly shielding: boolean;
+  readonly dodging: boolean;
 }
 
 const lerp = (from: number, to: number, alpha: number) =>
@@ -52,6 +56,8 @@ export const sampleDuelist = (
   alpha: number
 ): DuelistSample => ({
   aim: lerpAim(previous.aim, current.aim, alpha),
+  dodging: current.dodgeSeconds > 0,
+  elevation: lerp(previous.elevation, current.elevation, alpha),
   facing: blendDirection(previous.facing, current.facing, alpha),
   knockedOut: current.knockedOut,
   lockNudge: lerpAim(previous.lockNudge, current.lockNudge, alpha),
@@ -59,6 +65,7 @@ export const sampleDuelist = (
     x: lerp(previous.position.x, current.position.x, alpha),
     z: lerp(previous.position.z, current.position.z, alpha),
   },
+  shielding: current.shielding,
   // A Confringo knockback rocks the Duelist back like a Stagger.
   staggered: current.staggerSeconds > 0 || current.knockbackSeconds > 0,
   targetId: current.targetId,

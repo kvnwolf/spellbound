@@ -1,8 +1,9 @@
 /**
  * The Duel HUD: a DOM overlay that reads the simulation snapshot. Along the
- * top, both Duelists' Health bars with the Round and score between them; in
- * the middle, the call-outs (the "3, 2, 1, ¡Duelo!" countdown, the Knockout
- * and each Round's result). It only writes to the DOM when what it shows
+ * top, both Duelists' Health bars with the Round and score between them;
+ * bottom-left, the local Duelist's Stamina; in the middle, the call-outs (the
+ * "3, 2, 1, ¡Duelo!" countdown, "¡Parry!", the Knockout and each Round's
+ * result). It only writes to the DOM when what it shows
  * changes, since it runs every frame.
  */
 import type { DuelEvent, DuelistId, DuelSnapshot, TeamId } from "./duel/duel";
@@ -17,6 +18,11 @@ export interface HudSettings {
   readonly healthLagDelay: number;
   /** How fast the lingering part drains, in Health per second. */
   readonly healthLagRate: number;
+  readonly maxStamina: number;
+  /** How long "¡Parry!" stays up after the local Duelist Parries. */
+  readonly parryCalloutSeconds: number;
+  /** How long the Stamina bar flashes when a defence is refused for want of Stamina. */
+  readonly staminaShortSeconds: number;
 }
 
 export interface Hud {
@@ -79,6 +85,37 @@ const createHealthBar = (
       }
 
       lag.style.width = `${(lagging / settings.maxHealth) * 100}%`;
+    },
+  };
+};
+
+/**
+ * The local Duelist's Stamina, bottom-left: a slim bar of the pool, which
+ * flashes red when a defence is refused for want of Stamina.
+ */
+const createStaminaBar = (parent: HTMLElement, settings: HudSettings) => {
+  const root = create("div", "hud-stamina", parent);
+  create("span", "hud-stamina-label", root).textContent = text.hud.stamina;
+  const bar = create("div", "hud-stamina-bar", root);
+  const fill = create("div", "hud-stamina-fill", bar);
+  let shown = -1;
+  let shortFor = 0;
+
+  return {
+    show: (stamina: number, short: boolean, seconds: number) => {
+      shortFor = short
+        ? settings.staminaShortSeconds
+        : Math.max(shortFor - seconds, 0);
+      root.classList.toggle("hud-stamina-short", shortFor > 0);
+
+      // Whole-percent steps: no DOM write for changes nobody could see.
+      const percent = Math.round((stamina / settings.maxStamina) * 100);
+
+      if (percent !== shown) {
+        shown = percent;
+        fill.style.width = `${percent}%`;
+        root.classList.toggle("hud-stamina-full", percent >= 100);
+      }
     },
   };
 };
@@ -152,8 +189,10 @@ export const createHud = (
   const localPips = createPips(score, settings);
   const rivalPips = createPips(score, settings);
   const rival = createHealthBar(top, "rival", text.hud.rival, settings);
+  const stamina = createStaminaBar(root, settings);
   const callout = createCallout(root);
   let duelCallout = 0;
+  let parryCallout = 0;
 
   /** The message for the Round's phase, from the local Duelist's point of view. */
   const message = (
@@ -168,6 +207,10 @@ export const createHud = (
         detail: text.hud.round(round.number),
         heading: `${Math.max(Math.ceil(round.phaseSecondsLeft), 1)}`,
       };
+    }
+
+    if (round.phase === "fighting" && parryCallout > 0) {
+      return { heading: text.hud.parry };
     }
 
     if (round.phase === "fighting") {
@@ -205,6 +248,20 @@ export const createHud = (
       }
 
       duelCallout = Math.max(duelCallout - seconds, 0);
+
+      const mine = (type: DuelEvent["type"]) =>
+        events.some(
+          (event) =>
+            event.type === type &&
+            "duelistId" in event &&
+            event.duelistId === localId
+        );
+
+      parryCallout = mine("parry")
+        ? settings.parryCalloutSeconds
+        : Math.max(parryCallout - seconds, 0);
+
+      stamina.show(self?.stamina ?? 0, mine("stamina-short"), seconds);
 
       local.show(self?.health ?? 0, seconds);
       rival.show(opponent?.health ?? 0, seconds);

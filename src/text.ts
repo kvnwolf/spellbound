@@ -21,10 +21,14 @@ export const text = {
     duel: "¡Duelo!",
     knockout: "K.O.",
     local: "Tú",
+    /** Called out when the local Duelist Parries a Spell. */
+    parry: "¡Parry!",
     rival: "Rival",
     round: (number: number) => `Ronda ${number}`,
     roundLost: "Ronda para el rival",
     roundWon: "Ronda para ti",
+    /** Label of the Stamina bar. */
+    stamina: "Aguante",
     victory: "¡Victoria!",
   },
   menu: { hint: "✕ Confirmar     ○ Atrás" },

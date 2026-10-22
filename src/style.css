@@ -302,6 +302,54 @@ body {
   box-shadow: 0 0 8px rgb(216 180 106 / 80%);
 }
 
+/* The local Duelist's Stamina, bottom-left: slim, pale, quieter when full. */
+.hud-stamina {
+  position: absolute;
+  inset: auto auto clamp(1rem, 4vh, 2rem) clamp(1rem, 3vw, 1.5rem);
+  display: grid;
+  gap: 0.3rem;
+  width: min(16rem, 40vw);
+  transition: opacity 400ms ease-out;
+}
+
+.hud-stamina-full {
+  opacity: 0.55;
+}
+
+.hud-stamina-label {
+  color: var(--parchment);
+  font-size: 0.8rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.hud-stamina-bar {
+  position: relative;
+  height: 0.45rem;
+  overflow: hidden;
+  border: 1px solid rgb(216 180 106 / 60%);
+  border-radius: 1px;
+  background: var(--ink);
+  box-shadow: 0 0 8px rgb(0 0 0 / 50%);
+}
+
+.hud-stamina-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 100%;
+  background: linear-gradient(180deg, #d8efd0, #7fae86);
+}
+
+/* A defence refused for want of Stamina: the bar flares red. */
+.hud-stamina-short .hud-stamina-bar {
+  border-color: #e0574a;
+  box-shadow: 0 0 12px rgb(224 87 74 / 80%);
+}
+
+.hud-stamina-short .hud-stamina-label {
+  color: #f08a7e;
+}
+
 .hud-callout {
   position: absolute;
   inset: 34% 0 auto;

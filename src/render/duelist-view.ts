@@ -91,7 +91,11 @@ export const createDuelistView = (
   return {
     object,
     show: (sample, seconds, wantedGlow) => {
-      object.position.set(sample.position.x, 0, sample.position.z);
+      object.position.set(
+        sample.position.x,
+        sample.elevation,
+        sample.position.z
+      );
       object.rotation.y = Math.atan2(sample.facing.x, sample.facing.z);
 
       // Knocked Out: topple onto the back. Staggered: rock back on the heels.

@@ -29,6 +29,7 @@ import { createCameraShake } from "./render/camera-shake";
 import { createChargeRing } from "./render/charge-ring";
 import { chargingWands } from "./render/charging-wands";
 import { createCourtyardScene, torchSpots } from "./render/courtyard-view";
+import { createDefenceVfx } from "./render/defence-vfx";
 import { createDuelistView } from "./render/duelist-view";
 import { sampleDuelist } from "./render/interpolate";
 import type { DuelistSample } from "./render/interpolate";
@@ -188,6 +189,10 @@ const start = async () => {
   const vfx = createSpellVfx();
   scene.add(vfx.object);
 
+  // Protego domes and Parry flashes.
+  const defenceVfx = createDefenceVfx(tuning.protego);
+  scene.add(defenceVfx.object);
+
   // The camera must also stay clear of the torch stands on the parapet, which
   // are scenery rather than Cover, so Spells ignore them.
   const cameraObstacles = {
@@ -256,6 +261,7 @@ const start = async () => {
   const hud = createHud(hudElement, localId, {
     ...tuning.hud,
     maxHealth: tuning.duelist.health,
+    maxStamina: tuning.defence.stamina.max,
     roundsToWin: tuning.round.roundsToWin,
   });
 
@@ -374,6 +380,8 @@ const start = async () => {
       views.get(state.id)?.show(sample, seconds, glow);
     }
 
+    defenceVfx.show(samples, seconds);
+
     const localSample = samples.get(localId);
     const fallen = current.duelists.find((each) => each.knockedOut);
     const fallenSample = fallen ? samples.get(fallen.id) : undefined;
@@ -465,6 +473,7 @@ const start = async () => {
 
     shakeOnHits(events);
     vfx.handle(events);
+    defenceVfx.handle(events);
     vfx.update(
       previous.spells,
       current.spells,
