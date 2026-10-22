@@ -2,8 +2,8 @@
 
 - **Stack.** Bun (package manager and script runner), Vite, strict TypeScript 7 (its `tsc` is the native `tsgo` compiler), Ultracite on oxlint and oxfmt, Vitest, `three` r186 with `WebGPURenderer` (import from `three/webgpu` and `three/tsl`).
 - **Gate.** A change is done when `bun run typecheck`, `bun run lint`, `bun run test` and `bun run build` all pass. CI (`.github/workflows/ci.yml`) runs the same four on every pull request and every push to `main`. `bun run fix` applies the lint and format autofixes.
-- **Tests** live at two seams only: the Duel simulation (`src/duel`) and the DualSense adapter (`src/dualsense`, plus the human Controller's Intent mapping). They drive the seam from outside and assert snapshots, events or mapped output, never internals.
-- **Pure logic** (`src/duel`, `src/dualsense/input.ts`, `src/controllers`) never imports three.js or the DOM. Every tuning number lives in `src/tuning.ts`; every player-facing string, in Spanish, in `src/text.ts`.
+- **Tests** live at three seams only: the Duel simulation (`src/duel`), the DualSense adapter (`src/dualsense`, plus the human Controller's Intent mapping) and the screen state machine (`src/screens`). They drive the seam from outside and assert snapshots, events or mapped output, never internals.
+- **Pure logic** (`src/duel`, `src/dualsense/input.ts`, `src/dualsense/menu-input.ts`, `src/controllers`, `src/screens`) never imports three.js or the DOM. Every tuning number lives in `src/tuning.ts`; every player-facing string, in Spanish, in `src/text.ts`.
 - **Verification.** Anything a person can see or feel is also checked at runtime in Chrome on the dev server (`bun run dev`), with a DualSense.
 - **Commits.** Conventional commits: `<type>(<scope>): <subject>`, imperative, lowercase, no trailing period.
 

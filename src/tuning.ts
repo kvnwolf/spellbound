@@ -244,6 +244,18 @@ export const tuning = {
    */
   knockoutCamera: { standOff: 2.5 },
 
+  /** Navigating menus with the D-pad and the left stick. */
+  menu: {
+    /** Seconds a direction must be held before it starts repeating. */
+    repeatDelay: 0.4,
+    /** Seconds between repeats once a held direction is repeating. */
+    repeatInterval: 0.14,
+    /** The left stick must tilt past this (0 to 1) to step a menu once. */
+    stickPress: 0.6,
+    /** It must come back inside this before it can step again: one tilt, one step. */
+    stickRelease: 0.35,
+  },
+
   /** The render pipeline: tone, bloom and anti-aliasing quality knobs. */
   render: {
     bloom: {
@@ -274,6 +286,12 @@ export const tuning = {
     resultSeconds: 2,
     /** The first Team to win this many Rounds wins the Duel. */
     roundsToWin: 2,
+  },
+
+  /** The game flow between the title, the Difficulty select, the Duel and its result. */
+  screens: {
+    /** The Duel's victory or defeat call-out plays this long before the result screen. */
+    resultDelaySeconds: 3,
   },
 
   /** Stupefy, the Light Spell. Damage is in Health points. */

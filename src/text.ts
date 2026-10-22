@@ -1,6 +1,17 @@
 /** Every player-facing string in Spellbound, in Spanish, so translation stays in one place. */
 export const text = {
   connectDualSense: "Conecta tu DualSense y pulsa cualquier botón",
+  difficulty: {
+    duelista: "Duelista",
+    heading: "Elige tu dificultad",
+    maestro: "Maestro",
+    novato: "Novato",
+  },
+  disconnected: {
+    heading: "Reconecta tu mando",
+    reconnected: "Pulsa cualquier botón para continuar",
+    waiting: "Conecta tu DualSense para continuar",
+  },
   hud: {
     defeat: "Derrota",
     draw: "Empate",
@@ -14,7 +25,19 @@ export const text = {
     roundWon: "Ronda para ti",
     victory: "¡Victoria!",
   },
+  menu: { hint: "✕ Confirmar     ○ Atrás" },
+  pause: {
+    continue: "Continuar",
+    heading: "Pausa",
+    quit: "Salir",
+    restart: "Reiniciar",
+  },
+  pressToStart: "Pulsa ✕ para comenzar",
   requiresDualSense: "Spellbound requiere un mando DualSense",
+  result: {
+    changeDifficulty: "Cambiar dificultad",
+    rematch: "Revancha",
+  },
   title: "Spellbound",
   unsupportedBrowser: {
     body: "Spellbound necesita WebGPU. Ábrelo en una versión reciente de Chrome.",
