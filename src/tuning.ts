@@ -13,6 +13,62 @@ export const tuning = {
   },
 
   camera: {
+    /**
+     * The soft lock-on keeps the Target in frame, but the framing leans toward
+     * the aim: the point the camera looks at is shifted by this fraction of the
+     * aim offset from the Target (the rest of the offset shows as the reticle
+     * moving across the screen).
+     */
+    aimFollow: {
+      /** Sideways share of the aim offset the framing follows. */
+      horizontal: 0.6,
+      /** Vertical share of the aim offset the framing follows. */
+      vertical: 0.5,
+    },
+    /**
+     * Keeping the view clear of Arena geometry. The camera is a disc of radius
+     * `margin` that must stay inside the walls and out of every column, and
+     * no column may stand between it and the local Duelist.
+     */
+    clearance: {
+      /** A line of sight passing within this many metres outside a column's clearance is eased in rather than cut off, so sweeping past its edge does not pop. */
+      columnFeather: 0.8,
+      /** How far ahead (seconds) the camera looks along its swing round the Duelist, so it starts pulling in before it sweeps behind a column. */
+      lookAhead: 0.15,
+      /** Camera never nearer than this to a wall or column. Keep it below the Duelist's body radius so the Duelist always stands in the clear area. */
+      margin: 0.35,
+      /** Largest swing round the Duelist, from where it is wanted, searched for open ground (radians; PI is all the way round, for corners). */
+      maxSwing: 3.1,
+      /** The nearest the camera should be to the Duelist: closer than this it prefers to swing round to open ground. */
+      minDistance: 1.8,
+      /** Exponential rate, per second, at which the camera eases in toward an obstruction it sees coming. */
+      pullInSharpness: 14,
+      /** Exponential rate, per second, at which a pulled-in camera eases back out once the way is open (pulling in is immediate, since it must never be blocked). */
+      releaseSharpness: 4,
+      /** Once swung beyond this angle (radians) to one side the camera stays on that side instead of flipping across, e.g. while the Duelist circles a Target next to a wall. */
+      sideLock: 0.2,
+      /** What a radian of swing costs, in metres of lost camera distance: higher swings less. */
+      swingCost: 1.4,
+      /** Exponential smoothing rate of the swing itself, per second: how fast the camera slides round to open ground and back. */
+      swingSharpness: 9,
+      /** Search resolution of that swing (radians). */
+      swingStep: 0.1,
+      /** Extra cost per metre the camera ends up closer than `minDistance`. */
+      tooCloseCost: 3,
+    },
+    /**
+     * When the Target is close the camera pulls back and rises so both
+     * Duelists stay in frame; the effect fades in between `startsAt` and
+     * `fullAt` (metres between the two Duelists).
+     */
+    closeTarget: {
+      fullAt: 1.2,
+      /** Extra camera height at full effect. */
+      lift: 0.9,
+      /** Extra distance behind the Duelist at full effect. */
+      pullBack: 2.2,
+      startsAt: 6,
+    },
     /** Distance behind the local Duelist, away from the Target. */
     distance: 4.6,
     /** Where the camera looks, from the Duelist (0) to the Target (1). */
@@ -21,6 +77,16 @@ export const tuning = {
     followSharpness: 7,
     fov: 55,
     height: 2.4,
+    /**
+     * When the camera has swung round to the side (pinned against a wall) the
+     * look-at is turned toward the local Duelist as far as needed to keep them
+     * inside this share of the horizontal half field of view (0 is dead
+     * centre, 1 the edge of the screen). The Target may leave the frame then;
+     * the local Duelist never does.
+     */
+    keepDuelistWithin: 0.65,
+    /** The camera never swings round the Duelist faster than this (radians per second), even when the Target is circled at arm's length. */
+    maxYawSpeed: 4,
     /** Sideways offset to the right of the Duelist: the over-the-shoulder view. */
     shoulder: 0.9,
   },
@@ -145,6 +211,25 @@ export const tuning = {
   },
 
   input: {
+    /**
+     * How the right stick drives the aim offset. The raw stick is first shaped
+     * by a response curve, then eased by a critically damped spring, so the
+     * aim accelerates into a push and glides to rest on release.
+     */
+    aimResponse: {
+      /**
+       * Response curve: the stick deflection (0 to 1) is raised to this power.
+       * 1 is linear; higher is finer near the centre and faster at full tilt
+       * (2 gives a quarter of the aim at half tilt, all of it at full tilt).
+       */
+      curveExponent: 2,
+      /**
+       * Natural frequency of the spring that chases the shaped stick (rad/s).
+       * Higher is snappier; around 28 settles in about 0.17 s, light enough
+       * to feel alive but never a snap.
+       */
+      springFrequency: 28,
+    },
     /** Stick deflection below this radius reads as centred. */
     stickDeadZone: 0.12,
     /** Trigger travel below this value reads as released. */

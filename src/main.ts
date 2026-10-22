@@ -137,7 +137,13 @@ const start = async () => {
   const vfx = createSpellVfx();
   scene.add(vfx.object);
 
-  const rig = createCameraRig(tuning.camera, tuning.duelist.chestHeight, shake);
+  const rig = createCameraRig(
+    tuning.camera,
+    tuning.duelist.chestHeight,
+    courtyard,
+    shake
+  );
+
   const frame = createFramePipeline(renderer, scene, rig.camera, tuning.render);
 
   const reticleElement = element("#reticle", HTMLElement);
