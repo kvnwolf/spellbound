@@ -328,6 +328,12 @@ export const tuning = {
   /** Lock-on: R3 locks a Duelist onto an opponent, who becomes their Target. */
   lockOn: {
     /**
+     * R3 only Locks On to an opponent whose body is within this angle of the
+     * crosshair (radians, measured like Aim Assist: to the body's edge, as
+     * seen from the free camera), on top of range and sight (about 20 degrees).
+     */
+    acquireAngle: 0.35,
+    /**
      * Spells cast while Locked On fly at the Target's current chest (no lead)
      * and turn toward it at no more than `turnRate` (radians per second) for
      * their first `seconds`: enough to follow a small step, never a strafe.

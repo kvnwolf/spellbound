@@ -735,6 +735,33 @@ describe("Lock-on", () => {
     expect(duelist(duel, "hero").aim.pitch).toBeCloseTo(tuning.aim.pitch.rest);
   });
 
+  it("locks on only to an opponent within the acquire cone of the crosshair", () => {
+    // The rival 10 m ahead, the crosshair swung well off it to the right:
+    // its body is about 0.29 rad (17 degrees) off in one case, 0.45 (26) in the other.
+    const inside = fight(openArena, withoutAimAssist);
+    turn(inside, { pitch: 0, yaw: 0.45 });
+    toggleLock(inside);
+
+    expect(duelist(inside, "hero").targetId).toBe("rival");
+
+    const outside = fight(openArena, withoutAimAssist);
+    turn(outside, { pitch: 0.3, yaw: 0.65 });
+    const before = duelist(outside, "hero").aim.pitch;
+
+    const events = [
+      ...toggleLock(outside),
+      ...run(outside, secondsToTicks(tuning.lockOn.recentreSeconds)),
+    ];
+
+    // Nothing lockable: the pitch recentres, as with no opponent at all.
+    expect(ofType(events, "lock-on")).toStrictEqual([]);
+    expect(duelist(outside, "hero").targetId).toBeNull();
+    expect(duelist(outside, "hero").aim.pitch).toBeLessThan(before);
+    expect(duelist(outside, "hero").aim.pitch).toBeCloseTo(
+      tuning.aim.pitch.rest
+    );
+  });
+
   it("does not lock on to an opponent out of range", () => {
     const duel = createDuel({
       arena: { ...openArena, bounds: { halfDepth: 40, halfWidth: 10 } },
