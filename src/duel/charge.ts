@@ -18,8 +18,9 @@ const slack = 1e-6;
  * - `none`: not Charging.
  * - `building`: filling; a release casts a partial Charge.
  * - `perfect`: in the Perfect Release window right as it fills; a release is empowered.
- * - `full`: full and safe to hold, waiting for an opening.
- * - `overcharged`: held past the safe window; it Backfires.
+ * - `full`: full and past the Perfect Release window, a moment from
+ *   Backfiring (the views flash red as the warning).
+ * - `overcharged`: held past the moment after full; it Backfires.
  */
 export type ChargeStage =
   | "building"
@@ -27,6 +28,10 @@ export type ChargeStage =
   | "none"
   | "overcharged"
   | "perfect";
+
+/** When a held Charge Backfires, in seconds since the press: a short moment past full. */
+const backfireAt = (settings: ChargeTuning) =>
+  settings.fullSeconds + settings.backfire.delaySeconds;
 
 export const chargeStage = (
   seconds: number,
@@ -38,7 +43,7 @@ export const chargeStage = (
     return "none";
   }
 
-  if (seconds > settings.safeSeconds + slack) {
+  if (seconds > backfireAt(settings) + slack) {
     return "overcharged";
   }
 
@@ -54,12 +59,12 @@ export const chargeLevel = (seconds: number, settings: ChargeTuning) =>
   clamp(seconds / settings.fullSeconds, 0, 1);
 
 /**
- * How close a held full Charge is to Overcharging: 0 until the Perfect
- * Release window closes, rising to 1 at the moment it would Backfire. The
- * views escalate their warnings with it.
+ * How close a full Charge is to Backfiring: 0 as it fills, rising to 1 at the
+ * moment it Backfires. The wand sparks escalate with it.
  */
-export const overchargeShare = (seconds: number, settings: ChargeTuning) => {
-  const safeFrom = settings.fullSeconds + settings.perfectRelease.late;
-
-  return clamp((seconds - safeFrom) / (settings.safeSeconds - safeFrom), 0, 1);
-};
+export const overchargeShare = (seconds: number, settings: ChargeTuning) =>
+  clamp(
+    (seconds - settings.fullSeconds) / settings.backfire.delaySeconds,
+    0,
+    1
+  );

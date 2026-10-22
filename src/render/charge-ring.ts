@@ -5,18 +5,16 @@
  * fades). It reads the snapshot's `chargeSeconds` through the shared Charge
  * windows (`duel/charge.ts`), so it always agrees with the simulation:
  *
- * - The inner ring fills clockwise from the top as the Charge builds, in
- *   ember orange.
- * - A gold band straddles the top: the Perfect Release window. The fill
- *   completes at the tick mark at the top, the Perfect Release point; inside
- *   the window the ring burns white-gold.
- * - Past the window the ring turns gold (the safe window) and an outer arc
- *   counts down the time left before Overcharge, shifting gold to red and
- *   pulsing ever faster as the Backfire nears.
+ * - The ring fills clockwise from the top as the Charge builds, in ember
+ *   orange, and is full at the top.
+ * - A gold band straddles the top: the Perfect Release window. Inside the
+ *   window the ring burns white-gold.
+ * - A moment past full the Charge is about to Backfire: the full ring flashes
+ *   red, quickly, as the only warning. Nothing counts down or drains.
  * - A release flies the ring out: a quick fade, a big white-gold flare for a
  *   Perfect Release, or a red shatter for a Backfire.
  */
-import { chargeLevel, chargeStage, overchargeShare } from "../duel/charge";
+import { chargeLevel, chargeStage } from "../duel/charge";
 import type { DuelEvent, DuelistId } from "../duel/duel";
 import type { Tuning } from "../tuning";
 
@@ -44,7 +42,6 @@ const svgNs = "http://www.w3.org/2000/svg";
 /** The ring's geometry in its 100 × 100 view box. */
 const centre = 50;
 const innerRadius = 40;
-const outerRadius = 47;
 
 const circle = (parent: SVGElement, className: string, radius: number) => {
   const arc = document.createElementNS(svgNs, "circle");
@@ -76,16 +73,6 @@ export const createChargeRing = (
   circle(svg, "charge-track", innerRadius);
   const band = circle(svg, "charge-window", innerRadius);
   circle(svg, "charge-fill", innerRadius);
-  circle(svg, "charge-safe", outerRadius);
-
-  // The Perfect Release point: a tick across the ring at the top.
-  const mark = document.createElementNS(svgNs, "line");
-  mark.setAttribute("class", "charge-mark");
-  mark.setAttribute("x1", `${centre}`);
-  mark.setAttribute("x2", `${centre}`);
-  mark.setAttribute("y1", `${centre - innerRadius - 6}`);
-  mark.setAttribute("y2", `${centre - innerRadius + 6}`);
-  svg.append(mark);
 
   // The Perfect Release window as a band across the top: `late` past the
   // point, then (after a gap) `early` before it, up to the end of the ring.
@@ -161,19 +148,19 @@ export const createChargeRing = (
       delete root.dataset.flourish;
       root.dataset.stage = stage;
 
-      const danger = overchargeShare(chargeSeconds, confringo);
-      const { from, to } = ring.warnPulse;
-      pulse += seconds * (from + (to - from) * danger) * Math.PI * 2;
+      pulse += seconds * ring.warnPulse * Math.PI * 2;
 
       root.style.setProperty(
         "--level",
         chargeLevel(chargeSeconds, confringo).toFixed(4)
       );
-      root.style.setProperty("--overcharge", danger.toFixed(4));
-      // The warning throbs harder and faster as Overcharge nears.
+      // The warning flashes the full ring red, quickly, until it bursts.
       root.style.setProperty(
         "--throb",
-        (1 - 0.7 * danger * (0.5 + 0.5 * Math.sin(pulse))).toFixed(3)
+        (stage === "full"
+          ? 0.25 + 0.75 * (0.5 + 0.5 * Math.sin(pulse))
+          : 1
+        ).toFixed(3)
       );
     },
   };

@@ -64,13 +64,12 @@ body {
 
 /*
  * The Charge ring round the screen centre (see charge-ring.ts), its own
- * element beside the reticle. --level (0 to 1), --overcharge (0 to 1) and
- * --throb (the warning pulse) are set per frame; data-stage follows the
+ * element beside the reticle. --level (0 to 1) and --throb (the warning
+ * flash) are set per frame; data-stage follows the
  * Charge and data-flourish marks how a release flew out.
  */
 #charge-ring {
   --level: 0;
-  --overcharge: 0;
   --throb: 1;
   --ember: #ff9a4a;
   --danger: #ff3a24;
@@ -113,25 +112,6 @@ body {
   filter: drop-shadow(0 0 3px rgb(255 122 42 / 80%));
 }
 
-/* The time left before Overcharge, emptying from full. */
-#charge-ring .charge-safe {
-  stroke: color-mix(
-    in oklab,
-    var(--gold),
-    var(--danger) calc(var(--overcharge) * 100%)
-  );
-  stroke-width: 3;
-  stroke-dasharray: calc(1 - var(--overcharge)) 1;
-  opacity: 0;
-}
-
-/* The Perfect Release point. */
-#charge-ring .charge-mark {
-  stroke: #fff4d0;
-  stroke-width: 2.5;
-  stroke-linecap: round;
-}
-
 /* In the Perfect Release window: now! White-gold and bright. */
 #charge-ring[data-stage="perfect"] .charge-fill {
   stroke: #fff2c0;
@@ -143,18 +123,11 @@ body {
   opacity: 1;
 }
 
-/* Full and safe to hold: gold, reddening and throbbing toward Overcharge. */
+/* Full and a moment from Backfiring: the whole ring flashes red. */
 #charge-ring[data-stage="full"] .charge-fill {
-  stroke: color-mix(
-    in oklab,
-    var(--gold),
-    var(--danger) calc(var(--overcharge) * 100%)
-  );
-  opacity: var(--throb);
-}
-
-#charge-ring[data-stage="perfect"] .charge-safe,
-#charge-ring[data-stage="full"] .charge-safe {
+  stroke: var(--danger);
+  stroke-width: 6;
+  filter: drop-shadow(0 0 6px rgb(255 58 36 / 90%));
   opacity: var(--throb);
 }
 
@@ -163,8 +136,7 @@ body {
   stroke-width: 8;
 }
 
-#charge-ring[data-flourish="backfire"] circle,
-#charge-ring[data-flourish="backfire"] .charge-mark {
+#charge-ring[data-flourish="backfire"] circle {
   stroke: var(--danger);
 }
 

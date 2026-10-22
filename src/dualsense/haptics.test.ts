@@ -59,6 +59,13 @@ const hit = (targetId: string, strong = false): DuelEvent => ({
   type: "spell-hit",
 });
 
+const backfire = (duelistId: string): DuelEvent => ({
+  damage: 8,
+  duelistId,
+  position: { x: 0, y: 1, z: 0 },
+  type: "backfire",
+});
+
 /** A director for the local Duelist, and a way to play one frame of the Duel through it. */
 const direct = () => {
   const director = createHapticsDirector(local, settings);
@@ -112,6 +119,17 @@ describe(createHapticsDirector, () => {
       left: 1,
       right: 1,
     });
+  });
+
+  it("treats a Backfire that hurts the local Duelist as a hit taken: rumble and lightbar flash", () => {
+    const frame = direct();
+
+    expect(frame([backfire(opponent)])).toStrictEqual(direct()());
+
+    const felt = frame([backfire(local)]);
+
+    expect(felt.rumble).toStrictEqual({ left: 0.8, right: 0.6 });
+    expect(felt.lightbar).toStrictEqual(settings.lightbar.flash);
   });
 
   it("keeps the stronger of overlapping pulses on each motor", () => {

@@ -86,6 +86,11 @@ export const createHapticsDirector = (
       return [event.spell.strong ? settings.strongHitTaken : settings.hitTaken];
     }
 
+    // A Backfire hurts its caster like any hit.
+    if (event.type === "backfire" && event.duelistId === localId) {
+      return [settings.hitTaken];
+    }
+
     return [];
   };
 
@@ -114,7 +119,10 @@ export const createHapticsDirector = (
       for (const event of events) {
         pulses.push(...pulsesFor(event).map((pulse) => ({ age: 0, pulse })));
 
-        if (event.type === "spell-hit" && event.targetId === localId) {
+        if (
+          (event.type === "spell-hit" && event.targetId === localId) ||
+          (event.type === "backfire" && event.duelistId === localId)
+        ) {
           sinceHit = 0;
         }
       }

@@ -159,18 +159,23 @@ export const tuning = {
    * Confringo, the Heavy Spell, and its Charge. Holding the Heavy Spell
    * builds the Charge from 0 to full over `fullSeconds`; releasing casts
    * Confringo with damage and knockback scaled by the Charge (a tap still
-   * casts a weak one). A full Charge is safe to hold until `safeSeconds`;
-   * held past that it Overcharges and Backfires. Damage is in Health points.
+   * casts a weak one). A full Charge cannot be held: a very short moment
+   * (`backfire.delaySeconds`) after it fills, it Overcharges and Backfires.
+   * Damage is in Health points.
    */
   confringo: {
-    /** A Backfire casts nothing and Staggers the caster this long. */
-    backfireStaggerSeconds: 1,
+    /**
+     * A Backfire casts nothing, hurts the caster for `damage` (it can Knock
+     * them Out) and Staggers them for `staggerSeconds`. It comes
+     * `delaySeconds` after the Charge fills; that moment is the only warning.
+     */
+    backfire: { damage: 8, delaySeconds: 0.25, staggerSeconds: 1 },
     /** Movement speed is multiplied by this while Charging: Charging is a commitment. */
     chargeMoveScale: 0.45,
     /** Damage at the smallest Charge (a tap) and at a full Charge. */
     damage: { full: 28, min: 10 },
     /** Seconds of holding to fill the Charge. */
-    fullSeconds: 0.8,
+    fullSeconds: 0.5,
     /**
      * A hit pushes the Duelist it lands on back along the Spell's flight by
      * this many metres (smallest Charge to full), sliding to a stop over
@@ -182,15 +187,13 @@ export const tuning = {
      * `early` seconds before full until `late` seconds after it counts. It
      * casts a full Charge, empowered.
      */
-    perfectRelease: { early: 0.05, late: 0.1 },
+    perfectRelease: { early: 0.04, late: 0.08 },
     /** A Perfect Release multiplies damage and knockback by this. */
     perfectScale: 1.35,
     /** The projectile is a sphere of this radius for collisions: a big, slow blast. */
     radius: 0.3,
     /** After a release, no Light Spell can follow for this long. */
     recoverySeconds: 0.35,
-    /** A full Charge can be held this long from the press; one tick more Backfires. */
-    safeSeconds: 1.5,
     speed: 17,
   },
 
@@ -381,7 +384,8 @@ export const tuning = {
       backfireSeconds: 0.5,
       perfectSeconds: 0.45,
       releaseSeconds: 0.22,
-      warnPulse: { from: 2.5, to: 12 },
+      /** Pulses per second of the red flash between the full Charge and its Backfire. */
+      warnPulse: 14,
     },
     /** How long "¡Duelo!" stays up once control is given. */
     duelCalloutSeconds: 0.9,

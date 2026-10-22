@@ -105,7 +105,7 @@ export interface DuelistState {
   /**
    * How long the Heavy Spell has been Charging, in seconds since the press;
    * 0 when not Charging. A full Charge takes `tuning.confringo.fullSeconds`,
-   * and past `safeSeconds` it Backfires (see `chargeStage`).
+   * and a moment after that it Backfires (see `chargeStage`).
    */
   readonly chargeSeconds: number;
   /** Seconds left sliding back from a Confringo hit, unable to move or cast; 0 when not. */
@@ -202,9 +202,10 @@ export type DuelEvent =
       readonly duelistId: DuelistId;
       readonly spell: SpellState;
     }
-  /** A Duelist held a full Charge too long: no Spell, and they are Staggered. `position` is their Wand tip. */
+  /** A Duelist held a full Charge too long: no Spell, they are hurt for `damage` and Staggered. `position` is their Wand tip. */
   | {
       readonly type: "backfire";
+      readonly damage: number;
       readonly duelistId: DuelistId;
       readonly position: Point3;
     }
@@ -1072,6 +1073,8 @@ export const createDuel = (config: DuelConfig): Duel => {
     spells: readonly SpellState[];
     winner: TeamId | null;
     readonly events: DuelEvent[];
+    /** What Backfires cost their casters this tick, applied once the Duelists have acted. */
+    readonly backfires: Map<DuelistId, number>;
   }
 
   const { defence } = tuning;
@@ -1774,18 +1777,21 @@ export const createDuel = (config: DuelConfig): Duel => {
   };
 
   /**
-   * Overcharge: a Charge held past its safe window Backfires. No Spell
-   * leaves the Wand, and the caster is Staggered.
+   * Overcharge: a Charge held a moment past full Backfires. No Spell
+   * leaves the Wand, and the caster is hurt and Staggered.
    */
   const backfire = (
     self: DuelistState,
     book: Bookkeeping,
-    events: DuelEvent[]
+    events: DuelEvent[],
+    backfires: Map<DuelistId, number>
   ): DuelistState => {
     book.chargeTicks = 0;
     book.queued = false;
-    book.staggerTicks = ticksOf(confringo.backfireStaggerSeconds);
+    book.staggerTicks = ticksOf(confringo.backfire.staggerSeconds);
+    backfires.set(self.id, confringo.backfire.damage);
     events.push({
+      damage: confringo.backfire.damage,
       duelistId: self.id,
       position: wandTip(self, tuning),
       type: "backfire",
@@ -1895,10 +1901,10 @@ export const createDuel = (config: DuelConfig): Duel => {
       const release = spellsOf(book, intent, guard, pressed, heavyPressed);
       const chargeSeconds = book.chargeTicks / tuning.tickRate;
 
-      // Overcharge: held past the safe window, the Charge Backfires. No
-      // Spell leaves the Wand, and the caster is Staggered.
+      // Overcharge: held a moment past full, the Charge Backfires. No
+      // Spell leaves the Wand, and the caster is hurt and Staggered.
       if (chargeStage(chargeSeconds, confringo) === "overcharged") {
-        return backfire(defended, book, draft.events);
+        return backfire(defended, book, draft.events, draft.backfires);
       }
 
       if (release) {
@@ -2027,15 +2033,18 @@ export const createDuel = (config: DuelConfig): Duel => {
   };
 
   const step = (intents: Readonly<Record<DuelistId, Intent>>): DuelTick => {
-    const draft: Draft = { ...current, events: [] };
+    const draft: Draft = { ...current, backfires: new Map(), events: [] };
 
     advanceClock(draft);
     applyDamage(draft, flySpells(draft));
     decideRound(draft);
-    cast(
-      draft,
-      act(draft, (id) => intents[id] ?? idleIntent)
-    );
+
+    const releases = act(draft, (id) => intents[id] ?? idleIntent);
+
+    // A Backfire hurts its caster like any hit, and can Knock them Out.
+    applyDamage(draft, draft.backfires);
+    decideRound(draft);
+    cast(draft, releases);
 
     current = {
       duelists: draft.duelists,

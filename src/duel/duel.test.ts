@@ -1103,11 +1103,16 @@ const movedAlong = (duel: Duel, velocity: Point3 | undefined) => {
   return Math.abs(cross) / Math.hypot(flight.x, flight.z) < 1e-9 && dot > 0;
 };
 
-/** The hero holds the Heavy Spell one tick past the safe window; returns those ticks' events. */
+/** How long the Charge Backfires after the press: the fill time plus the short moment past full. */
+const backfireSeconds =
+  tuning.confringo.fullSeconds + tuning.confringo.backfire.delaySeconds;
+
+/** A Charge held full but short of its Backfire, and outside the Perfect Release window. */
+const heldFull = 0.68;
+
+/** The hero holds the Heavy Spell one tick past the moment it Backfires; returns those ticks' events. */
 const overcharge = (duel: Duel): DuelEvent[] =>
-  run(duel, secondsToTicks(tuning.confringo.safeSeconds) + 1, {
-    hero: chargeHeavy,
-  });
+  run(duel, secondsToTicks(backfireSeconds) + 1, { hero: chargeHeavy });
 
 /** The launch velocity of a quick Confringo aimed just outside the edge of a rival 14 m away. */
 const confringoLaunch = (settings: Tuning) => {
@@ -1121,10 +1126,10 @@ describe("Confringo and Charge", () => {
   it("Charges while the Heavy Spell is held and casts Confringo on release", () => {
     const duel = fight();
 
-    const [charging] = hold(duel, chargeHeavy, 0.4).duelists;
+    const [charging] = hold(duel, chargeHeavy, 0.25).duelists;
     const released = run(duel, 1);
 
-    expect(charging?.chargeSeconds).toBeCloseTo(0.4);
+    expect(charging?.chargeSeconds).toBeCloseTo(0.25);
     // Half the time to a full Charge is half a Charge.
     expect(ofType(released, "spell-cast")).toMatchObject([
       {
@@ -1139,17 +1144,21 @@ describe("Confringo and Charge", () => {
     expect(duelist(duel, "hero").chargeSeconds).toBe(0);
   });
 
-  it("fills the Charge in 0.8 s and caps it there", () => {
+  it("fills the Charge in 0.5 s and caps it there", () => {
     const duel = fight();
+    const events = chargeAndRelease(duel, heldFull);
 
-    const events = chargeAndRelease(duel, 1.2);
-
+    expect(tuning.confringo.fullSeconds).toBe(0.5);
     expect(ofType(events, "spell-cast")[0]?.spell.charge).toBe(1);
+    // Short of full, the Charge is the share of the fill time held.
+    expect(
+      ofType(chargeAndRelease(fight(), 0.4), "spell-cast")[0]?.spell.charge
+    ).toBeCloseTo(0.8);
   });
 
   it("deals heavy damage scaled by the Charge: a tap is weak, a full Charge strong", () => {
     const tap = confringoHit(0.2);
-    const full = confringoHit(1.2);
+    const full = confringoHit(heldFull);
 
     expect(tap.hit?.damage).toBeGreaterThan(tuning.confringo.damage.min);
     expect(tap.hit?.damage).toBeLessThan(full.hit?.damage ?? 0);
@@ -1165,7 +1174,7 @@ describe("Confringo and Charge", () => {
 
   it("knocks the Duelist it hits back along its flight, farther with more Charge", () => {
     const tap = confringoHit(0.2);
-    const full = confringoHit(1.2);
+    const full = confringoHit(heldFull);
 
     expect(pushedBack(full.duel)).toBeCloseTo(tuning.confringo.knockback.full);
     expect(pushedBack(tap.duel)).toBeGreaterThan(0);
@@ -1175,7 +1184,7 @@ describe("Confringo and Charge", () => {
 
   it("stops the Duelist it knocks back from moving or casting until they come to a stop", () => {
     const duel = fight();
-    const events = chargeAndRelease(duel, 1.2);
+    const events = chargeAndRelease(duel, heldFull);
     const velocity = ofType(events, "spell-cast")[0]?.spell.velocity;
 
     for (
@@ -1219,7 +1228,7 @@ describe("Confringo and Charge", () => {
     expect(crept / walked).toBeCloseTo(tuning.confringo.chargeMoveScale);
   });
 
-  describe.each([0.75, 0.8, 0.9])("released after %s s", (seconds) => {
+  describe.each([0.47, 0.5, 0.56])("released after %s s", (seconds) => {
     it("is a Perfect Release: a full Charge, empowered, with a Perfect Release event", () => {
       const { cast, events, hit } = confringoHit(seconds);
 
@@ -1235,7 +1244,7 @@ describe("Confringo and Charge", () => {
     });
   });
 
-  describe.each([0.7, 0.95])("released after %s s", (seconds) => {
+  describe.each([0.4, 0.68])("released after %s s", (seconds) => {
     it("is no Perfect Release", () => {
       const { cast, events, hit } = confringoHit(seconds);
 
@@ -1246,33 +1255,85 @@ describe("Confringo and Charge", () => {
   });
 
   it("knocks back farther after a Perfect Release", () => {
-    const perfect = confringoHit(0.8);
-    const full = confringoHit(1.2);
+    const perfect = confringoHit(0.5);
+    const full = confringoHit(heldFull);
 
     expect(pushedBack(perfect.duel)).toBeGreaterThan(pushedBack(full.duel));
   });
 
-  it("holds a full Charge safely until 1.5 s", () => {
+  it("holds a full Charge for only a moment: it Backfires 0.25 s past full", () => {
     const duel = fight();
 
-    const events = run(duel, secondsToTicks(1.5), { hero: chargeHeavy });
+    const safe = run(duel, secondsToTicks(backfireSeconds), {
+      hero: chargeHeavy,
+    });
 
-    expect(ofType(events, "backfire")).toStrictEqual([]);
-    expect(duelist(duel, "hero").chargeSeconds).toBeCloseTo(1.5);
+    expect(tuning.confringo.backfire.delaySeconds).toBe(0.25);
+    expect(ofType(safe, "backfire")).toStrictEqual([]);
+    expect(duelist(duel, "hero").chargeSeconds).toBeCloseTo(backfireSeconds);
+    expect(
+      ofType(run(duel, 1, { hero: chargeHeavy }), "backfire")
+    ).toHaveLength(1);
   });
 
-  it("Overcharges past 1.5 s and Backfires: no Spell, and the caster Staggered for about 1 s", () => {
+  it("Backfires: no Spell, the caster Staggered for about 1 s and hurt", () => {
     const duel = fight();
 
     const events = [...overcharge(duel), ...run(duel, 1)];
+    const [backfire] = ofType(events, "backfire");
 
-    expect(ofType(events, "backfire")).toMatchObject([{ duelistId: "hero" }]);
+    expect(backfire).toMatchObject({
+      damage: tuning.confringo.backfire.damage,
+      duelistId: "hero",
+    });
     expect(ofType(events, "spell-cast")).toStrictEqual([]);
     expect(duelist(duel, "hero").chargeSeconds).toBe(0);
     expect(duelist(duel, "hero").staggerSeconds).toBeCloseTo(
-      tuning.confringo.backfireStaggerSeconds,
+      tuning.confringo.backfire.staggerSeconds,
       1
     );
+  });
+
+  it("takes the Backfire damage off the caster's Health, about 8", () => {
+    const duel = fight();
+
+    overcharge(duel);
+
+    expect(tuning.confringo.backfire.damage).toBe(8);
+    expect(duelist(duel, "hero").health).toBe(
+      tuning.duelist.health - tuning.confringo.backfire.damage
+    );
+    expect(duelist(duel, "rival").health).toBe(tuning.duelist.health);
+  });
+
+  it("Knocks Out a caster whose Backfire takes their last Health: the Round goes to the opponent", () => {
+    const duel = fight();
+    const events: DuelEvent[] = [];
+
+    for (
+      let backfires = 0;
+      backfires < 30 && duel.snapshot().round.phase === "fighting";
+      backfires += 1
+    ) {
+      events.push(...overcharge(duel), ...run(duel, secondsToTicks(1.2)));
+    }
+
+    expect(duelist(duel, "hero")).toMatchObject({
+      health: 0,
+      knockedOut: true,
+    });
+    expect(
+      events.filter(
+        (event) => event.type === "knockout" || event.type === "round-end"
+      )
+    ).toMatchObject([
+      { duelistId: "hero", type: "knockout" },
+      { round: 1, type: "round-end", winner: "slytherin" },
+    ]);
+    expect(duel.snapshot().score).toStrictEqual({
+      gryffindor: 0,
+      slytherin: 1,
+    });
   });
 
   it("leaves a Backfired caster unable to move or cast for about 1 s", () => {
