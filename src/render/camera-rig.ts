@@ -1,6 +1,8 @@
 /**
  * The third-person camera. It is the only writer of the camera, and has two
- * framings it blends between (eased both ways, so changing never snaps):
+ * framings it eases between over `lockTransitionSeconds` (a smoothstep in
+ * time, both ways, so changing never snaps and is frame-rate independent;
+ * the camera swings round the Duelist rather than cutting through them):
  *
  * - **Free** (the default): the camera sits straight behind the aim pivot
  *   over the Duelist's right shoulder, looking along their Aim. The pivot is
@@ -102,6 +104,43 @@ const turnRight = (vector: GroundPoint, angle: number): GroundPoint => ({
 const lerp = (from: number, to: number, alpha: number) =>
   from + (to - from) * alpha;
 
+/** The unit direction `share` of the way from `from` to `to`, turning the short way in yaw. */
+const lookBetween = (from: Point3, to: Point3, share: number): Point3 => {
+  const yaw =
+    Math.atan2(from.x, -from.z) +
+    wrapAngle(Math.atan2(to.x, -to.z) - Math.atan2(from.x, -from.z)) * share;
+
+  const pitch = lerp(Math.asin(from.y), Math.asin(to.y), share);
+
+  return directionOf({ pitch, yaw });
+};
+
+/**
+ * The camera position `share` of the way from `from` to `to`, going round
+ * `centre` (the Duelist): the angle turns the short way and the distance
+ * eases, so the camera never cuts through the Duelist on the way.
+ */
+const eyeBetween = (
+  centre: GroundPoint,
+  from: Point3,
+  to: Point3,
+  share: number
+): Point3 => {
+  const fromX = from.x - centre.x;
+  const fromZ = from.z - centre.z;
+  const toX = to.x - centre.x;
+  const toZ = to.z - centre.z;
+  const fromAngle = Math.atan2(fromX, fromZ);
+  const angle = fromAngle + wrapAngle(Math.atan2(toX, toZ) - fromAngle) * share;
+  const radius = lerp(Math.hypot(fromX, fromZ), Math.hypot(toX, toZ), share);
+
+  return {
+    x: centre.x + Math.sin(angle) * radius,
+    y: lerp(from.y, to.y, share),
+    z: centre.z + Math.cos(angle) * radius,
+  };
+};
+
 export const createCameraRig = (
   { camera: settings, chestHeight, eye: aimEye }: CameraRigSettings,
   arena: ArenaLayout,
@@ -127,12 +166,16 @@ export const createCameraRig = (
   let placed = false;
   // The last Lock-on framing, kept while blending back out to the free camera.
   let lastFraming: Framing | undefined;
-  // 0 is the free camera, 1 the Lock-on framing.
+  // How far through the transition: 0 is the free camera, 1 the Lock-on
+  // framing. Moves at a steady rate in time; the easing is applied on top.
   let blend = 0;
   // The free camera's share of its full distance it is allowed out to.
   let freeReach = 1;
-  // The aim when the Lock-on framing took over. Locking turns the aim to the
-  // Target at once, so blending in from the free camera starts from this.
+  // The aim the free camera had on the last frame before the Lock-on framing
+  // took over. Locking turns the aim to the Target at once (within a tick),
+  // so the transition has to start from this, not from the new aim.
+  let lastFreeAim: Aim | undefined;
+  // The aim the free camera holds while the framing is on, or on its way out.
   let heldAim: Aim | undefined;
 
   // Where the camera looks, turned sideways just enough that the local
@@ -354,18 +397,21 @@ export const createCameraRig = (
     camera,
     follow: (free, framing, seconds) => {
       lastFraming = framing ?? lastFraming;
-      blend +=
-        ((framing ? 1 : 0) - blend) *
-        (1 - Math.exp(-settings.lockBlendSharpness * seconds));
+
+      const step = seconds / settings.lockTransitionSeconds;
+      blend = clamp(blend + (framing ? step : -step), 0, 1);
 
       // Fully back on the free camera: the next lock starts a fresh framing.
-      if (!framing && blend < 1e-3) {
-        blend = 0;
+      if (!framing && blend === 0) {
         placed = false;
         lastFraming = undefined;
       }
 
-      heldAim = framing ? (heldAim ?? free.aim) : undefined;
+      if (!framing) {
+        lastFreeAim = free.aim;
+      }
+
+      heldAim = framing ? (heldAim ?? lastFreeAim ?? free.aim) : undefined;
 
       const freeCamera = freePose(
         heldAim ? { ...free, aim: heldAim } : free,
@@ -379,17 +425,18 @@ export const createCameraRig = (
 
       const share = blend * blend * (3 - 2 * blend);
 
-      const look = unit3({
-        x: lerp(freeCamera.look.x, lockedCamera.look.x, share),
-        y: lerp(freeCamera.look.y, lockedCamera.look.y, share),
-        z: lerp(freeCamera.look.z, lockedCamera.look.z, share),
-      });
+      // Orientation turns the short way round, and the camera swings round
+      // the Duelist (angle and distance) rather than cutting across them.
+      const look = lookBetween(freeCamera.look, lockedCamera.look, share);
 
-      camera.position.set(
-        lerp(freeCamera.eye.x, lockedCamera.eye.x, share),
-        lerp(freeCamera.eye.y, lockedCamera.eye.y, share),
-        lerp(freeCamera.eye.z, lockedCamera.eye.z, share)
+      const eye = eyeBetween(
+        free.position,
+        freeCamera.eye,
+        lockedCamera.eye,
+        share
       );
+
+      camera.position.set(eye.x, eye.y, eye.z);
 
       camera.lookAt(
         camera.position.x + look.x,

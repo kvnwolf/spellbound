@@ -120,8 +120,8 @@ export const tuning = {
      * the local Duelist never does.
      */
     keepDuelistWithin: 0.65,
-    /** Exponential rate, per second, of the blend between the free camera and the Lock-on framing, both ways: never a snap. */
-    lockBlendSharpness: 6,
+    /** How long the camera takes to ease (smoothstep) between the free camera and the Lock-on framing, position and orientation, both ways: never a snap. */
+    lockTransitionSeconds: 0.35,
     /** The camera never swings round the Duelist faster than this (radians per second), even when the Target is circled at arm's length. */
     maxYawSpeed: 4,
     /** Sideways offset to the right of the Duelist: the over-the-shoulder view. */
