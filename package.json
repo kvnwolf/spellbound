@@ -1,0 +1,28 @@
+{
+  "name": "spellbound",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "lint": "ultracite check",
+    "fix": "ultracite fix",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "three": "0.186.1"
+  },
+  "devDependencies": {
+    "@types/three": "0.186.0",
+    "oxfmt": "0.74.0",
+    "oxlint": "1.89.0",
+    "oxlint-tsgolint": "7.0.2004",
+    "typescript": "7.0.2",
+    "ultracite": "8.0.1",
+    "vite": "8.3.5",
+    "vitest": "5.0.5"
+  }
+}
