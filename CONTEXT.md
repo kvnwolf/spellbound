@@ -37,8 +37,16 @@ The tuning profile of an AI Controller (reaction time, accuracy, aggression), ch
 _Avoid_: Level, skill
 
 **Target**:
-The opposing Duelist a Duelist is locked onto; aim is expressed as an offset around the Target.
+The opposing Duelist a Duelist is Locked On to.
 _Avoid_: Enemy, lock
+
+**Lock-on**:
+The state in which a Duelist faces their Target and casts at it; the player toggles it, and it breaks when the Target is Knocked Out or stays out of sight behind Cover.
+_Avoid_: Target lock, Z-targeting, soft lock
+
+**Aim Assist**:
+The gentle pull a free-aiming Duelist's aim and casts get toward an opponent close to the crosshair.
+_Avoid_: Auto-aim, magnetism
 
 ### Combat
 
