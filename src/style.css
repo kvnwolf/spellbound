@@ -235,7 +235,12 @@ body {
 }
 
 /* Menus share the overlay: a smaller heading, then a list with the gold marker on the highlighted entry. */
-#overlay:not([data-screen="title"], [data-screen="unsupported"]) h1 {
+#overlay:not(
+    [data-screen="connect"],
+    [data-screen="difficulty"],
+    [data-screen="unsupported"]
+  )
+  h1 {
   font-size: clamp(2rem, 5vw, 3.4rem);
 }
 
@@ -292,7 +297,7 @@ body {
   inset-inline-end: 0.9rem;
 }
 
-/* The WebHID hint is the title's alone, small and quiet under the prompt. */
+/* The WebHID hint is for the connect prompt and the Difficulty select, small and quiet under them. */
 #overlay .overlay-effects {
   margin-top: 1.5rem;
   color: rgb(239 228 200 / 50%);
@@ -300,7 +305,8 @@ body {
   letter-spacing: 0.06em;
 }
 
-#overlay:not([data-screen="title"]) .overlay-effects {
+#overlay:not([data-screen="connect"], [data-screen="difficulty"])
+  .overlay-effects {
   display: none;
 }
 

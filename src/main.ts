@@ -132,7 +132,7 @@ const start = async () => {
       ],
     ]);
 
-  // Behind the title and the Difficulty select sits a fresh Duel (run 0),
+  // Behind the connect prompt and the Difficulty select sits a fresh Duel (run 0),
   // frozen at its start; every Duel the screens start is a new run.
   let duel = createDuelFor("duelista");
   let controllers = createControllers();
@@ -254,7 +254,7 @@ const start = async () => {
   /**
    * Tells the screens what the controller did this frame, then builds a new
    * Duel if they now call for one: a Duel they just started is a new
-   * simulation, and the title and the Difficulty select show a fresh one
+   * simulation, and the connect prompt and the Difficulty select show a fresh one
    * waiting at its start.
    */
   const syncScreens = (padKind: PadKind, seconds: number) => {
@@ -272,7 +272,7 @@ const start = async () => {
     if (screen.kind === "duel" && screen.run !== activeRun) {
       startRun(screen.run, screen.difficulty);
     } else if (
-      (screen.kind === "title" || screen.kind === "difficulty") &&
+      (screen.kind === "connect" || screen.kind === "difficulty") &&
       activeRun !== 0
     ) {
       startRun(0, "duelista");

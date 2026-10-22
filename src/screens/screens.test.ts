@@ -23,8 +23,8 @@ const padLost = { pad: "none", type: "pad" } as const;
 const anyButton = { type: "press" } as const;
 const tick = (seconds: number) => ({ seconds, type: "tick" }) as const;
 
-const onTitle = () => initialScreenState(true);
-const onSelect = () => play(onTitle(), padFound, press("confirm"));
+const onConnect = () => initialScreenState(true);
+const onSelect = () => play(onConnect(), padFound);
 
 const inDuel = (...moves: ScreenEvent[]) =>
   play(onSelect(), press("confirm"), ...moves);
@@ -36,38 +36,46 @@ const atSelect = (...moves: ScreenEvent[]) => play(onSelect(), ...moves).screen;
 const paused = () => inDuel(press("options"));
 const disconnected = () => inDuel(padLost);
 
-describe("title", () => {
-  it("starts on the title waiting for a controller", () => {
-    expect(onTitle().screen).toStrictEqual({ kind: "title", pad: "none" });
+describe("connect prompt", () => {
+  it("starts on the connect prompt waiting for a controller", () => {
+    expect(onConnect().screen).toStrictEqual({ kind: "connect", pad: "none" });
   });
 
-  it("remembers what is plugged in", () => {
-    expect(play(onTitle(), padFound).screen).toStrictEqual({
-      kind: "title",
-      pad: "dualsense",
-    });
+  it("remembers a pad that is not a DualSense", () => {
+    expect(
+      play(onConnect(), { pad: "unsupported", type: "pad" }).screen
+    ).toStrictEqual({ kind: "connect", pad: "unsupported" });
 
     expect(
-      play(onTitle(), { pad: "unsupported", type: "pad" }).screen
-    ).toStrictEqual({ kind: "title", pad: "unsupported" });
-
-    expect(play(onTitle(), padFound, padLost).screen).toStrictEqual({
-      kind: "title",
-      pad: "none",
-    });
+      play(onConnect(), { pad: "unsupported", type: "pad" }, padLost).screen
+    ).toStrictEqual({ kind: "connect", pad: "none" });
   });
 
   it("stays put without a DualSense, whatever is pressed", () => {
-    expect(play(onTitle(), press("confirm")).screen.kind).toBe("title");
+    expect(play(onConnect(), press("confirm"), anyButton).screen.kind).toBe(
+      "connect"
+    );
 
     expect(
-      play(onTitle(), { pad: "unsupported", type: "pad" }, press("confirm"))
+      play(onConnect(), { pad: "unsupported", type: "pad" }, press("confirm"))
         .screen.kind
-    ).toBe("title");
+    ).toBe("connect");
   });
 
-  it("goes to the Difficulty select on ✕ with a DualSense", () => {
+  it("goes straight to the Difficulty select once a DualSense is detected", () => {
     expect(onSelect().screen.kind).toBe("difficulty");
+
+    expect(
+      play(onConnect(), { pad: "unsupported", type: "pad" }, padFound).screen
+        .kind
+    ).toBe("difficulty");
+  });
+
+  it("does not pick a Difficulty with the press that woke the pad", () => {
+    expect(play(onConnect(), padFound, anyButton).screen).toStrictEqual({
+      kind: "difficulty",
+      selected: "duelista",
+    });
   });
 
   it("reports an unsupported browser and nothing else", () => {
@@ -109,18 +117,26 @@ describe("Difficulty select", () => {
     });
   });
 
-  it("goes back to the title on ○", () => {
-    expect(play(onSelect(), press("back")).screen).toStrictEqual({
-      kind: "title",
-      pad: "dualsense",
-    });
+  it("is the root: ○ does nothing", () => {
+    expect(play(onSelect(), press("back"))).toStrictEqual(onSelect());
   });
 
-  it("falls back to the title if the controller goes away", () => {
-    expect(play(onSelect(), padLost).screen).toStrictEqual({
-      kind: "title",
-      pad: "none",
-    });
+  it("shows the connect prompt if the controller goes away, and comes back once it returns", () => {
+    const unplugged = play(onSelect(), press("down"), padLost);
+
+    expect(unplugged.screen).toStrictEqual({ kind: "connect", pad: "none" });
+
+    expect(play(unplugged, press("confirm"), anyButton).screen.kind).toBe(
+      "connect"
+    );
+
+    expect(play(unplugged, padFound, anyButton).screen.kind).toBe("difficulty");
+  });
+
+  it("asks for a DualSense if what is left is another pad", () => {
+    expect(
+      play(onSelect(), { pad: "unsupported", type: "pad" }).screen
+    ).toStrictEqual({ kind: "connect", pad: "unsupported" });
   });
 });
 
@@ -216,10 +232,10 @@ describe("pause", () => {
     });
   });
 
-  it("leaves for the title with Salir", () => {
+  it("leaves for the Difficulty select with Salir, keeping the current choice", () => {
     expect(
       play(paused(), press("down"), press("down"), press("confirm")).screen
-    ).toStrictEqual({ kind: "title", pad: "dualsense" });
+    ).toStrictEqual({ kind: "difficulty", selected: "duelista" });
   });
 
   it("stops at the ends of the list", () => {
@@ -341,27 +357,26 @@ describe("result", () => {
     });
   });
 
-  it("goes back to the title on ○", () => {
+  it("goes to the Difficulty select on ○", () => {
     expect(play(afterDuel(true), press("back")).screen).toStrictEqual({
-      kind: "title",
-      pad: "dualsense",
+      kind: "difficulty",
+      selected: "duelista",
     });
   });
 
-  it("falls back to the title if the controller goes away", () => {
-    expect(play(afterDuel(true), padLost).screen).toStrictEqual({
-      kind: "title",
-      pad: "none",
-    });
+  it("shows the connect prompt if the controller goes away, and returns to the select once it is back", () => {
+    const unplugged = play(afterDuel(true), padLost);
+
+    expect(unplugged.screen).toStrictEqual({ kind: "connect", pad: "none" });
+    expect(play(unplugged, padFound, anyButton).screen.kind).toBe("difficulty");
   });
 });
 
 describe("a whole session", () => {
-  it("title, select, Duel, result, Revancha, result, then back to the title", () => {
+  it("connect, select, Duel, result, Revancha, result, then back to the select", () => {
     const state = play(
-      onTitle(),
+      onConnect(),
       padFound,
-      press("confirm"),
       press("down"),
       press("confirm"),
       { type: "duel-ended", won: false },
@@ -372,6 +387,9 @@ describe("a whole session", () => {
       press("back")
     );
 
-    expect(state.screen).toStrictEqual({ kind: "title", pad: "dualsense" });
+    expect(state.screen).toStrictEqual({
+      kind: "difficulty",
+      selected: "maestro",
+    });
   });
 });

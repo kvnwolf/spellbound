@@ -31,7 +31,6 @@ const menu = <T extends string>(
   }));
 
 const padBodies = {
-  dualsense: text.pressToStart,
   none: text.connectDualSense,
   unsupported: text.requiresDualSense,
 };
@@ -45,7 +44,7 @@ export const viewOf = (screen: Screen): ScreenView | undefined => {
     };
   }
 
-  if (screen.kind === "title") {
+  if (screen.kind === "connect") {
     return {
       body: padBodies[screen.pad],
       heading: text.title,
@@ -55,7 +54,8 @@ export const viewOf = (screen: Screen): ScreenView | undefined => {
 
   if (screen.kind === "difficulty") {
     return {
-      heading: text.difficulty.heading,
+      body: text.difficulty.heading,
+      heading: text.title,
       hint: text.menu.hint,
       items: menu(
         difficulties,

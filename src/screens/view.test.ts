@@ -18,18 +18,22 @@ describe("what each screen shows", () => {
     ).toBeUndefined();
   });
 
-  it("asks for a DualSense on the title until one is connected", () => {
-    expect(viewOf({ kind: "title", pad: "none" })?.body).toBe(
-      text.connectDualSense
-    );
+  it("asks to connect a DualSense, or says one is required, under the game's name", () => {
+    expect(viewOf({ kind: "connect", pad: "none" })).toMatchObject({
+      body: text.connectDualSense,
+      heading: text.title,
+    });
 
-    expect(viewOf({ kind: "title", pad: "unsupported" })?.body).toBe(
+    expect(viewOf({ kind: "connect", pad: "unsupported" })?.body).toBe(
       text.requiresDualSense
     );
+  });
 
-    expect(viewOf({ kind: "title", pad: "dualsense" })?.body).toBe(
-      text.pressToStart
-    );
+  it("names the game over the Difficulty select", () => {
+    expect(viewOf({ kind: "difficulty", selected: "novato" })).toMatchObject({
+      body: text.difficulty.heading,
+      heading: text.title,
+    });
   });
 
   it("lists the three Difficulties with the highlighted one marked", () => {

@@ -12,7 +12,7 @@ export const text = {
     reconnected: "Pulsa cualquier botón para continuar",
     waiting: "Conecta tu DualSense para continuar",
   },
-  /** On the title until the DualSense's WebHID effects are granted: the first click asks for them. */
+  /** On the connect prompt and the Difficulty select until the DualSense's WebHID effects are granted: the first click asks for them. */
   effectsHint: "Haz clic en la página para activar los efectos del DualSense",
   hud: {
     defeat: "Derrota",
@@ -34,7 +34,6 @@ export const text = {
     quit: "Salir",
     restart: "Reiniciar",
   },
-  pressToStart: "Pulsa ✕ para comenzar",
   requiresDualSense: "Spellbound requiere un mando DualSense",
   result: {
     changeDifficulty: "Cambiar dificultad",

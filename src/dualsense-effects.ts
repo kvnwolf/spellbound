@@ -181,8 +181,8 @@ const createFallbackRumble = () => {
 };
 
 /**
- * Drives the DualSense's effects for the page. `overlay` is the title's
- * panel, where a hint says a click turns the effects on until they are
+ * Drives the DualSense's effects for the page. `overlay` is the connect
+ * prompt's and the Difficulty select's panel, where a hint says a click turns the effects on until they are
  * granted.
  */
 export const createDualSenseEffects = (overlay: HTMLElement) => {

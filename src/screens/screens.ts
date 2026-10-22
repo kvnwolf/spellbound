@@ -1,7 +1,7 @@
 /**
  * The screen state machine: which screen the game is on, from the unsupported
- * browser and the title through the Difficulty select, the Duel, its pause and
- * result. Pure: it is fed events (the controller coming and going, menu
+ * browser and the connect prompt through the Difficulty select (the root once
+ * a DualSense is there), the Duel, its pause and result. Pure: it is fed events (the controller coming and going, menu
  * inputs, the Duel ending, time) and lands on the next screen. It owns no
  * three.js, no DOM and no clock; the game loop decides what to draw and
  * whether the Duel simulation may advance from the screen it reports.
@@ -9,7 +9,7 @@
 import { difficulties } from "../duel/difficulty";
 import type { Difficulty } from "../duel/difficulty";
 
-/** What is plugged in, as far as the title cares. */
+/** What is plugged in, as far as the screens care. */
 export type PadKind = "dualsense" | "none" | "unsupported";
 
 export const pauseOptions = ["continue", "restart", "quit"] as const;
@@ -38,7 +38,8 @@ export interface PauseScreen {
 export type Screen =
   /** WebGPU is missing: nothing else can happen. */
   | { readonly kind: "unsupported" }
-  | { readonly kind: "title"; readonly pad: PadKind }
+  /** No DualSense yet: asks for one. `pad` says whether nothing or some other pad is plugged in. */
+  | { readonly kind: "connect"; readonly pad: Exclude<PadKind, "dualsense"> }
   | { readonly kind: "difficulty"; readonly selected: Difficulty }
   | DuelScreen
   | PauseScreen
@@ -84,7 +85,9 @@ const defaultDifficulty: Difficulty = "duelista";
 
 export const initialScreenState = (supported: boolean): ScreenState => ({
   runs: 0,
-  screen: supported ? { kind: "title", pad: "none" } : { kind: "unsupported" },
+  screen: supported
+    ? { kind: "connect", pad: "none" }
+    : { kind: "unsupported" },
 });
 
 /** Moves a highlight one step through `options`, stopping at both ends. */
@@ -98,9 +101,10 @@ const step = <T>(options: readonly T[], selected: T, input: MenuInput): T => {
   return options[Math.min(Math.max(index, 0), options.length - 1)] ?? selected;
 };
 
-const titleWithPad = (state: ScreenState): ScreenState => ({
+/** The Difficulty select, the root of the menus, highlighting `selected`. */
+const toSelect = (state: ScreenState, selected: Difficulty): ScreenState => ({
   ...state,
-  screen: { kind: "title", pad: "dualsense" },
+  screen: { kind: "difficulty", selected },
 });
 
 /** Starts a Duel: the next run, no winner yet. */
@@ -121,8 +125,13 @@ const onPad = (state: ScreenState, pad: PadKind): ScreenState => {
   const { screen } = state;
   const connected = pad === "dualsense";
 
-  if (screen.kind === "title") {
-    return { ...state, screen: { ...screen, pad } };
+  // A DualSense showing up is all it takes to reach the select: the press
+  // that woke it is not read as a menu input (the menu input reader skips
+  // whatever a pad that has just appeared is holding).
+  if (screen.kind === "connect") {
+    return connected
+      ? toSelect(state, defaultDifficulty)
+      : { ...state, screen: { ...screen, pad } };
   }
 
   if (screen.kind === "duel" || screen.kind === "pause") {
@@ -139,7 +148,7 @@ const onPad = (state: ScreenState, pad: PadKind): ScreenState => {
   }
 
   if (screen.kind === "difficulty" || screen.kind === "result") {
-    return connected ? state : { ...state, screen: { kind: "title", pad } };
+    return connected ? state : { ...state, screen: { kind: "connect", pad } };
   }
 
   return state;
@@ -152,10 +161,6 @@ const onDifficultyInput = (
 ): ScreenState => {
   if (input === "confirm") {
     return startDuel(state, screen.selected);
-  }
-
-  if (input === "back") {
-    return titleWithPad(state);
   }
 
   const selected = step(difficulties, screen.selected, input);
@@ -183,7 +188,7 @@ const onPauseInput = (
   }
 
   return screen.selected === "quit"
-    ? titleWithPad(state)
+    ? toSelect(state, screen.duel.difficulty)
     : { ...state, screen: screen.duel };
 };
 
@@ -193,7 +198,7 @@ const onResultInput = (
   input: MenuInput
 ): ScreenState => {
   if (input === "back") {
-    return titleWithPad(state);
+    return toSelect(state, screen.difficulty);
   }
 
   if (input !== "confirm") {
@@ -204,23 +209,11 @@ const onResultInput = (
 
   return screen.selected === "rematch"
     ? startDuel(state, screen.difficulty)
-    : {
-        ...state,
-        screen: { kind: "difficulty", selected: screen.difficulty },
-      };
+    : toSelect(state, screen.difficulty);
 };
 
 const onInput = (state: ScreenState, input: MenuInput): ScreenState => {
   const { screen } = state;
-
-  if (screen.kind === "title") {
-    return screen.pad === "dualsense" && input === "confirm"
-      ? {
-          ...state,
-          screen: { kind: "difficulty", selected: defaultDifficulty },
-        }
-      : state;
-  }
 
   if (screen.kind === "difficulty") {
     return onDifficultyInput(state, screen, input);
