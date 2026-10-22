@@ -26,41 +26,30 @@ body {
 }
 
 /*
- * The reticle: one rune circle. Free, it sits at the screen centre (where
- * free-aimed Spells go) and its radius is the Aim Assist boundary; Locked On
- * it rides onto the Target's chest. Position, --size and --lock (0 free, 1
- * Locked On) are set per frame, easing between the two with the camera's lock
- * transition; the ring colour blends from --reticle-free to --reticle-locked
- * on the same --lock.
+ * The reticle: one rune circle at the screen centre (where free-aimed Spells
+ * go), its radius the Aim Assist boundary. --size and the opacity are set per
+ * frame; the opacity fades out as the camera locks On.
  */
 #reticle {
-  --reticle-free: #efe4c8;
-  --reticle-locked: #d8b46a;
-
   position: fixed;
+  top: 50%;
+  left: 50%;
   width: var(--size, 36px);
   height: var(--size, 36px);
   translate: -50% -50%;
   pointer-events: none;
-  transition: opacity 0.2s;
 }
 
-/* The solid ring, neutral at rest and gold once locked. */
 #reticle::before {
   position: absolute;
   inset: 0;
-  border: 1.5px solid
-    color-mix(
-      in srgb,
-      var(--reticle-locked) calc(var(--lock, 0) * 100%),
-      var(--reticle-free)
-    );
+  border: 1.5px solid var(--parchment);
   border-radius: 50%;
   box-shadow: 0 0 0 1px rgb(10 12 24 / 45%);
   content: "";
 }
 
-/* The tiny centre dot, gone once the circle has left the centre. */
+/* The tiny centre dot. */
 #reticle .reticle-dot {
   position: absolute;
   top: 50%;
@@ -68,15 +57,9 @@ body {
   width: 3px;
   height: 3px;
   border-radius: 50%;
-  background: var(--reticle-free);
+  background: var(--parchment);
   box-shadow: 0 0 0 1px rgb(10 12 24 / 60%);
-  opacity: var(--dot, 1);
   translate: -50% -50%;
-}
-
-/* The Target is out of sight behind Cover: the lock is about to break. */
-#reticle.reticle-hidden {
-  opacity: 0.35;
 }
 
 #overlay {

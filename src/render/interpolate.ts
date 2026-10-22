@@ -16,8 +16,6 @@ export interface DuelistSample {
   /** The Lock-on Target, if any, and the framing nudge while Locked On. */
   readonly targetId: DuelistId | null;
   readonly lockNudge: Aim;
-  /** The Lock-on Target is out of sight behind Cover. */
-  readonly targetHidden: boolean;
   /** States are not blended: they switch on the tick that changes them. */
   readonly knockedOut: boolean;
   readonly staggered: boolean;
@@ -62,7 +60,6 @@ export const sampleDuelist = (
     z: lerp(previous.position.z, current.position.z, alpha),
   },
   staggered: current.staggerSeconds > 0,
-  targetHidden: current.targetHiddenSeconds > 0,
   targetId: current.targetId,
 });
 

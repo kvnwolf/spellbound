@@ -357,11 +357,13 @@ export const tuning = {
     sightGraceSeconds: 1,
   },
 
-  /** How the Lock-on Target is marked: a rim glow round its silhouette (the ring is DOM). */
+  /** How the Lock-on Target is marked: a rim glow round its silhouette. */
   lockOnGlow: {
     color: "#ffcf7a",
     /** Exponential rate, per second, at which the glow fades in and out. */
     fadeSharpness: 10,
+    /** Share of the glow that remains while the Target is out of sight behind Cover. */
+    hiddenShare: 0.35,
     /** Fresnel exponent: higher hugs the silhouette's edge more tightly. */
     power: 2.4,
     /** Peak scene-linear radiance at the very edge, above the bloom threshold so it glows. */

@@ -221,8 +221,6 @@ const start = async () => {
   let previous: DuelSnapshot = duel.snapshot();
   let current: DuelSnapshot = previous;
   let lastFrame: number | undefined;
-  // The Target the reticle last rode, kept while it eases back to the centre.
-  let lastTargetId: string | null = null;
 
   /** Swaps in a brand-new Duel, as the first or a restarted one. */
   const startRun = (run: number, difficulty: Difficulty) => {
@@ -313,8 +311,16 @@ const start = async () => {
       const sample = sampleDuelist(before, state, alpha);
 
       samples.set(state.id, sample);
-      // The local Duelist's Lock-on Target glows round its silhouette.
-      views.get(state.id)?.show(sample, seconds, local?.targetId === state.id);
+      // The local Duelist's Lock-on Target glows round its silhouette,
+      // dimmed while it is out of sight behind Cover.
+      let glow = 0;
+
+      if (local?.targetId === state.id) {
+        glow =
+          local.targetHiddenSeconds > 0 ? tuning.lockOnGlow.hiddenShare : 1;
+      }
+
+      views.get(state.id)?.show(sample, seconds, glow);
     }
 
     const localSample = samples.get(localId);
@@ -341,7 +347,8 @@ const start = async () => {
           : samples.get(localSample.targetId);
 
       // Free: the camera follows the aim and the reticle marks where
-      // Spells go. Locked On: the camera frames both, the reticle marks the Target.
+      // Spells go. Locked On: the camera frames both, the reticle fades
+      // out and the Target's glow marks the lock.
       rig.follow(
         localSample,
         target && {
@@ -352,30 +359,7 @@ const start = async () => {
         seconds
       );
 
-      // The circle rides the Target while Locked On and, on unlock, back to
-      // the centre: it keeps the last Target until the camera is free again.
-      lastTargetId = localSample.targetId ?? lastTargetId;
-
-      const lockShare = rig.lockShare();
-
-      const ringTarget =
-        lockShare > 0 ? samples.get(lastTargetId ?? "") : undefined;
-
-      reticle.show(
-        {
-          lockShare,
-          target: ringTarget && {
-            at: { ...ringTarget.position, y: tuning.duelist.chestHeight },
-            hidden: target !== undefined && localSample.targetHidden,
-          },
-          visible: true,
-        },
-        rig.camera
-      );
-
-      if (lockShare === 0) {
-        lastTargetId = null;
-      }
+      reticle.show({ lockShare: rig.lockShare(), visible: true }, rig.camera);
     }
   };
 

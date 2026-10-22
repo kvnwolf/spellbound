@@ -21,13 +21,10 @@ export interface DuelistView {
   readonly object: Group;
   /**
    * Draws `sample`, easing poses over the `seconds` since the last frame.
-   * `lockedOn` marks it as the local Duelist's Lock-on Target.
+   * `glow` is the rim glow it eases toward: 0 off, 1 the full lock mark of
+   * the local Duelist's Lock-on Target.
    */
-  readonly show: (
-    sample: DuelistSample,
-    seconds: number,
-    lockedOn: boolean
-  ) => void;
+  readonly show: (sample: DuelistSample, seconds: number, glow: number) => void;
 }
 
 /** Backward tilts, in radians: lying on the back, and a Stagger's lean. */
@@ -93,7 +90,7 @@ export const createDuelistView = (
 
   return {
     object,
-    show: (sample, seconds, lockedOn) => {
+    show: (sample, seconds, wantedGlow) => {
       object.position.set(sample.position.x, 0, sample.position.z);
       object.rotation.y = Math.atan2(sample.facing.x, sample.facing.z);
 
@@ -110,7 +107,7 @@ export const createDuelistView = (
       object.rotation.x = tilt;
 
       const fade = 1 - Math.exp(-glow.fadeSharpness * seconds);
-      glowStrength.value += ((lockedOn ? 1 : 0) - glowStrength.value) * fade;
+      glowStrength.value += (wantedGlow - glowStrength.value) * fade;
     },
   };
 };
