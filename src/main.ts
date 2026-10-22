@@ -221,6 +221,8 @@ const start = async () => {
   let previous: DuelSnapshot = duel.snapshot();
   let current: DuelSnapshot = previous;
   let lastFrame: number | undefined;
+  // The Target the reticle last rode, kept while it eases back to the centre.
+  let lastTargetId: string | null = null;
 
   /** Swaps in a brand-new Duel, as the first or a restarted one. */
   const startRun = (run: number, difficulty: Difficulty) => {
@@ -331,15 +333,15 @@ const start = async () => {
         },
         seconds
       );
-      reticle.show({ crosshair: false }, rig.camera);
+      reticle.show({ lockShare: 0, visible: false }, rig.camera);
     } else if (localSample) {
       const target =
         localSample.targetId === null
           ? undefined
           : samples.get(localSample.targetId);
 
-      // Free: the camera follows the aim and the crosshair marks where
-      // Spells go. Locked On: the camera frames both, the ring marks the Target.
+      // Free: the camera follows the aim and the reticle marks where
+      // Spells go. Locked On: the camera frames both, the reticle marks the Target.
       rig.follow(
         localSample,
         target && {
@@ -350,16 +352,30 @@ const start = async () => {
         seconds
       );
 
+      // The circle rides the Target while Locked On and, on unlock, back to
+      // the centre: it keeps the last Target until the camera is free again.
+      lastTargetId = localSample.targetId ?? lastTargetId;
+
+      const lockShare = rig.lockShare();
+
+      const ringTarget =
+        lockShare > 0 ? samples.get(lastTargetId ?? "") : undefined;
+
       reticle.show(
         {
-          crosshair: !target,
-          lockRing: target && {
-            at: { ...target.position, y: tuning.duelist.chestHeight },
-            hidden: localSample.targetHidden,
+          lockShare,
+          target: ringTarget && {
+            at: { ...ringTarget.position, y: tuning.duelist.chestHeight },
+            hidden: target !== undefined && localSample.targetHidden,
           },
+          visible: true,
         },
         rig.camera
       );
+
+      if (lockShare === 0) {
+        lastTargetId = null;
+      }
     }
   };
 

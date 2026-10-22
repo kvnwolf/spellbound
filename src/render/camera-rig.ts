@@ -66,6 +66,12 @@ export interface CameraRig {
     framing: Framing | undefined,
     seconds: number
   ) => void;
+  /**
+   * How far the camera is through its transition, as of the last `follow`:
+   * 0 on the free camera, 1 fully on the Lock-on framing, eased (smoothstep)
+   * in between. The reticle rides the same progress.
+   */
+  readonly lockShare: () => number;
   readonly resize: (aspect: number) => void;
 }
 
@@ -169,6 +175,7 @@ export const createCameraRig = (
   // How far through the transition: 0 is the free camera, 1 the Lock-on
   // framing. Moves at a steady rate in time; the easing is applied on top.
   let blend = 0;
+  let lockShare = 0;
   // The free camera's share of its full distance it is allowed out to.
   let freeReach = 1;
   // The aim the free camera had on the last frame before the Lock-on framing
@@ -424,6 +431,7 @@ export const createCameraRig = (
           : freeCamera;
 
       const share = blend * blend * (3 - 2 * blend);
+      lockShare = share;
 
       // Orientation turns the short way round, and the camera swings round
       // the Duelist (angle and distance) rather than cutting across them.
@@ -446,6 +454,7 @@ export const createCameraRig = (
 
       shake?.apply(camera, seconds);
     },
+    lockShare: () => lockShare,
     resize: (aspect) => {
       camera.aspect = aspect;
       camera.updateProjectionMatrix();

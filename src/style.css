@@ -26,116 +26,60 @@ body {
 }
 
 /*
- * The crosshair: a cross fixed at the screen centre, where free-aimed Spells
- * go. Each arm's outer tip sits at --tip (set from the Aim Assist angle), so
- * a rival's body reaching into the cross is what Aim Assist helps toward.
+ * The reticle: one rune circle. Free, it sits at the screen centre (where
+ * free-aimed Spells go) and its radius is the Aim Assist boundary; Locked On
+ * it rides onto the Target's chest. Position and --size are set per frame,
+ * easing between the two with the camera's lock transition.
  */
 #reticle {
-  --arm: 11px;
-  --arm-min: 3px;
-  --arm-thickness: 1.5px;
-  --len: min(var(--arm), calc(var(--tip) - var(--arm-min)));
-
   position: fixed;
-  top: 50%;
-  left: 50%;
-  width: 0;
-  height: 0;
-  pointer-events: none;
-}
-
-/* The tiny centre dot. */
-#reticle::before {
-  position: absolute;
-  width: 3px;
-  height: 3px;
-  border-radius: 50%;
-  background: var(--parchment);
-  box-shadow: 0 0 0 1px rgb(10 12 24 / 60%);
-  content: "";
-  translate: -50% -50%;
-}
-
-#reticle .arm {
-  position: absolute;
-  border-radius: 1px;
-  background: var(--gold);
-  box-shadow:
-    0 0 0 1px rgb(10 12 24 / 55%),
-    0 0 5px rgb(216 180 106 / 60%);
-}
-
-/* Each arm runs --len inward from its tip, so the outer end sits exactly at --tip. */
-#reticle .arm-up,
-#reticle .arm-down {
-  left: calc(var(--arm-thickness) / -2);
-  width: var(--arm-thickness);
-  height: var(--len);
-}
-
-#reticle .arm-up {
-  bottom: calc(var(--tip) - var(--len));
-}
-
-#reticle .arm-down {
-  top: calc(var(--tip) - var(--len));
-}
-
-#reticle .arm-left,
-#reticle .arm-right {
-  top: calc(var(--arm-thickness) / -2);
-  height: var(--arm-thickness);
-  width: var(--len);
-}
-
-#reticle .arm-left {
-  right: calc(var(--tip) - var(--len));
-}
-
-#reticle .arm-right {
-  left: calc(var(--tip) - var(--len));
-}
-
-/* The Lock-on ring: a constant-size rune ring on the Target's chest. */
-.lock-ring {
-  position: fixed;
-  width: 46px;
-  height: 46px;
+  width: var(--size, 36px);
+  height: var(--size, 36px);
   translate: -50% -50%;
   pointer-events: none;
   transition: opacity 0.2s;
 }
 
-.lock-ring::before,
-.lock-ring::after {
+#reticle::before,
+#reticle::after {
   position: absolute;
   border-radius: 50%;
   content: "";
 }
 
 /* Outer dashed runes, slowly turning, and a solid inner ring. */
-.lock-ring::before {
+#reticle::before {
   inset: 0;
   border: 2px dashed var(--gold);
   filter: drop-shadow(0 0 4px rgb(216 180 106 / 80%));
-  animation: lock-ring-turn 6s linear infinite;
+  animation: reticle-turn 6s linear infinite;
 }
 
-.lock-ring::after {
-  inset: 9px;
+#reticle::after {
+  inset: calc(var(--size, 36px) * 0.2);
   border: 1.5px solid rgb(239 228 200 / 85%);
 }
 
+/* The tiny centre dot, gone once the circle has left the centre. */
+#reticle .reticle-dot {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--parchment);
+  box-shadow: 0 0 0 1px rgb(10 12 24 / 60%);
+  opacity: var(--dot, 1);
+  translate: -50% -50%;
+}
+
 /* The Target is out of sight behind Cover: the lock is about to break. */
-.lock-ring.lock-ring-hidden {
+#reticle.reticle-hidden {
   opacity: 0.35;
 }
 
-.lock-ring[hidden] {
-  display: none;
-}
-
-@keyframes lock-ring-turn {
+@keyframes reticle-turn {
   to {
     rotate: 1turn;
   }

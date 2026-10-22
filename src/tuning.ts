@@ -35,7 +35,7 @@ export const tuning = {
    * the crosshair (in sight, not behind Cover). The angle is measured at the
    * aim pivot between the crosshair's ray and the nearest point of the
    * opponent's body (its edge, not its centre), so it means the same at any
-   * distance. The crosshair's arm tips are drawn at exactly `bendAngle`.
+   * distance. The reticle's circle is drawn with a radius of exactly `bendAngle`.
    */
   aimAssist: {
     /** A cast whose crosshair is within this angle of an opponent's body bends toward them at launch, and turning eases (about 1 degree). */
@@ -329,10 +329,10 @@ export const tuning = {
   lockOn: {
     /**
      * R3 only Locks On to an opponent whose body is within this many
-     * crosshair radii of the crosshair: the acquire angle is
+     * reticle radii of the crosshair: the acquire angle is
      * `acquireCrosses * aimAssist.bendAngle` (about 2.5 degrees), measured
      * like Aim Assist (to the body's edge, as seen from the free camera), on
-     * top of range and sight. Tying it to the cross keeps the two in step.
+     * top of range and sight. Tying it to the reticle's circle keeps the two in step.
      */
     acquireCrosses: 2.5,
     /**

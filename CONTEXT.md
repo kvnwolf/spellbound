@@ -45,7 +45,7 @@ The state in which a Duelist faces their Target and casts at it; the player togg
 _Avoid_: Target lock, Z-targeting, soft lock
 
 **Aim Assist**:
-The gentle pull a free-aiming Duelist's aim and casts get toward an opponent whose body reaches into the crosshair's cross, whose arm tips mark the boundary.
+The gentle pull a free-aiming Duelist's aim and casts get toward an opponent whose body reaches into the crosshair's circle, whose radius marks the boundary.
 _Avoid_: Auto-aim, magnetism
 
 ### Combat
