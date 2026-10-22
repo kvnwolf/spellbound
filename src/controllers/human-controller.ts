@@ -19,6 +19,8 @@ export const createHumanController = (
     return {
       // Left stick walks relative to the camera, right stick nudges the aim.
       aim: pad.rightStick,
+      // □ casts Stupefy; the simulation turns the held button into presses.
+      lightSpell: pad.buttons.square,
       move: pad.leftStick,
     };
   },

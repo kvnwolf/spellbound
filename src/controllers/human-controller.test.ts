@@ -42,6 +42,27 @@ describe(createHumanController, () => {
     expect(intent.aim.y).toBeCloseTo(-Math.SQRT1_2);
   });
 
+  it("casts the Light Spell while □ is down", () => {
+    const pad = dualSense([0, 0, 0, 0]);
+    const square = 2;
+
+    const controller = createHumanController(() =>
+      readDualSense(
+        {
+          ...pad,
+          buttons: pad.buttons.map((button, index) =>
+            index === square ? { pressed: true, value: 1 } : button
+          ),
+        },
+        tuning.input
+      )
+    );
+
+    const view = { self: "hero", snapshot: duel.snapshot() };
+
+    expect(controller.intent(view).lightSpell).toBeTruthy();
+  });
+
   it("stands still while no DualSense is connected", () => {
     const controller = createHumanController(() => {});
 
@@ -50,6 +71,10 @@ describe(createHumanController, () => {
       snapshot: duel.snapshot(),
     });
 
-    expect(intent).toStrictEqual({ aim: { x: 0, y: 0 }, move: { x: 0, y: 0 } });
+    expect(intent).toStrictEqual({
+      aim: { x: 0, y: 0 },
+      lightSpell: false,
+      move: { x: 0, y: 0 },
+    });
   });
 });

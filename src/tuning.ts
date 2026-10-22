@@ -25,6 +25,24 @@ export const tuning = {
     shoulder: 0.9,
   },
 
+  /** Camera shake on Spell impacts, as trauma in [0, 1] added per hit (felt as trauma squared). */
+  cameraShake: {
+    /** Trauma lost per second. */
+    decay: 1.8,
+    /** Shake frequency in Hz. */
+    frequency: 22,
+    /** Trauma added when the local Duelist lands a hit. */
+    hitDealt: 0.22,
+    /** Trauma added when the local Duelist is hit. */
+    hitTaken: 0.5,
+    /** Camera position offset at full trauma, in metres. */
+    maxOffset: 0.14,
+    /** Camera roll at full trauma, in radians. */
+    maxRoll: 0.035,
+    /** Extra trauma when the hit was a strong one (the third Stupefy). */
+    strongBonus: 0.25,
+  },
+
   /**
    * The night courtyard's look. Colours are hex strings; light intensities are
    * three.js physical units (lux for the moon, candela for torches), and
@@ -103,7 +121,12 @@ export const tuning = {
     bodyRadius: 0.45,
     /** Height of the chest above the floor; the aim point sits there. */
     chestHeight: 1.3,
+    health: 100,
+    /** Spells hit a Duelist anywhere from the floor up to this height. */
+    height: 2,
     walkSpeed: 4.5,
+    /** Where Spells leave the Wand, relative to the Duelist: ahead, to the right and up. */
+    wandTip: { forward: 0.55, height: 1.15, right: 0.28 },
   },
 
   input: {
@@ -132,6 +155,34 @@ export const tuning = {
     msaaSamples: 4,
     /** Darkening of the frame's corners (0 none .. 1 strong). */
     vignette: 0.35,
+  },
+
+  round: {
+    /** The "3, 2, 1" countdown before control is given at the start of every Round. */
+    introSeconds: 3,
+    /** A Knockout plays this long in real time, slowed down by `timeScale`. */
+    knockout: { realSeconds: 1, timeScale: 0.3 },
+    /** After the Knockout's slow motion, the result holds this long before the next Round. */
+    resultSeconds: 2,
+    /** The first Team to win this many Rounds wins the Duel. */
+    roundsToWin: 2,
+  },
+
+  /** Stupefy, the Light Spell. Damage is in Health points. */
+  stupefy: {
+    /** Fast cadence: the shortest time between two casts. */
+    castInterval: 0.25,
+    /** Every `chainLength`-th consecutive cast is the strong one that Staggers. */
+    chainLength: 3,
+    /** Casts more than this far apart start a new chain. */
+    chainWindow: 0.8,
+    damage: 6,
+    /** The projectile is a sphere of this radius for collisions. */
+    radius: 0.18,
+    speed: 26,
+    /** How long the strong cast stops the Duelist it hits from acting. */
+    staggerSeconds: 0.7,
+    strongDamage: 14,
   },
 
   /** The Duel simulation advances on a fixed timestep at this rate (Hz). */
