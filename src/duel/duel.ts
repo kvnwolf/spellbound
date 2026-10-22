@@ -786,7 +786,10 @@ export const createDuel = (config: DuelConfig): Duel => {
     } else if (intent.lockOn) {
       const near = nearestToCrosshair(self, duelists, tuning.lockOn.range);
 
-      if (near && near.angle <= tuning.lockOn.acquireAngle) {
+      if (
+        near &&
+        near.angle <= tuning.lockOn.acquireCrosses * tuning.aimAssist.bendAngle
+      ) {
         lockOnto(near.opponent);
       } else {
         book.recentreTicks = ticksOf(tuning.lockOn.recentreSeconds);

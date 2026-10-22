@@ -38,8 +38,8 @@ export const tuning = {
    * distance. The crosshair's arm tips are drawn at exactly `bendAngle`.
    */
   aimAssist: {
-    /** A cast whose crosshair is within this angle of an opponent's body bends toward them at launch, and turning eases (about 2 degrees). */
-    bendAngle: 0.035,
+    /** A cast whose crosshair is within this angle of an opponent's body bends toward them at launch, and turning eases (about 1 degree). */
+    bendAngle: 0.0175,
     /** Share of the gap to the opponent's chest the launch direction closes (1 aims dead at the chest). */
     bendStrength: 0.85,
     /** Turn speed multiplier with the crosshair on an opponent's body, easing back to 1 at `bendAngle` off its edge. */
@@ -328,11 +328,13 @@ export const tuning = {
   /** Lock-on: R3 locks a Duelist onto an opponent, who becomes their Target. */
   lockOn: {
     /**
-     * R3 only Locks On to an opponent whose body is within this angle of the
-     * crosshair (radians, measured like Aim Assist: to the body's edge, as
-     * seen from the free camera), on top of range and sight (about 20 degrees).
+     * R3 only Locks On to an opponent whose body is within this many
+     * crosshair radii of the crosshair: the acquire angle is
+     * `acquireCrosses * aimAssist.bendAngle` (about 2.5 degrees), measured
+     * like Aim Assist (to the body's edge, as seen from the free camera), on
+     * top of range and sight. Tying it to the cross keeps the two in step.
      */
-    acquireAngle: 0.35,
+    acquireCrosses: 2.5,
     /**
      * Spells cast while Locked On fly at the Target's current chest (no lead)
      * and turn toward it at no more than `turnRate` (radians per second) for

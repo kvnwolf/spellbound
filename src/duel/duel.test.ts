@@ -234,12 +234,11 @@ const longArena: ArenaLayout = {
 };
 
 /**
- * Casts once, with the rival `distance` m away, with the aim ray passing
+ * A fight with the rival `distance` m away, the hero's aim ray passing
  * `beyond` radians outside the edge of the rival's body (seen from the free
- * camera behind the aim pivot, which is what the crosshair shows), and reports
- * whether the Spell hit and the velocity it launched with.
+ * camera behind the aim pivot, which is what the crosshair shows).
  */
-const castsBeyondEdge = (
+const duelAimedBeyondEdge = (
   distance: number,
   beyond: number,
   settings: Tuning
@@ -272,6 +271,17 @@ const castsBeyondEdge = (
 
   turn(duel, { pitch: 0, yaw: Math.asin(gap / away) });
 
+  return duel;
+};
+
+/** Casts once with the aim `beyond` radians outside the rival's body edge; reports whether the Spell hit and its launch velocity. */
+const castsBeyondEdge = (
+  distance: number,
+  beyond: number,
+  settings: Tuning
+) => {
+  const duel = duelAimedBeyondEdge(distance, beyond, settings);
+
   const cast = tapLight(duel, "hero");
   const velocity = ofType(cast, "spell-cast")[0]?.spell.velocity;
   const hit = ofType([...cast, ...settle(duel)], "spell-hit").length > 0;
@@ -299,18 +309,18 @@ describe("Aim Assist", () => {
     };
 
     it("bends a cast whose aim passes just within the angle of the body, and it hits", () => {
-      const plain = castsBeyondEdge(distance, 0.03, withoutAimAssist);
-      const assisted = castsBeyondEdge(distance, 0.03, bendOnly);
+      const plain = castsBeyondEdge(distance, 0.015, withoutAimAssist);
+      const assisted = castsBeyondEdge(distance, 0.015, bendOnly);
 
       expect(assisted.hit).toBeTruthy();
       expect(assisted.velocity).not.toStrictEqual(plain.velocity);
     });
 
-    it("does not bend a cast whose aim passes outside the angle, and it misses", () => {
-      const plain = castsBeyondEdge(distance, 0.05, withoutAimAssist);
-      const assisted = castsBeyondEdge(distance, 0.05, bendOnly);
+    it("does not bend a cast whose aim passes just outside the angle", () => {
+      const plain = castsBeyondEdge(distance, 0.021, withoutAimAssist);
+      const assisted = castsBeyondEdge(distance, 0.021, bendOnly);
 
-      expect(assisted.hit).toBeFalsy();
+      expect(assisted.hit).toBe(plain.hit);
       expect(assisted.velocity).toStrictEqual(plain.velocity);
     });
   });
@@ -735,31 +745,27 @@ describe("Lock-on", () => {
     expect(duelist(duel, "hero").aim.pitch).toBeCloseTo(tuning.aim.pitch.rest);
   });
 
-  it("locks on only to an opponent within the acquire cone of the crosshair", () => {
-    // The rival 10 m ahead, the crosshair swung well off it to the right:
-    // its body is about 0.29 rad (17 degrees) off in one case, 0.45 (26) in the other.
-    const inside = fight(openArena, withoutAimAssist);
-    turn(inside, { pitch: 0, yaw: 0.45 });
-    toggleLock(inside);
+  describe.each([14, 22])("with the rival %i m away", (distance) => {
+    // The acquire angle is 2.5 crosses: 0.04375 rad of body edge.
+    it("locks on to an opponent whose body edge is just within 2.5 times the cross", () => {
+      const duel = duelAimedBeyondEdge(distance, 0.04, withoutAimAssist);
 
-    expect(duelist(inside, "hero").targetId).toBe("rival");
+      toggleLock(duel);
 
-    const outside = fight(openArena, withoutAimAssist);
-    turn(outside, { pitch: 0.3, yaw: 0.65 });
-    const before = duelist(outside, "hero").aim.pitch;
+      expect(duelist(duel, "hero").targetId).toBe("rival");
+    });
 
-    const events = [
-      ...toggleLock(outside),
-      ...run(outside, secondsToTicks(tuning.lockOn.recentreSeconds)),
-    ];
+    it("does not lock on to an opponent just outside it", () => {
+      const duel = duelAimedBeyondEdge(distance, 0.048, withoutAimAssist);
 
-    // Nothing lockable: the pitch recentres, as with no opponent at all.
-    expect(ofType(events, "lock-on")).toStrictEqual([]);
-    expect(duelist(outside, "hero").targetId).toBeNull();
-    expect(duelist(outside, "hero").aim.pitch).toBeLessThan(before);
-    expect(duelist(outside, "hero").aim.pitch).toBeCloseTo(
-      tuning.aim.pitch.rest
-    );
+      const events = [
+        ...toggleLock(duel),
+        ...run(duel, secondsToTicks(tuning.lockOn.recentreSeconds)),
+      ];
+
+      expect(ofType(events, "lock-on")).toStrictEqual([]);
+      expect(duelist(duel, "hero").targetId).toBeNull();
+    });
   });
 
   it("does not lock on to an opponent out of range", () => {

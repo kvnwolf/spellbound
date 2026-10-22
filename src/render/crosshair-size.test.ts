@@ -10,14 +10,14 @@ describe(offAxisPixels, () => {
     );
   });
 
-  it("puts 0.035 rad about 36 px off the centre of a 1080p, 55 degree view", () => {
-    // tan(0.035) = 0.035012, tan(27.5 degrees) = 0.52057: 0.067257 * 540.
-    expect(offAxisPixels(0.035, 55, 1080)).toBeCloseTo(36.3, 1);
+  it("puts 0.0175 rad about 18 px off the centre of a 1080p, 55 degree view", () => {
+    // tan(0.0175) = 0.017501, tan(27.5 degrees) = 0.52057: 0.033618 * 540.
+    expect(offAxisPixels(0.0175, 55, 1080)).toBeCloseTo(18.2, 1);
   });
 
   it("scales with the canvas height", () => {
-    expect(offAxisPixels(0.035, 55, 540)).toBeCloseTo(
-      offAxisPixels(0.035, 55, 1080) / 2
+    expect(offAxisPixels(0.0175, 55, 540)).toBeCloseTo(
+      offAxisPixels(0.0175, 55, 1080) / 2
     );
   });
 });
