@@ -157,8 +157,8 @@ const start = async () => {
   const scene = createCourtyardScene(courtyard);
 
   const views = new Map([
-    [localId, createDuelistView("#8a1c24")],
-    [opponentId, createDuelistView("#1f5a3a")],
+    [localId, createDuelistView("#8a1c24", tuning.lockOnGlow)],
+    [opponentId, createDuelistView("#1f5a3a", tuning.lockOnGlow)],
   ]);
 
   for (const view of views.values()) {
@@ -182,8 +182,11 @@ const start = async () => {
   };
 
   const rig = createCameraRig(
-    tuning.camera,
-    tuning.duelist.chestHeight,
+    {
+      camera: tuning.camera,
+      chestHeight: tuning.duelist.chestHeight,
+      eye: tuning.aim.eye,
+    },
     cameraObstacles,
     shake
   );
@@ -290,6 +293,71 @@ const start = async () => {
   };
 
   // Resolves once the loop is installed; the loop itself runs every frame.
+  // Poses every Duelist and points the camera: the Knockout shot, Lock-on framing or free aim.
+  const showDuelists = (alpha: number, seconds: number) => {
+    const samples = new Map<DuelistId, DuelistSample>();
+
+    const local = current.duelists.find((each) => each.id === localId);
+
+    for (const state of current.duelists) {
+      const before =
+        previous.duelists.find((each) => each.id === state.id) ?? state;
+
+      const sample = sampleDuelist(before, state, alpha);
+
+      samples.set(state.id, sample);
+      // The local Duelist's Lock-on Target glows round its silhouette.
+      views.get(state.id)?.show(sample, seconds, local?.targetId === state.id);
+    }
+
+    const localSample = samples.get(localId);
+    const fallen = current.duelists.find((each) => each.knockedOut);
+    const fallenSample = fallen ? samples.get(fallen.id) : undefined;
+
+    if (localSample && fallenSample && current.round.phase !== "fighting") {
+      // The Knockout shot: look down on the fallen Duelist from the side
+      // they were hit from, until the next Round lines everyone up again.
+      rig.follow(
+        localSample,
+        {
+          nudge: { pitch: 0, yaw: 0 },
+          self: knockoutViewpoint(fallenSample).position,
+          target: fallenSample.position,
+        },
+        seconds
+      );
+      reticle.show({ crosshair: false }, rig.camera);
+    } else if (localSample) {
+      const target =
+        localSample.targetId === null
+          ? undefined
+          : samples.get(localSample.targetId);
+
+      // Free: the camera follows the aim and the crosshair marks where
+      // Spells go. Locked On: the camera frames both, the ring marks the Target.
+      rig.follow(
+        localSample,
+        target && {
+          nudge: localSample.lockNudge,
+          self: localSample.position,
+          target: target.position,
+        },
+        seconds
+      );
+
+      reticle.show(
+        {
+          crosshair: !target,
+          lockRing: target && {
+            at: { ...target.position, y: tuning.duelist.chestHeight },
+            hidden: localSample.targetHidden,
+          },
+        },
+        rig.camera
+      );
+    }
+  };
+
   void renderer.setAnimationLoop((now: number) => {
     const seconds = lastFrame === undefined ? 0 : (now - lastFrame) / 1000;
     lastFrame = now;
@@ -335,39 +403,7 @@ const start = async () => {
     vfx.update(previous.spells, current.spells, alpha, simSeconds);
     hud.show(current, events, seconds);
 
-    const samples = new Map<DuelistId, DuelistSample>();
-
-    for (const state of current.duelists) {
-      const before =
-        previous.duelists.find((each) => each.id === state.id) ?? state;
-
-      const sample = sampleDuelist(before, state, alpha);
-
-      samples.set(state.id, sample);
-      views.get(state.id)?.show(sample, seconds);
-    }
-
-    const local = current.duelists.find((each) => each.id === localId);
-    const localSample = samples.get(localId);
-    const fallen = current.duelists.find((each) => each.knockedOut);
-    const fallenSample = fallen ? samples.get(fallen.id) : undefined;
-
-    if (fallenSample && current.round.phase !== "fighting") {
-      // The Knockout shot: look down on the fallen Duelist from the side
-      // they were hit from, until the next Round lines everyone up again.
-      rig.follow(
-        knockoutViewpoint(fallenSample),
-        fallenSample.position,
-        seconds
-      );
-      reticleElement.hidden = true;
-    } else if (local && localSample) {
-      const target =
-        local.targetId === null ? undefined : samples.get(local.targetId);
-
-      rig.follow(localSample, target?.position, seconds);
-      reticle.show(localSample.aimPoint, rig.camera);
-    }
+    showDuelists(alpha, seconds);
 
     if (!inDuel) {
       reticleElement.hidden = true;

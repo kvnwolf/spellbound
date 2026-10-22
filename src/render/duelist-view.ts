@@ -1,8 +1,10 @@
 /**
  * A blockout Duelist: robe, head, pointed hat and a Wand held out in front,
  * tinted by Team. It only reads presentation samples; the procedural wizard
- * and its poses come later.
+ * and its poses come later. While it is the local Duelist's Lock-on Target, a
+ * fresnel rim glow traces its silhouette.
  */
+import { color, normalView, positionViewDirection, uniform } from "three/tsl";
 import {
   BoxGeometry,
   ConeGeometry,
@@ -12,12 +14,20 @@ import {
   SphereGeometry,
 } from "three/webgpu";
 
+import type { Tuning } from "../tuning";
 import type { DuelistSample } from "./interpolate";
 
 export interface DuelistView {
   readonly object: Group;
-  /** Draws `sample`, easing poses over the `seconds` since the last frame. */
-  readonly show: (sample: DuelistSample, seconds: number) => void;
+  /**
+   * Draws `sample`, easing poses over the `seconds` since the last frame.
+   * `lockedOn` marks it as the local Duelist's Lock-on Target.
+   */
+  readonly show: (
+    sample: DuelistSample,
+    seconds: number,
+    lockedOn: boolean
+  ) => void;
 }
 
 /** Backward tilts, in radians: lying on the back, and a Stagger's lean. */
@@ -27,14 +37,38 @@ const staggerTilt = -0.3;
 /** How quickly poses ease toward their tilt, per second. */
 const tiltSharpness = 9;
 
-const skin = new MeshStandardNodeMaterial({ color: "#d9b38c", roughness: 0.7 });
 const wood = new MeshStandardNodeMaterial({ color: "#4a2f1d", roughness: 0.6 });
 
-export const createDuelistView = (robeColor: string): DuelistView => {
+export const createDuelistView = (
+  robeColor: string,
+  glow: Tuning["lockOnGlow"]
+): DuelistView => {
+  // The rim glow: brightest where the surface turns away from the camera
+  // (the silhouette), scaled by a per-Duelist strength the view eases.
+  const glowStrength = uniform(0);
+
+  const rim = color(glow.color)
+    .mul(
+      normalView
+        .dot(positionViewDirection)
+        .saturate()
+        .oneMinus()
+        .pow(glow.power)
+    )
+    .mul(glowStrength.mul(glow.radiance));
+
   const robeMaterial = new MeshStandardNodeMaterial({
     color: robeColor,
     roughness: 0.8,
   });
+
+  const skin = new MeshStandardNodeMaterial({
+    color: "#d9b38c",
+    roughness: 0.7,
+  });
+
+  robeMaterial.emissiveNode = rim;
+  skin.emissiveNode = rim;
 
   const object = new Group();
 
@@ -59,7 +93,7 @@ export const createDuelistView = (robeColor: string): DuelistView => {
 
   return {
     object,
-    show: (sample, seconds) => {
+    show: (sample, seconds, lockedOn) => {
       object.position.set(sample.position.x, 0, sample.position.z);
       object.rotation.y = Math.atan2(sample.facing.x, sample.facing.z);
 
@@ -74,6 +108,9 @@ export const createDuelistView = (robeColor: string): DuelistView => {
 
       tilt += (wanted - tilt) * (1 - Math.exp(-tiltSharpness * seconds));
       object.rotation.x = tilt;
+
+      const fade = 1 - Math.exp(-glow.fadeSharpness * seconds);
+      glowStrength.value += ((lockedOn ? 1 : 0) - glowStrength.value) * fade;
     },
   };
 };

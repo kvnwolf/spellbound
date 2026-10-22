@@ -4,16 +4,31 @@
  * feed it one Intent per Duelist per tick. No three.js, no DOM.
  */
 import type { Tuning } from "../tuning";
+import {
+  addAim,
+  aimAt,
+  aimPivot,
+  castAimRay,
+  sightBlocked,
+  towardPoint,
+} from "./aim";
 import type { Difficulty } from "./difficulty";
 import { fly } from "./flight";
 import {
+  angleBetween,
   clamp,
   defaultForward,
   direction,
+  directionOf,
   distanceBetween,
+  forwardOf,
   rightOf,
+  rotateToward,
+  unit3,
+  wrapAngle,
+  yawOf,
 } from "./geometry";
-import type { GroundPoint, Point3 } from "./geometry";
+import type { Aim, GroundPoint, Point3 } from "./geometry";
 import { idleIntent } from "./intent";
 import type { Intent, Vec2 } from "./intent";
 
@@ -56,13 +71,29 @@ export interface DuelistState {
   readonly id: DuelistId;
   readonly team: TeamId;
   readonly position: GroundPoint;
-  /** Unit vector the Duelist faces: toward their Target when they have one. */
+  /**
+   * Unit vector the Duelist faces: where their aim looks (the camera's
+   * horizontal direction, for a human), or toward their Target while Locked On.
+   */
   readonly facing: GroundPoint;
-  /** The opposing Duelist this one is locked onto, if any is left. */
+  /**
+   * Where the Duelist looks: for a human, the camera's direction. The aim ray
+   * starts at the aim pivot over their right shoulder (see `aim.ts`).
+   */
+  readonly aim: Aim;
+  /** The opponent this Duelist is Locked On to, or null while free-aiming. */
   readonly targetId: DuelistId | null;
   /**
-   * Where the Duelist's Spells are aimed: the Target's chest, nudged by the
-   * Intent's aim offset; straight ahead at chest height without a Target.
+   * While Locked On, how far the right stick has nudged the framing off the
+   * Target (radians); it springs back to zero once the stick rests. Spells
+   * still go to the Target. Zero while free-aiming.
+   */
+  readonly lockNudge: Aim;
+  /** While Locked On, how long the Target has been out of sight behind Cover; 0 while in sight. */
+  readonly targetHiddenSeconds: number;
+  /**
+   * Where the Duelist's Spells go: the point under the crosshair (the first
+   * thing the aim ray reaches), or the Target's chest while Locked On.
    */
   readonly aimPoint: Point3;
   /** Between 0 (Knockout) and `tuning.duelist.health`; full again every Round. */
@@ -84,8 +115,16 @@ export interface SpellState {
   /** The stronger cast that ends a chain of consecutive Light Spells; it Staggers. */
   readonly strong: boolean;
   readonly position: Point3;
-  /** Metres per second. Spells fly straight. */
+  /** Metres per second. Spells fly straight, unless homing. */
   readonly velocity: Point3;
+  /**
+   * A Spell cast while Locked On turns weakly toward its Target for a short
+   * while after launch (see `tuning.lockOn.homing`); null for free-aimed Spells.
+   */
+  readonly homing: {
+    readonly targetId: DuelistId;
+    readonly secondsLeft: number;
+  } | null;
 }
 
 /**
@@ -128,6 +167,22 @@ export type DuelEvent =
   /** The intro's countdown ended: Duelists are in control. */
   | { readonly type: "round-start"; readonly round: number }
   | { readonly type: "spell-cast"; readonly spell: SpellState }
+  /** A Duelist Locked On to a Target, or switched to a new one. */
+  | {
+      readonly type: "lock-on";
+      readonly duelistId: DuelistId;
+      readonly targetId: DuelistId;
+    }
+  /**
+   * A Duelist's Lock-on ended: released with R3 (`toggle`), the Target was
+   * Knocked Out, or it stayed out of sight behind Cover too long.
+   */
+  | {
+      readonly type: "lock-off";
+      readonly duelistId: DuelistId;
+      readonly targetId: DuelistId;
+      readonly reason: "knockout" | "sight" | "toggle";
+    }
   /** A Spell landed on a Duelist. Light Spell hits are what will build Focus. */
   | {
       readonly type: "spell-hit";
@@ -223,12 +278,14 @@ const collide = (
 };
 
 /**
- * Lock-on movement: `forward` metres toward the Target and `right` metres
- * around it. Strafing orbits the Target at a constant distance, which is how
- * the stick feels with the camera locked behind the Duelist.
+ * Movement for one tick: `forward` metres and `right` metres sideways.
+ * Free-aiming, that is relative to where the Duelist looks (the camera).
+ * Locked On, forward is toward the Target and strafing orbits it at a
+ * constant distance, which is how the stick feels with the camera framing both.
  */
 const walk = (
   from: GroundPoint,
+  yaw: number,
   target: GroundPoint | undefined,
   right: number,
   forward: number
@@ -236,8 +293,13 @@ const walk = (
   const distance = target ? distanceBetween(from, target) : 0;
 
   if (!target || distance < 1e-6) {
-    // No Target to orbit: plain movement in the default frame.
-    return { x: from.x + right, z: from.z - forward };
+    const ahead = forwardOf(yaw);
+    const side = rightOf(ahead);
+
+    return {
+      x: from.x + ahead.x * forward + side.x * right,
+      z: from.z + ahead.z * forward + side.z * right,
+    };
   }
 
   const side = rightOf(direction(from, target));
@@ -282,48 +344,12 @@ const nearest = (
   return best;
 };
 
-/**
- * Locks every Duelist onto a Target (keeping the current one while it is still
- * an opponent, otherwise the nearest opponent), turns them to face it and
- * places their aim point around it.
- */
-const lockOn = (
-  duelists: readonly DuelistState[],
-  aimOf: (id: DuelistId) => Vec2,
-  tuning: Tuning
-): DuelistState[] =>
-  duelists.map((self) => {
-    const opponents = duelists.filter((other) => other.team !== self.team);
-
-    const target =
-      opponents.find((other) => other.id === self.targetId) ??
-      nearest(self.position, opponents);
-
-    const facing = target
-      ? direction(self.position, target.position)
-      : self.facing;
-
-    const center = target?.position ?? {
-      x: self.position.x + facing.x * tuning.aim.untargetedDistance,
-      z: self.position.z + facing.z * tuning.aim.untargetedDistance,
-    };
-
-    const offset = aimOf(self.id);
-    const sideways = clamp(offset.x, -1, 1) * tuning.aim.maxHorizontalOffset;
-    const upward = clamp(offset.y, -1, 1) * tuning.aim.maxVerticalOffset;
-    const side = rightOf(facing);
-
-    return {
-      ...self,
-      aimPoint: {
-        x: center.x + side.x * sideways,
-        y: tuning.duelist.chestHeight + upward,
-        z: center.z + side.z * sideways,
-      },
-      facing,
-      targetId: target?.id ?? null,
-    };
-  });
+/** A Duelist's chest: where Lock-on and Aim Assist aim at them. */
+const chestOf = (duelist: DuelistState, tuning: Tuning): Point3 => ({
+  x: duelist.position.x,
+  y: tuning.duelist.chestHeight,
+  z: duelist.position.z,
+});
 
 /**
  * Per-Duelist bookkeeping the snapshot has no need to show. Timers count
@@ -339,16 +365,24 @@ interface Bookkeeping {
   /** Consecutive Light Spells in the current chain. */
   chain: number;
   staggerTicks: number;
+  /** Ticks the Lock-on Target has been out of sight behind Cover. */
+  hiddenTicks: number;
+  /** Ticks left of a recentre after R3 found nothing to lock on to. */
+  recentreTicks: number;
 }
 
 const freshBookkeeping = (): Bookkeeping => ({
   chain: 0,
   held: false,
+  hiddenTicks: 0,
   queued: false,
+  recentreTicks: 0,
   recoveryTicks: 0,
   staggerTicks: 0,
   ticksSinceCast: Number.POSITIVE_INFINITY,
 });
+
+const noNudge: Aim = { pitch: 0, yaw: 0 };
 
 /** Where a Duelist's Spells leave the Wand. */
 const wandTip = (self: DuelistState, tuning: Tuning): Point3 => {
@@ -362,19 +396,11 @@ const wandTip = (self: DuelistState, tuning: Tuning): Point3 => {
   };
 };
 
-/** Velocity of a Spell flying from `from` through `to` at `speed`. */
-const towards = (from: Point3, to: Point3, speed: number): Point3 => {
-  const x = to.x - from.x;
-  const y = to.y - from.y;
-  const z = to.z - from.z;
-  const length = Math.hypot(x, y, z) || 1;
-
-  return {
-    x: (x / length) * speed,
-    y: (y / length) * speed,
-    z: (z / length) * speed,
-  };
-};
+const scale = (vector: Point3, by: number): Point3 => ({
+  x: vector.x * by,
+  y: vector.y * by,
+  z: vector.z * by,
+});
 
 export const createDuel = (config: DuelConfig): Duel => {
   const { arena, tuning } = config;
@@ -397,25 +423,433 @@ export const createDuel = (config: DuelConfig): Duel => {
     return found;
   };
 
-  /** Everyone back at their spawn at full Health, as every Round starts. */
+  const { eye } = tuning.aim;
+
+  /**
+   * Whether a Locked On Duelist's lock holds after everyone moved this tick:
+   * it breaks when the Target is Knocked Out, or once the Target has been
+   * out of sight behind Cover for longer than the grace. Returns the Target
+   * while the lock holds.
+   */
+  const keepLock = (
+    self: DuelistState,
+    duelists: readonly DuelistState[],
+    events: DuelEvent[]
+  ): DuelistState | undefined => {
+    if (self.targetId === null) {
+      return undefined;
+    }
+
+    const book = books(self.id);
+    const target = duelists.find((other) => other.id === self.targetId);
+    let reason: "knockout" | "sight" | undefined;
+
+    if (!target || target.knockedOut) {
+      reason = "knockout";
+    } else {
+      book.hiddenTicks = sightBlocked(
+        self.position,
+        target.position,
+        arena.cover
+      )
+        ? book.hiddenTicks + 1
+        : 0;
+
+      if (book.hiddenTicks * tickSeconds > tuning.lockOn.sightGraceSeconds) {
+        reason = "sight";
+      }
+    }
+
+    if (reason === undefined) {
+      return target;
+    }
+
+    book.hiddenTicks = 0;
+    events.push({
+      duelistId: self.id,
+      reason,
+      targetId: self.targetId,
+      type: "lock-off",
+    });
+
+    return undefined;
+  };
+
+  /**
+   * Faces each Duelist and settles where their Spells go, once everyone has
+   * moved this tick. Locked On: they face the Target and aim at its chest
+   * (the framing nudge only turns the aim, i.e. the camera). Free-aiming:
+   * they face where they look, and their Spells go to the point under the
+   * crosshair, the first thing their aim ray reaches, other standing Duelists
+   * included. A lock that breaks leaves the aim exactly where it was.
+   */
+  const settleAim = (
+    duelists: readonly DuelistState[],
+    events: DuelEvent[]
+  ): DuelistState[] =>
+    duelists.map((self) => {
+      if (self.knockedOut) {
+        return self;
+      }
+
+      const target = keepLock(self, duelists, events);
+
+      if (target) {
+        const chest = chestOf(target, tuning);
+
+        return {
+          ...self,
+          aim: addAim(aimAt(self.position, chest, arena, eye), self.lockNudge),
+          aimPoint: chest,
+          facing: direction(self.position, target.position),
+          targetHiddenSeconds: books(self.id).hiddenTicks * tickSeconds,
+        };
+      }
+
+      const bodies = duelists.flatMap((other) =>
+        other.id === self.id || other.knockedOut
+          ? []
+          : [
+              {
+                height: tuning.duelist.height,
+                position: other.position,
+                radius: bodyRadius,
+              },
+            ]
+      );
+
+      const { max, min } = tuning.aim.pitch;
+      const aim = { ...self.aim, pitch: clamp(self.aim.pitch, min, max) };
+
+      return {
+        ...self,
+        aim,
+        aimPoint: castAimRay(
+          aimPivot(self.position, aim.yaw, arena, eye),
+          directionOf(aim),
+          arena,
+          bodies
+        ),
+        facing: forwardOf(aim.yaw),
+        lockNudge: noNudge,
+        targetHiddenSeconds: 0,
+        targetId: null,
+      };
+    });
+
+  /**
+   * Everyone back at their spawn at full Health, as every Round starts, each
+   * looking at the nearest opponent's chest.
+   */
   const lineUp = (): DuelistState[] => {
     bookkeeping.clear();
 
-    return lockOn(
-      config.duelists.map((setup) => ({
-        aimPoint: { x: setup.spawn.x, y: 0, z: setup.spawn.z },
-        facing: defaultForward,
-        health: tuning.duelist.health,
-        id: setup.id,
-        knockedOut: false,
-        position: setup.spawn,
-        staggerSeconds: 0,
-        targetId: null,
-        team: setup.team,
-      })),
-      () => idleIntent.aim,
-      tuning
+    const spawned: DuelistState[] = config.duelists.map((setup) => ({
+      aim: { pitch: tuning.aim.pitch.rest, yaw: 0 },
+      aimPoint: { x: setup.spawn.x, y: 0, z: setup.spawn.z },
+      facing: defaultForward,
+      health: tuning.duelist.health,
+      id: setup.id,
+      knockedOut: false,
+      lockNudge: noNudge,
+      position: setup.spawn,
+      staggerSeconds: 0,
+      targetHiddenSeconds: 0,
+      targetId: null,
+      team: setup.team,
+    }));
+
+    return settleAim(
+      spawned.map((self) => {
+        const opponent = nearest(
+          self.position,
+          spawned.filter((other) => other.team !== self.team)
+        );
+
+        return opponent
+          ? {
+              ...self,
+              aim: aimAt(self.position, chestOf(opponent, tuning), arena, eye),
+            }
+          : self;
+      }),
+      []
     );
+  };
+
+  /** Opponents `self` can see: standing, within `range` and not behind Cover. */
+  const inSight = (
+    self: DuelistState,
+    duelists: readonly DuelistState[],
+    range = Number.POSITIVE_INFINITY
+  ) =>
+    duelists.filter(
+      (other) =>
+        other.team !== self.team &&
+        !other.knockedOut &&
+        distanceBetween(self.position, other.position) <= range &&
+        !sightBlocked(self.position, other.position, arena.cover)
+    );
+
+  /**
+   * The opponent in sight whose chest is the smallest angle off `self`'s
+   * crosshair, with that angle (radians, seen from the aim pivot): what Aim
+   * Assist helps toward, and what R3 Locks On to.
+   */
+  const nearestToCrosshair = (
+    self: DuelistState,
+    duelists: readonly DuelistState[],
+    range = Number.POSITIVE_INFINITY
+  ):
+    | { readonly opponent: DuelistState; readonly angle: number }
+    | undefined => {
+    const pivot = aimPivot(self.position, self.aim.yaw, arena, eye);
+    const ray = directionOf(self.aim);
+    let best: { opponent: DuelistState; angle: number } | undefined;
+
+    for (const opponent of inSight(self, duelists, range)) {
+      const angle = angleBetween(
+        ray,
+        towardPoint(pivot, chestOf(opponent, tuning))
+      );
+
+      if (!best || angle < best.angle) {
+        best = { angle, opponent };
+      }
+    }
+
+    return best;
+  };
+
+  /**
+   * Turns a free-aiming Duelist's aim by the Intent's look rates for one
+   * tick. Pitch stays within its limits, easing off over the last stretch
+   * before each so the stop never feels like hitting a wall. Aim Assist's
+   * friction slows the turn while the crosshair is over an opponent.
+   */
+  const look = (
+    self: DuelistState,
+    rates: Aim,
+    duelists: readonly DuelistState[]
+  ): Aim => {
+    const limits = tuning.aim.pitch;
+    const assist = tuning.aimAssist;
+
+    const room =
+      rates.pitch > 0
+        ? limits.max - self.aim.pitch
+        : self.aim.pitch - limits.min;
+
+    const edge = clamp(room / limits.edgeEase, limits.edgeFloor, 1);
+
+    // Friction: strongest with the crosshair dead on, gone at the edge of its cone.
+    const near = nearestToCrosshair(self, duelists)?.angle ?? Infinity;
+
+    const friction =
+      near < assist.frictionAngle
+        ? assist.friction +
+          (1 - assist.friction) * (near / assist.frictionAngle)
+        : 1;
+
+    return {
+      pitch: clamp(
+        self.aim.pitch + rates.pitch * edge * friction * tickSeconds,
+        limits.min,
+        limits.max
+      ),
+      yaw: wrapAngle(self.aim.yaw + rates.yaw * friction * tickSeconds),
+    };
+  };
+
+  /**
+   * Aim Assist at launch: a free-aimed cast whose crosshair is close to an
+   * opponent leaves the Wand turned part of the way toward their chest. Only
+   * the launch direction bends; the Spell then flies straight.
+   */
+  const assistedLaunch = (
+    self: DuelistState,
+    origin: Point3,
+    launch: Point3,
+    duelists: readonly DuelistState[]
+  ): Point3 => {
+    const near = nearestToCrosshair(self, duelists);
+
+    if (!near || near.angle > tuning.aimAssist.bendAngle) {
+      return launch;
+    }
+
+    const toChest = towardPoint(origin, chestOf(near.opponent, tuning));
+
+    return rotateToward(
+      launch,
+      toChest,
+      angleBetween(launch, toChest) * tuning.aimAssist.bendStrength
+    );
+  };
+
+  /**
+   * The next opponent to the `side` (-1 left, 1 right) of a Locked On
+   * Duelist's current Target, as seen from the Duelist: the one the smallest
+   * turn away that way, in sight and in range. None past the last one.
+   */
+  const nextTarget = (
+    self: DuelistState,
+    duelists: readonly DuelistState[],
+    side: -1 | 1
+  ): DuelistState | undefined => {
+    const current = duelists.find((other) => other.id === self.targetId);
+
+    if (!current) {
+      return undefined;
+    }
+
+    const bearing = yawOf(direction(self.position, current.position));
+    let best: DuelistState | undefined;
+    let bestTurn = Number.POSITIVE_INFINITY;
+
+    for (const other of inSight(self, duelists, tuning.lockOn.range)) {
+      const turnBy =
+        side *
+        wrapAngle(yawOf(direction(self.position, other.position)) - bearing);
+
+      if (other.id !== current.id && turnBy > 0 && turnBy < bestTurn) {
+        best = other;
+        bestTurn = turnBy;
+      }
+    }
+
+    return best;
+  };
+
+  /**
+   * The framing nudge for one tick while Locked On, a spring: the look rates
+   * push it (scaled by the gain, up to its limits) while it always pulls back
+   * toward zero. Holding the stick settles on an offset that grows with the
+   * deflection; letting go springs back.
+   */
+  const nudge = (from: Aim, rates: Aim): Aim => {
+    const { gain, maxPitch, maxYaw, returnSharpness } = tuning.lockOn.nudge;
+    const settle = Math.exp(-returnSharpness * tickSeconds);
+
+    const axis = (offset: number, rate: number, limit: number) =>
+      clamp(offset * settle + rate * gain * tickSeconds, -limit, limit);
+
+    return {
+      pitch: axis(from.pitch, rates.pitch, maxPitch),
+      yaw: axis(from.yaw, rates.yaw, maxYaw),
+    };
+  };
+
+  /**
+   * Lock-on and the aim for one tick, from the Intent. R3 releases the
+   * Target, or Locks On to the opponent nearest the crosshair (in range and
+   * in sight); with nothing to lock on to it recentres the camera's pitch
+   * instead. A flick switches Target. Locked On, the look rates only nudge
+   * the framing; free-aiming, they turn the aim.
+   */
+  const steer = (
+    self: DuelistState,
+    intent: Intent,
+    duelists: readonly DuelistState[],
+    events: DuelEvent[]
+  ): DuelistState => {
+    const book = books(self.id);
+    let next = self;
+
+    const lockOnto = (target: DuelistState) => {
+      book.hiddenTicks = 0;
+      book.recentreTicks = 0;
+      next = { ...next, lockNudge: noNudge, targetId: target.id };
+      events.push({ duelistId: self.id, targetId: target.id, type: "lock-on" });
+    };
+
+    if (intent.lockOn && self.targetId !== null) {
+      book.hiddenTicks = 0;
+      next = { ...next, lockNudge: noNudge, targetId: null };
+      events.push({
+        duelistId: self.id,
+        reason: "toggle",
+        targetId: self.targetId,
+        type: "lock-off",
+      });
+    } else if (intent.lockOn) {
+      const near = nearestToCrosshair(self, duelists, tuning.lockOn.range);
+
+      if (near) {
+        lockOnto(near.opponent);
+      } else {
+        book.recentreTicks = ticksOf(tuning.lockOn.recentreSeconds);
+      }
+    } else if (self.targetId !== null && intent.switchTarget !== 0) {
+      const switched = nextTarget(self, duelists, intent.switchTarget);
+
+      if (switched) {
+        lockOnto(switched);
+      }
+    }
+
+    if (next.targetId !== null) {
+      return { ...next, lockNudge: nudge(next.lockNudge, intent.look) };
+    }
+
+    const aim = look(next, intent.look, duelists);
+
+    if (book.recentreTicks === 0) {
+      return { ...next, aim };
+    }
+
+    // Recentring: the pitch glides back to rest over the remaining ticks.
+    const pitch =
+      aim.pitch + (tuning.aim.pitch.rest - aim.pitch) / book.recentreTicks;
+
+    book.recentreTicks -= 1;
+
+    return { ...next, aim: { ...aim, pitch } };
+  };
+
+  /**
+   * A homing Spell turns toward its Target's chest by at most the homing
+   * turn rate this tick, while its homing lasts and the Target is still
+   * standing and ahead of it.
+   */
+  const home = (
+    spell: SpellState,
+    duelists: readonly DuelistState[]
+  ): SpellState => {
+    const { homing } = spell;
+
+    if (!homing) {
+      return spell;
+    }
+
+    const target = duelists.find((other) => other.id === homing.targetId);
+    const heading = unit3(spell.velocity);
+
+    const toChest = target
+      ? towardPoint(spell.position, chestOf(target, tuning))
+      : heading;
+
+    const ahead =
+      heading.x * toChest.x + heading.y * toChest.y + heading.z * toChest.z > 0;
+
+    if (!target || target.knockedOut || !ahead || homing.secondsLeft <= 0) {
+      return { ...spell, homing: null };
+    }
+
+    const turned = rotateToward(
+      heading,
+      toChest,
+      tuning.lockOn.homing.turnRate * tickSeconds
+    );
+
+    return {
+      ...spell,
+      homing: { ...homing, secondsLeft: homing.secondsLeft - tickSeconds },
+      velocity: scale(
+        turned,
+        Math.hypot(spell.velocity.x, spell.velocity.y, spell.velocity.z)
+      ),
+    };
   };
 
   let nextSpellId = 1;
@@ -489,7 +923,7 @@ export const createDuel = (config: DuelConfig): Duel => {
    */
   const flySpells = (draft: Draft): Map<DuelistId, number> => {
     const flight = fly(
-      draft.spells,
+      draft.spells.map((spell) => home(spell, draft.duelists)),
       {
         arena,
         bodyHeight: tuning.duelist.height,
@@ -611,23 +1045,33 @@ export const createDuel = (config: DuelConfig): Duel => {
     return true;
   };
 
-  /** Duelists move and decide to cast: only while fighting, standing and not Staggered. */
+  /**
+   * Duelists aim, move and decide to cast. Looking around works during the
+   * intro's countdown and while Staggered; moving and casting only while
+   * fighting, standing and not Staggered.
+   */
   const act = (
     draft: Draft,
     intentOf: (id: DuelistId) => Intent
   ): Set<DuelistId> => {
     const casters = new Set<DuelistId>();
     const byId = new Map(draft.duelists.map((each) => [each.id, each]));
+    const { phase } = draft.round;
 
-    const acted = draft.duelists.map((self) => {
-      const intent = intentOf(self.id);
-      const book = books(self.id);
+    const acted = draft.duelists.map((standing) => {
+      const intent = intentOf(standing.id);
+      const book = books(standing.id);
       const pressed = intent.lightSpell && !book.held;
 
+      const canLook =
+        (phase === "fighting" || phase === "intro") && !standing.knockedOut;
+
+      const self = canLook
+        ? steer(standing, intent, draft.duelists, draft.events)
+        : standing;
+
       const canAct =
-        draft.round.phase === "fighting" &&
-        !self.knockedOut &&
-        book.staggerTicks === 0;
+        phase === "fighting" && !self.knockedOut && book.staggerTicks === 0;
 
       book.held = intent.lightSpell;
       book.recoveryTicks = Math.max(book.recoveryTicks - 1, 0);
@@ -653,6 +1097,7 @@ export const createDuel = (config: DuelConfig): Duel => {
 
       const wanted = walk(
         self.position,
+        self.aim.yaw,
         target?.position,
         move.x * stride,
         move.y * stride
@@ -673,13 +1118,13 @@ export const createDuel = (config: DuelConfig): Duel => {
       };
     });
 
-    draft.duelists = lockOn(acted, (id) => intentOf(id).aim, tuning);
+    draft.duelists = settleAim(acted, draft.events);
 
     return casters;
   };
 
   /**
-   * New Stupefies leave the Wand toward the freshly locked aim point. Casts
+   * New Stupefies leave the Wand toward the point under the crosshair. Casts
    * close enough together form a chain; every `chainLength`-th one is strong.
    */
   const cast = (draft: Draft, casters: Set<DuelistId>) => {
@@ -701,15 +1146,31 @@ export const createDuel = (config: DuelConfig): Duel => {
       book.recoveryTicks = ticksOf(stupefy.castInterval);
 
       const origin = wandTip(self, tuning);
+      const launch = towardPoint(origin, self.aimPoint);
 
+      // Locked On: straight at the Target's chest where it stands now (no
+      // lead), with a weak homing a strafe can still beat. Free-aiming: to
+      // the point under the crosshair, bent by Aim Assist at launch only.
       const spell: SpellState = {
         casterId: self.id,
+        homing:
+          self.targetId === null
+            ? null
+            : {
+                secondsLeft: tuning.lockOn.homing.seconds,
+                targetId: self.targetId,
+              },
         id: nextSpellId,
         kind: "stupefy",
         position: origin,
         strong,
         team: self.team,
-        velocity: towards(origin, self.aimPoint, stupefy.speed),
+        velocity: scale(
+          self.targetId === null
+            ? assistedLaunch(self, origin, launch, draft.duelists)
+            : launch,
+          stupefy.speed
+        ),
       };
 
       nextSpellId += 1;

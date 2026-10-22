@@ -3,28 +3,50 @@
  * logic. Distances are metres, times are seconds, speeds are metres per second.
  */
 export const tuning = {
+  /**
+   * Free aim: a human aims with the camera, so the aim is a ray from a pivot
+   * over the Duelist's right shoulder (the camera sits straight behind it)
+   * along the Duelist's yaw and pitch. Angles are radians.
+   */
   aim: {
-    /** How far the right stick can push the aim point sideways from the Target. */
-    maxHorizontalOffset: 2.5,
-    /** How far the right stick can push the aim point up or down from the Target's chest. */
-    maxVerticalOffset: 1.2,
-    /** With no Target left, the aim point sits this far straight ahead. */
-    untargetedDistance: 8,
+    /** Where the aim ray starts; the camera rig places the camera behind this same point. */
+    eye: {
+      height: 2.05,
+      /** Kept this far from walls and Cover, pulling the shoulder offset in when there is no room. */
+      margin: 0.35,
+      shoulder: 0.85,
+    },
+    pitch: {
+      /** Turning eases off over this last stretch before either limit, instead of stopping dead. */
+      edgeEase: 0.17,
+      /** Never slower than this share of the turn rate near a limit, so the limit is still reached. */
+      edgeFloor: 0.2,
+      /** Highest the aim looks (about 29 degrees up). */
+      max: 0.5,
+      /** Lowest the aim looks (about 34 degrees down). */
+      min: -0.6,
+      /** Where a recentre brings the pitch: just below level. */
+      rest: -0.05,
+    },
+  },
+
+  /**
+   * Aim Assist, for a free-aiming Duelist: gentle help toward an opponent near
+   * the crosshair (in sight, not behind Cover). Angles are radians, measured
+   * at the aim pivot between the crosshair's ray and the opponent's chest.
+   */
+  aimAssist: {
+    /** A cast whose crosshair is within this angle of an opponent bends toward them at launch (about 7 degrees). */
+    bendAngle: 0.12,
+    /** Share of the gap to the opponent's chest the launch direction closes (1 aims dead at the chest). */
+    bendStrength: 0.85,
+    /** Turn speed multiplier with the crosshair right on an opponent, easing back to 1 at `frictionAngle`. */
+    friction: 0.55,
+    /** Turning eases while the crosshair is within this angle of an opponent (about 4.6 degrees). */
+    frictionAngle: 0.08,
   },
 
   camera: {
-    /**
-     * The soft lock-on keeps the Target in frame, but the framing leans toward
-     * the aim: the camera turns toward the aim by this share of the aim's angle
-     * off the Target (the rest shows as the reticle moving across the screen).
-     * 1 would pin the reticle to the screen centre, 0 is the old fixed camera.
-     */
-    aimFollow: {
-      /** Sideways share of the aim's angle the framing follows. */
-      horizontal: 0.6,
-      /** Vertical share of the aim's angle the framing follows. */
-      vertical: 0.5,
-    },
     /**
      * Keeping the view clear of Arena geometry. The camera is a disc of radius
      * `margin` that must stay inside the walls and out of every column, and
@@ -71,13 +93,24 @@ export const tuning = {
       pullBack: 2.2,
       startsAt: 6,
     },
-    /** Distance behind the local Duelist, away from the Target. */
+    /** Distance behind the local Duelist, away from the Target, while Locked On. */
     distance: 4.6,
     /** Where the camera looks, from the Duelist (0) to the Target (1). */
     focusBias: 0.45,
     /** Exponential smoothing rate of the follow (higher is snappier), per second. */
     followSharpness: 7,
     fov: 55,
+    /**
+     * The free camera: it sits behind the aim pivot (`aim.eye`) along the aim,
+     * so the screen centre always looks down the aim ray.
+     */
+    free: {
+      /** Distance behind the aim pivot. */
+      distance: 4.6,
+      /** The camera never drops below this height; looking up pulls it in toward the pivot instead. */
+      minHeight: 0.35,
+    },
+    /** Camera height while Locked On. */
     height: 2.4,
     /**
      * When the camera has swung round to the side (pinned against a wall) the
@@ -87,6 +120,8 @@ export const tuning = {
      * the local Duelist never does.
      */
     keepDuelistWithin: 0.65,
+    /** Exponential rate, per second, of the blend between the free camera and the Lock-on framing, both ways: never a snap. */
+    lockBlendSharpness: 6,
     /** The camera never swings round the Duelist faster than this (radians per second), even when the Target is circled at arm's length. */
     maxYawSpeed: 4,
     /** Sideways offset to the right of the Duelist: the over-the-shoulder view. */
@@ -214,23 +249,42 @@ export const tuning = {
 
   input: {
     /**
-     * How the right stick drives the aim offset. The raw stick is first shaped
-     * by a response curve, then eased by a critically damped spring, so the
-     * aim accelerates into a push and glides to rest on release.
+     * Flicking the right stick switches the Lock-on Target left or right: the
+     * stick must travel from near the centre to near full tilt quickly, then
+     * come back to the centre before it can flick again.
      */
-    aimResponse: {
+    flick: {
+      /** No second flick sooner than this after the last one, seconds. */
+      cooldownSeconds: 0.3,
+      /** The stick counts as centred (and the flick re-arms) below this deflection. */
+      rest: 0.3,
+      /** Deflection that completes a flick. */
+      threshold: 0.8,
+      /** Seconds from leaving the centre to reaching the threshold, at most. */
+      windowSeconds: 0.15,
+    },
+    /** Clicking R3 often knocks the right stick: it is ignored this long after the press, seconds. */
+    lockOnSettleSeconds: 0.12,
+    /**
+     * How the right stick turns the camera. The deflection is shaped by a
+     * response curve, eased by a critically damped spring (light smoothing and
+     * a touch of acceleration), then scaled to turn rates. Up looks up.
+     */
+    look: {
       /**
        * Response curve: the stick deflection (0 to 1) is raised to this power.
-       * 1 is linear; higher is finer near the centre and faster at full tilt
-       * (2 gives a quarter of the aim at half tilt, all of it at full tilt).
+       * 1 is linear; higher is finer near the centre and faster at full tilt.
        */
-      curveExponent: 2,
+      curveExponent: 1.8,
+      /** Full-tilt pitch rate, radians per second (about 150 degrees per second). */
+      maxPitchSpeed: 2.6,
+      /** Full-tilt yaw rate, radians per second (about 220 degrees per second). */
+      maxYawSpeed: 3.8,
       /**
        * Natural frequency of the spring that chases the shaped stick (rad/s).
-       * Higher is snappier; around 28 settles in about 0.17 s, light enough
-       * to feel alive but never a snap.
+       * Higher is snappier; around 30 settles in about 0.15 s.
        */
-      springFrequency: 28,
+      springFrequency: 30,
     },
     /** Stick deflection below this radius reads as centred. */
     stickDeadZone: 0.12,
@@ -243,6 +297,41 @@ export const tuning = {
    * winner's side, as if standing this far from them.
    */
   knockoutCamera: { standOff: 2.5 },
+
+  /** Lock-on: R3 locks a Duelist onto an opponent, who becomes their Target. */
+  lockOn: {
+    /**
+     * Spells cast while Locked On fly at the Target's current chest (no lead)
+     * and turn toward it at no more than `turnRate` (radians per second) for
+     * their first `seconds`: enough to follow a small step, never a strafe.
+     */
+    homing: { seconds: 0.35, turnRate: 0.35 },
+    /**
+     * While Locked On the right stick only nudges the framing, like a spring:
+     * its turn rate, scaled by `gain`, pushes the view off the Target up to
+     * `maxYaw` / `maxPitch` (radians) while it always pulls back at
+     * `returnSharpness` (per second). Full tilt holds about gain x speed /
+     * sharpness; letting go springs back.
+     */
+    nudge: { gain: 0.5, maxPitch: 0.21, maxYaw: 0.35, returnSharpness: 6 },
+    /** Only opponents within this many metres can be Locked On to. */
+    range: 30,
+    /** With nothing to lock on to, R3 brings the pitch back to rest over this long. */
+    recentreSeconds: 0.25,
+    /** The lock breaks once the Target has been out of sight behind Cover for longer than this. */
+    sightGraceSeconds: 1,
+  },
+
+  /** How the Lock-on Target is marked: a rim glow round its silhouette (the ring is DOM). */
+  lockOnGlow: {
+    color: "#ffcf7a",
+    /** Exponential rate, per second, at which the glow fades in and out. */
+    fadeSharpness: 10,
+    /** Fresnel exponent: higher hugs the silhouette's edge more tightly. */
+    power: 2.4,
+    /** Peak scene-linear radiance at the very edge, above the bloom threshold so it glows. */
+    radiance: 2.2,
+  },
 
   /** Navigating menus with the D-pad and the left stick. */
   menu: {
@@ -315,4 +404,11 @@ export const tuning = {
   tickRate: 60,
 } as const;
 
-export type Tuning = typeof tuning;
+/** Literal numbers and strings widened, so a variant (a test's, or a future option's) can hold other values. */
+type Widened<T> = T extends number
+  ? number
+  : T extends string
+    ? string
+    : { readonly [Key in keyof T]: Widened<T[Key]> };
+
+export type Tuning = Widened<typeof tuning>;

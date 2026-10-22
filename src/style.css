@@ -25,26 +25,65 @@ body {
   height: 100%;
 }
 
+/* The crosshair: a fixed dot at the screen centre, where free-aimed Spells go. */
 #reticle {
   position: fixed;
-  width: 22px;
-  height: 22px;
-  border: 2px solid var(--gold);
+  top: 50%;
+  left: 50%;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
+  background: var(--parchment);
   translate: -50% -50%;
   pointer-events: none;
-  box-shadow: 0 0 8px rgb(216 180 106 / 50%);
+  box-shadow:
+    0 0 0 1.5px rgb(10 12 24 / 60%),
+    0 0 6px rgb(216 180 106 / 70%);
 }
 
-#reticle::after {
-  position: absolute;
-  inset: 50% auto auto 50%;
-  width: 4px;
-  height: 4px;
-  border-radius: 50%;
-  background: var(--gold);
+/* The Lock-on ring: a constant-size rune ring on the Target's chest. */
+.lock-ring {
+  position: fixed;
+  width: 46px;
+  height: 46px;
   translate: -50% -50%;
+  pointer-events: none;
+  transition: opacity 0.2s;
+}
+
+.lock-ring::before,
+.lock-ring::after {
+  position: absolute;
+  border-radius: 50%;
   content: "";
+}
+
+/* Outer dashed runes, slowly turning, and a solid inner ring. */
+.lock-ring::before {
+  inset: 0;
+  border: 2px dashed var(--gold);
+  filter: drop-shadow(0 0 4px rgb(216 180 106 / 80%));
+  animation: lock-ring-turn 6s linear infinite;
+}
+
+.lock-ring::after {
+  inset: 9px;
+  border: 1.5px solid rgb(239 228 200 / 85%);
+}
+
+/* The Target is out of sight behind Cover: the lock is about to break. */
+.lock-ring.lock-ring-hidden {
+  opacity: 0.35;
+}
+
+.lock-ring[hidden] {
+  display: none;
+}
+
+@keyframes lock-ring-turn {
+  to {
+    rotate: 1turn;
+  }
 }
 
 #overlay {

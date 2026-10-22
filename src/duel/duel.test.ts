@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import { tuning } from "../tuning";
+import type { Tuning } from "../tuning";
 import { createDuel } from "./duel";
 import type { ArenaLayout, Duel, DuelEvent, DuelistState } from "./duel";
+import { rightOf } from "./geometry";
+import type { Aim } from "./geometry";
+import { idleIntent } from "./intent";
 import type { Intent } from "./intent";
 
 const openArena: ArenaLayout = {
@@ -14,15 +18,24 @@ const openArena: ArenaLayout = {
 const secondsToTicks = (seconds: number) =>
   Math.round(seconds * tuning.tickRate);
 
+/** The same tuning with Aim Assist switched off: no friction, no bend. */
+const withoutAimAssist: Tuning = {
+  ...tuning,
+  aimAssist: { ...tuning.aimAssist, bendStrength: 0, friction: 1 },
+};
+
 /** A 1v1 with the hero facing the rival 10 m away along -z, still in the Round intro. */
-const createOneVsOne = (arena: ArenaLayout = openArena): Duel =>
+const createOneVsOne = (
+  arena: ArenaLayout = openArena,
+  settings: Tuning = tuning
+): Duel =>
   createDuel({
     arena,
     duelists: [
       { id: "hero", spawn: { x: 0, z: 5 }, team: "gryffindor" },
       { id: "rival", spawn: { x: 0, z: -5 }, team: "slytherin" },
     ],
-    tuning,
+    tuning: settings,
   });
 
 /** Steps idle ticks until the Round intro's countdown is over and Duelists can act. */
@@ -37,17 +50,18 @@ const skipIntro = (duel: Duel) => {
 };
 
 /** A 1v1 with control already given: the Round intro has played out. */
-const fight = (arena: ArenaLayout = openArena): Duel => {
-  const duel = createOneVsOne(arena);
+const fight = (
+  arena: ArenaLayout = openArena,
+  settings: Tuning = tuning
+): Duel => {
+  const duel = createOneVsOne(arena, settings);
   skipIntro(duel);
 
   return duel;
 };
 
 const intent = (overrides: Partial<Intent>): Intent => ({
-  aim: { x: 0, y: 0 },
-  lightSpell: false,
-  move: { x: 0, y: 0 },
+  ...idleIntent,
   ...overrides,
 });
 
@@ -60,6 +74,23 @@ const hold = (duel: Duel, heroIntent: Intent, seconds: number) => {
   }
 
   return duel.snapshot();
+};
+
+/** Turns the hero's aim by `by` radians, spread over one second of look input. */
+const turn = (duel: Duel, by: Aim) => hold(duel, intent({ look: by }), 1);
+
+/**
+ * A fight (without Aim Assist) in which the hero has turned to look straight
+ * down the Arena, along -z, so walking forward heads down the centre line.
+ * At the start the over-the-shoulder aim looks slightly left of that, to put
+ * the crosshair on the rival.
+ */
+const fightLookingDownTheArena = (arena: ArenaLayout = openArena): Duel => {
+  const duel = fight(arena, withoutAimAssist);
+  const { yaw } = duel.snapshot().duelists[0]?.aim ?? { yaw: 0 };
+  turn(duel, { pitch: 0, yaw: -yaw });
+
+  return duel;
 };
 
 /**
@@ -121,43 +152,144 @@ describe("Duel ticks", () => {
   });
 });
 
-describe("Duel movement", () => {
-  it("walks the Duelist toward its Target at walk speed when the stick is pushed forward", () => {
+describe("Free aim", () => {
+  it("starts each Round looking at the nearest opponent, with the crosshair on their chest", () => {
     const duel = fight();
 
-    hold(duel, intent({ move: { x: 0, y: 1 } }), 1);
+    const hero = duelist(duel, "hero");
 
-    expect(duelist(duel, "hero").position.x).toBeCloseTo(0);
-    expect(duelist(duel, "hero").position.z).toBeCloseTo(
-      5 - tuning.duelist.walkSpeed
-    );
+    expect(hero.targetId).toBeNull();
+    expect(hero.facing.z).toBeCloseTo(-1);
+    // The crosshair lands on the front of the rival's body, at chest height.
+    expect(hero.aimPoint.x).toBeCloseTo(0, 1);
+    expect(hero.aimPoint.y).toBeCloseTo(tuning.duelist.chestHeight, 1);
+    expect(hero.aimPoint.z).toBeCloseTo(-5 + tuning.duelist.bodyRadius, 1);
   });
 
-  it("circles the Target at a constant distance when strafing right", () => {
+  it("turns the aim at the look rates and always faces where it looks", () => {
+    const duel = fight(openArena, withoutAimAssist);
+    const before = duelist(duel, "hero");
+
+    turn(duel, { pitch: 0.2, yaw: Math.PI / 2 });
+
+    const hero = duelist(duel, "hero");
+    expect(hero.aim.yaw - before.aim.yaw).toBeCloseTo(Math.PI / 2);
+    expect(hero.aim.pitch - before.aim.pitch).toBeCloseTo(0.2);
+    // A quarter turn right: now facing what was on the right.
+    expect(hero.facing.x).toBeCloseTo(rightOf(before.facing).x);
+    expect(hero.facing.z).toBeCloseTo(rightOf(before.facing).z);
+  });
+
+  it("keeps the pitch within its limits", () => {
     const duel = fight();
 
-    hold(duel, intent({ move: { x: 1, y: 0 } }), 1);
+    turn(duel, { pitch: 3, yaw: 0 });
+    const up = duelist(duel, "hero").aim.pitch;
+    turn(duel, { pitch: -6, yaw: 0 });
+    const down = duelist(duel, "hero").aim.pitch;
 
-    const { position } = duelist(duel, "hero");
-    expect(position.x).toBeGreaterThan(3);
-    expect(Math.hypot(position.x, position.z + 5)).toBeCloseTo(10);
+    expect(up).toBeCloseTo(tuning.aim.pitch.max);
+    expect(down).toBeCloseTo(tuning.aim.pitch.min);
+  });
+
+  it("walks where the camera looks and strafes sideways without turning", () => {
+    const duel = fight(openArena, withoutAimAssist);
+    turn(duel, { pitch: 0, yaw: Math.PI / 2 });
+    const start = duelist(duel, "hero");
+
+    hold(duel, intent({ move: { x: 0, y: 1 } }), 0.5);
+    const walked = duelist(duel, "hero");
+    hold(duel, intent({ move: { x: 1, y: 0 } }), 0.5);
+    const strafed = duelist(duel, "hero");
+
+    const stride = tuning.duelist.walkSpeed * 0.5;
+    const right = rightOf(start.facing);
+    expect(walked.position.x - start.position.x).toBeCloseTo(
+      start.facing.x * stride
+    );
+    expect(walked.position.z - start.position.z).toBeCloseTo(
+      start.facing.z * stride
+    );
+    expect(strafed.position.x - walked.position.x).toBeCloseTo(
+      right.x * stride
+    );
+    expect(strafed.position.z - walked.position.z).toBeCloseTo(
+      right.z * stride
+    );
+    expect(strafed.facing).toStrictEqual(start.facing);
+  });
+});
+
+/** Turn speed over the next tick, radians per second, for a look rate of `rate`. */
+const turnSpeed = (duel: Duel, rate: number) => {
+  const before = duelist(duel, "hero").aim.yaw;
+  run(duel, 1, { hero: intent({ look: { pitch: 0, yaw: rate } }) });
+
+  return (duelist(duel, "hero").aim.yaw - before) * tuning.tickRate;
+};
+
+/** Casts once with the crosshair turned `yaw` radians off the rival and reports whether it hit. */
+const castsOff = (yaw: number, settings: Tuning) => {
+  const duel = fight(openArena, settings);
+  turn(duel, { pitch: 0, yaw });
+
+  const events = [...tapLight(duel, "hero"), ...settle(duel)];
+
+  return ofType(events, "spell-hit").length > 0;
+};
+
+describe("Aim Assist", () => {
+  it("eases the turn speed while the crosshair is over an opponent", () => {
+    const duel = fight();
+
+    const overRival = turnSpeed(duel, 0.5);
+    turn(duel, { pitch: 0, yaw: 1 });
+    const clear = turnSpeed(duel, 0.5);
+
+    expect(overRival).toBeLessThan(0.4);
+    expect(overRival).toBeGreaterThan(0.2);
+    expect(clear).toBeCloseTo(0.5);
+  });
+
+  it("bends a cast toward an opponent just off the crosshair, only at launch", () => {
+    const bendOnly: Tuning = {
+      ...tuning,
+      aimAssist: { ...tuning.aimAssist, friction: 1 },
+    };
+
+    // About 6 degrees off: wide of the body without Aim Assist.
+    expect(castsOff(0.1, withoutAimAssist)).toBeFalsy();
+    expect(castsOff(0.1, bendOnly)).toBeTruthy();
+    // Well outside the Aim Assist cone, nothing bends.
+    expect(castsOff(0.16, bendOnly)).toBeFalsy();
+  });
+
+  it("flies straight after launch: the bend is no homing", () => {
+    const duel = fight();
+    tapLight(duel, "hero");
+    const [launched] = duel.snapshot().spells;
+
+    run(duel, 3, { rival: intent({ move: { x: 1, y: 0 } }) });
+
+    expect(duel.snapshot().spells[0]?.velocity).toStrictEqual(
+      launched?.velocity
+    );
   });
 });
 
 describe("Duel collision", () => {
   it("stops the Duelist at the Arena bounds", () => {
-    const duel = fight();
+    const duel = fightLookingDownTheArena();
 
     hold(duel, intent({ move: { x: 0, y: -1 } }), 3);
 
-    expect(duelist(duel, "hero").position).toStrictEqual({
-      x: 0,
-      z: 10 - tuning.duelist.bodyRadius,
-    });
+    const { position } = duelist(duel, "hero");
+    expect(position.x).toBeCloseTo(0);
+    expect(position.z).toBe(10 - tuning.duelist.bodyRadius);
   });
 
   it("stops the Duelist against a column of Cover standing in the way", () => {
-    const duel = fight({
+    const duel = fightLookingDownTheArena({
       ...openArena,
       cover: [{ center: { x: 0, z: 0 }, radius: 1 }],
     });
@@ -170,7 +302,7 @@ describe("Duel collision", () => {
   });
 
   it("slides the Duelist around a column it walks into off-centre", () => {
-    const duel = fight({
+    const duel = fightLookingDownTheArena({
       ...openArena,
       cover: [{ center: { x: 0.3, z: 0 }, radius: 1 }],
     });
@@ -181,7 +313,7 @@ describe("Duel collision", () => {
   });
 
   it("stops the Duelist against an Obstruction standing in the way", () => {
-    const duel = fight({
+    const duel = fightLookingDownTheArena({
       ...openArena,
       obstructions: [{ center: { x: 0, z: 0 }, radius: 1 }],
     });
@@ -194,7 +326,7 @@ describe("Duel collision", () => {
   });
 
   it("slides the Duelist around an Obstruction it walks into off-centre", () => {
-    const duel = fight({
+    const duel = fightLookingDownTheArena({
       ...openArena,
       obstructions: [{ center: { x: 0.3, z: 0 }, radius: 1 }],
     });
@@ -205,7 +337,7 @@ describe("Duel collision", () => {
   });
 
   it("does not let a Duelist walk through another Duelist", () => {
-    const duel = fight();
+    const duel = fightLookingDownTheArena();
 
     hold(duel, intent({ move: { x: 0, y: 1 } }), 4);
 
@@ -215,54 +347,6 @@ describe("Duel collision", () => {
     expect(hero.position.z - rival.position.z).toBeCloseTo(
       2 * tuning.duelist.bodyRadius
     );
-  });
-});
-
-describe("Duel Targets", () => {
-  it("locks each Duelist onto the opposing Duelist and keeps them facing it", () => {
-    const duel = fight();
-
-    hold(duel, intent({ move: { x: 1, y: 0 } }), 0.5);
-
-    const hero = duelist(duel, "hero");
-    const rival = duelist(duel, "rival");
-    expect([hero.targetId, rival.targetId]).toStrictEqual(["rival", "hero"]);
-
-    const toHero = {
-      x: hero.position.x - rival.position.x,
-      z: hero.position.z - rival.position.z,
-    };
-
-    const length = Math.hypot(toHero.x, toHero.z);
-    expect(rival.facing.x).toBeCloseTo(toHero.x / length);
-    expect(rival.facing.z).toBeCloseTo(toHero.z / length);
-  });
-});
-
-describe("Duel aim", () => {
-  it("aims at the Target's chest while the right stick is centred", () => {
-    const duel = fight();
-
-    hold(duel, intent({}), 0.1);
-
-    expect(duelist(duel, "hero").aimPoint).toStrictEqual({
-      x: 0,
-      y: tuning.duelist.chestHeight,
-      z: -5,
-    });
-  });
-
-  it("nudges the aim point right of and above the Target with the right stick", () => {
-    const duel = fight();
-
-    hold(duel, intent({ aim: { x: 1, y: 1 } }), 0.1);
-
-    const { aimPoint } = duelist(duel, "hero");
-    expect(aimPoint.x).toBeCloseTo(tuning.aim.maxHorizontalOffset);
-    expect(aimPoint.y).toBeCloseTo(
-      tuning.duelist.chestHeight + tuning.aim.maxVerticalOffset
-    );
-    expect(aimPoint.z).toBeCloseTo(-5);
   });
 });
 
@@ -280,6 +364,21 @@ describe("Stupefy", () => {
     // Flying down the Arena toward the rival at Stupefy's speed.
     expect(spell?.casterId).toBe("hero");
     expect(spell?.velocity.z).toBeCloseTo(-tuning.stupefy.speed, 0);
+  });
+
+  it("flies to the point under the crosshair", () => {
+    const duel = fight(openArena, withoutAimAssist);
+    // Look down at the floor a few metres ahead.
+    turn(duel, { pitch: -0.35, yaw: 0 });
+    const { aimPoint } = duelist(duel, "hero");
+
+    const events = [...tapLight(duel, "hero"), ...settle(duel)];
+
+    const [stopped] = ofType(events, "spell-stopped");
+    expect(stopped?.by).toBe("floor");
+    expect(aimPoint.y).toBeCloseTo(0);
+    expect(stopped?.position.x).toBeCloseTo(aimPoint.x, 1);
+    expect(stopped?.position.z).toBeCloseTo(aimPoint.z, 1);
   });
 
   it("costs the Duelist it hits Health and reports a Light Spell hit", () => {
@@ -441,12 +540,8 @@ describe("Spell flight", () => {
     const duel = fight();
 
     // Aim far right of the rival: the Spell sails past and reaches the wall.
-    const events = [
-      ...run(duel, 1, {
-        hero: intent({ aim: { x: 1, y: 0 }, lightSpell: true }),
-      }),
-      ...settle(duel),
-    ];
+    turn(duel, { pitch: 0, yaw: 0.6 });
+    const events = [...tapLight(duel, "hero"), ...settle(duel)];
 
     expect(ofType(events, "spell-hit")).toStrictEqual([]);
     expect(ofType(events, "spell-stopped")).toMatchObject([{ by: "bounds" }]);
@@ -507,6 +602,284 @@ const nextRound = (duel: Duel): DuelEvent[] => {
   return events;
 };
 
+const pressLockOn = intent({ lockOn: true });
+
+/** The hero presses R3 for one tick; returns that tick's events. */
+const toggleLock = (duel: Duel): DuelEvent[] =>
+  run(duel, 1, { hero: pressLockOn });
+
+/**
+ * The hero against two rivals on the same Team, 8 m apart across the far
+ * end. The hero starts looking at the left one.
+ */
+const fightTwo = (settings: Tuning = tuning): Duel => {
+  const duel = createDuel({
+    arena: openArena,
+    duelists: [
+      { id: "hero", spawn: { x: 0, z: 5 }, team: "gryffindor" },
+      { id: "left", spawn: { x: -4, z: -5 }, team: "slytherin" },
+      { id: "right", spawn: { x: 4, z: -5 }, team: "slytherin" },
+    ],
+    tuning: settings,
+  });
+
+  skipIntro(duel);
+
+  return duel;
+};
+
+/** The rival side-stepping: to its own left, which is the hero's right (+x). */
+const rivalStrafes = intent({ move: { x: -1, y: 0 } });
+
+describe("Lock-on", () => {
+  it("locks on to the opponent with R3 and faces them", () => {
+    const duel = fight();
+
+    const events = toggleLock(duel);
+
+    expect(ofType(events, "lock-on")).toStrictEqual([
+      { duelistId: "hero", targetId: "rival", type: "lock-on" },
+    ]);
+    expect(duelist(duel, "hero").targetId).toBe("rival");
+    expect(duelist(duel, "hero").facing.x).toBeCloseTo(0);
+    expect(duelist(duel, "hero").facing.z).toBeCloseTo(-1);
+  });
+
+  it("locks on to the opponent nearest the crosshair", () => {
+    const duel = fightTwo(withoutAimAssist);
+    // From the left rival round to the right one.
+    turn(duel, { pitch: 0, yaw: 0.75 });
+
+    toggleLock(duel);
+
+    expect(duelist(duel, "hero").targetId).toBe("right");
+  });
+
+  it("locks on through an Obstruction, which Spells fly over", () => {
+    const duel = fight({
+      ...openArena,
+      obstructions: [{ center: { x: 0, z: 0 }, radius: 1 }],
+    });
+
+    toggleLock(duel);
+
+    expect(duelist(duel, "hero").targetId).toBe("rival");
+  });
+
+  it("does not lock on to an opponent behind Cover, and recentres the camera instead", () => {
+    const duel = fight(
+      { ...openArena, cover: [{ center: { x: 0, z: 0 }, radius: 0.6 }] },
+      withoutAimAssist
+    );
+
+    turn(duel, { pitch: -0.4, yaw: 0 });
+
+    const events = [
+      ...toggleLock(duel),
+      ...run(duel, secondsToTicks(tuning.lockOn.recentreSeconds)),
+    ];
+
+    expect(ofType(events, "lock-on")).toStrictEqual([]);
+    expect(duelist(duel, "hero").targetId).toBeNull();
+    expect(duelist(duel, "hero").aim.pitch).toBeCloseTo(tuning.aim.pitch.rest);
+  });
+
+  it("does not lock on to an opponent out of range", () => {
+    const duel = createDuel({
+      arena: { ...openArena, bounds: { halfDepth: 40, halfWidth: 10 } },
+      duelists: [
+        { id: "hero", spawn: { x: 0, z: 20 }, team: "gryffindor" },
+        { id: "rival", spawn: { x: 0, z: -20 }, team: "slytherin" },
+      ],
+      tuning,
+    });
+
+    skipIntro(duel);
+
+    toggleLock(duel);
+
+    expect(duelist(duel, "hero").targetId).toBeNull();
+  });
+
+  it("strafes round the Target at a constant distance, still facing it", () => {
+    const duel = fight();
+    toggleLock(duel);
+
+    hold(duel, intent({ move: { x: 1, y: 0 } }), 1);
+
+    const { facing, position } = duelist(duel, "hero");
+    const toRival = { x: 0 - position.x, z: -5 - position.z };
+    const distance = Math.hypot(toRival.x, toRival.z);
+    expect(position.x).toBeGreaterThan(3);
+    expect(distance).toBeCloseTo(10);
+    expect(facing.x).toBeCloseTo(toRival.x / distance);
+    expect(facing.z).toBeCloseTo(toRival.z / distance);
+  });
+
+  it("only nudges the framing with the right stick, springing back once it rests", () => {
+    const duel = fight();
+    toggleLock(duel);
+
+    hold(duel, intent({ look: { pitch: 8, yaw: 8 } }), 1);
+    const nudged = duelist(duel, "hero");
+    // A released stick eases out, so a trace of turn rate lingers.
+    hold(duel, intent({ look: { pitch: 0.01, yaw: 0.01 } }), 1);
+    const rested = duelist(duel, "hero");
+
+    expect(nudged.targetId).toBe("rival");
+    expect(nudged.facing.z).toBeCloseTo(-1);
+    expect(nudged.lockNudge.yaw).toBeCloseTo(tuning.lockOn.nudge.maxYaw);
+    expect(nudged.lockNudge.pitch).toBeCloseTo(tuning.lockOn.nudge.maxPitch);
+    // Back to rest on both axes.
+    expect(
+      Math.hypot(rested.lockNudge.yaw, rested.lockNudge.pitch)
+    ).toBeCloseTo(0);
+  });
+
+  it("switches to the next opponent left or right on a flick", () => {
+    const duel = fightTwo();
+    toggleLock(duel);
+    const locked = duelist(duel, "hero").targetId;
+
+    const switched = run(duel, 1, { hero: intent({ switchTarget: 1 }) });
+    const toRight = duelist(duel, "hero").targetId;
+    run(duel, 1, { hero: intent({ switchTarget: 1 }) });
+    const nothingFurther = duelist(duel, "hero").targetId;
+    run(duel, 1, { hero: intent({ switchTarget: -1 }) });
+    const back = duelist(duel, "hero").targetId;
+
+    expect([locked, toRight, nothingFurther, back]).toStrictEqual([
+      "left",
+      "right",
+      "right",
+      "left",
+    ]);
+    expect(ofType(switched, "lock-on")).toStrictEqual([
+      { duelistId: "hero", targetId: "right", type: "lock-on" },
+    ]);
+  });
+
+  it("releases the lock on R3 again, keeping the aim where it was", () => {
+    const duel = fight();
+    toggleLock(duel);
+    hold(duel, intent({ move: { x: 1, y: 0 } }), 0.5);
+    const locked = duelist(duel, "hero");
+
+    const events = toggleLock(duel);
+
+    expect(ofType(events, "lock-off")).toStrictEqual([
+      {
+        duelistId: "hero",
+        reason: "toggle",
+        targetId: "rival",
+        type: "lock-off",
+      },
+    ]);
+    expect(duelist(duel, "hero").targetId).toBeNull();
+    expect(duelist(duel, "hero").aim).toStrictEqual(locked.aim);
+  });
+
+  it("breaks once the Target has stayed out of sight behind Cover for a moment", () => {
+    const duel = fight({
+      ...openArena,
+      cover: [{ center: { x: 2, z: 0 }, radius: 1 }],
+    });
+
+    toggleLock(duel);
+
+    // The rival steps out of sight behind the column...
+    const stepping = run(duel, secondsToTicks(0.9), { rival: rivalStrafes });
+    const hidden = duelist(duel, "hero");
+    // ...and stays there.
+    const waiting = run(duel, secondsToTicks(tuning.lockOn.sightGraceSeconds));
+
+    expect(ofType(stepping, "lock-off")).toStrictEqual([]);
+    expect(hidden.targetId).toBe("rival");
+    expect(hidden.targetHiddenSeconds).toBeGreaterThan(0);
+    expect(ofType(waiting, "lock-off")).toMatchObject([
+      { duelistId: "hero", reason: "sight", targetId: "rival" },
+    ]);
+    expect(duelist(duel, "hero").targetId).toBeNull();
+  });
+
+  it("breaks when the Target is Knocked Out", () => {
+    const duel = fight();
+    toggleLock(duel);
+
+    const events = knockOutRival(duel);
+
+    expect(ofType(events, "lock-off")).toMatchObject([
+      { duelistId: "hero", reason: "knockout", targetId: "rival" },
+    ]);
+  });
+
+  it("casts at the Target's chest even with the framing nudged", () => {
+    const duel = fight();
+    toggleLock(duel);
+    hold(duel, intent({ look: { pitch: 0, yaw: 4 } }), 0.3);
+
+    const cast = run(duel, 1, {
+      hero: intent({ lightSpell: true, look: { pitch: 0, yaw: 4 } }),
+    });
+
+    const { lockNudge } = duelist(duel, "hero");
+    const events = [...cast, ...settle(duel)];
+
+    expect(lockNudge.yaw).toBeGreaterThan(0.1);
+    expect(ofType(events, "spell-hit")).toMatchObject([{ targetId: "rival" }]);
+  });
+
+  it("homes in on the Target weakly, turning no faster than its turn rate", () => {
+    const duel = fight();
+    toggleLock(duel);
+    run(duel, 1, { hero: castLight });
+    const turns: number[] = [];
+
+    for (let tick = 0; tick < 8; tick += 1) {
+      const before = duel.snapshot().spells[0]?.velocity;
+      run(duel, 1, { rival: rivalStrafes });
+      const after = duel.snapshot().spells[0]?.velocity;
+
+      if (before && after) {
+        const dot =
+          (before.x * after.x + before.y * after.y + before.z * after.z) /
+          (Math.hypot(before.x, before.y, before.z) *
+            Math.hypot(after.x, after.y, after.z));
+
+        turns.push(Math.acos(Math.min(dot, 1)));
+      }
+    }
+
+    const mostPerTick = tuning.lockOn.homing.turnRate / tuning.tickRate;
+    expect(turns.length).toBeGreaterThan(4);
+    expect(Math.max(...turns)).toBeGreaterThan(0);
+    expect(Math.max(...turns)).toBeLessThanOrEqual(mostPerTick + 1e-9);
+  });
+
+  it("can be escaped by a sideways strafe at mid range", () => {
+    const duel = fight();
+    toggleLock(duel);
+
+    const events = [
+      ...run(duel, 1, { hero: castLight, rival: rivalStrafes }),
+      ...run(duel, secondsToTicks(1.5), { rival: rivalStrafes }),
+    ];
+
+    expect(ofType(events, "spell-cast")).toHaveLength(1);
+    expect(ofType(events, "spell-hit")).toStrictEqual([]);
+  });
+
+  it("is let go at the start of every Round", () => {
+    const duel = fight();
+    toggleLock(duel);
+    knockOutRival(duel);
+
+    nextRound(duel);
+
+    expect(duelist(duel, "hero").targetId).toBeNull();
+  });
+});
+
 describe("Rounds and the Duel", () => {
   it("counts down an intro at the start of the Duel during which nobody can act", () => {
     const duel = createOneVsOne();
@@ -559,6 +932,7 @@ describe("Rounds and the Duel", () => {
     const duel = fight();
     tapLight(duel, "hero");
     hold(duel, intent({ move: { x: 1, y: 0 } }), 1);
+    hold(duel, intent({ move: { x: -1, y: 0 } }), 1);
     knockOutRival(duel);
 
     nextRound(duel);

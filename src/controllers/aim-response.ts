@@ -1,13 +1,14 @@
 /**
  * The right stick's response: a curve that is fine near the centre and fast
- * at full tilt, followed by a critically damped spring that gives the aim a
- * little acceleration and smoothing. Pure and stateful per Duelist.
+ * at full tilt, followed by a critically damped spring that gives the turn a
+ * little acceleration and smoothing. Pure and stateful per Duelist. The
+ * human Controller scales its output to turn rates.
  */
 import type { Vec2 } from "../duel/intent";
 import type { Tuning } from "../tuning";
 
 export interface AimResponse {
-  /** Advances the response by `seconds` toward `stick` and returns the eased aim offset. */
+  /** Advances the response by `seconds` toward `stick` and returns the eased deflection, length at most 1. */
   readonly step: (stick: Vec2, seconds: number) => Vec2;
   /** Drops back to rest, for when the stick stops being read at all. */
   readonly reset: () => void;
@@ -27,7 +28,7 @@ const applyCurve = (stick: Vec2, exponent: number): Vec2 => {
 };
 
 export const createAimResponse = (
-  settings: Tuning["input"]["aimResponse"]
+  settings: Pick<Tuning["input"]["look"], "curveExponent" | "springFrequency">
 ): AimResponse => {
   let position = { x: 0, y: 0 };
   let velocity = { x: 0, y: 0 };
@@ -59,7 +60,7 @@ export const createAimResponse = (
       const [y, vy] = spring(position.y, velocity.y, wanted.y, seconds);
       const length = Math.hypot(x, y);
 
-      // A reversal can carry the spring past the target; the aim stays within full deflection.
+      // A reversal can carry the spring past the target; the turn stays within full deflection.
       position = length > 1 ? { x: x / length, y: y / length } : { x, y };
       velocity = { x: vx, y: vy };
 

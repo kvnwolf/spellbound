@@ -20,27 +20,45 @@ const duel = createDuel({
   tuning,
 });
 
-const dualSense = (
-  axes: readonly [number, number, number, number]
-): GamepadLike => ({
-  axes,
-  buttons: Array.from({ length: 18 }, () => ({ pressed: false, value: 0 })),
-  id: "DualSense Wireless Controller (STANDARD GAMEPAD Vendor: 054c Product: 0ce6)",
-});
+const { maxPitchSpeed, maxYawSpeed } = tuning.input.look;
+const square = 2;
+const r3 = 11;
 
 const ticksToSettle = 120;
+const ticksOf = (seconds: number) => Math.round(seconds * tuning.tickRate);
 
-/** A human Controller whose DualSense axes the test can move between ticks. */
+/**
+ * A human Controller holding a DualSense whose sticks and buttons the test
+ * can move between ticks. Axes are the Gamepad API's: LX, LY, RX, RY, with
+ * up negative.
+ */
 const holding = (axes: readonly [number, number, number, number]) => {
-  const pad = { ...dualSense(axes), axes: [...axes] };
+  const pad = {
+    axes: [...axes],
+    buttons: Array.from({ length: 18 }, (): GamepadLike["buttons"][number] => ({
+      pressed: false,
+      value: 0,
+    })),
+    id: "DualSense Wireless Controller (STANDARD GAMEPAD Vendor: 054c Product: 0ce6)",
+  } satisfies GamepadLike;
 
   const controller = createHumanController(() =>
     readDualSense(pad, tuning.input)
   );
 
+  const press = (index: number, down: boolean) => {
+    pad.buttons[index] = { pressed: down, value: down ? 1 : 0 };
+  };
+
   return {
     pad,
+    press,
     tick: () => controller.intent({ self: "hero", snapshot: duel.snapshot() }),
+    /** Ticks `count` times and returns every Intent. */
+    ticks: (count: number) =>
+      Array.from({ length: count }, () =>
+        controller.intent({ self: "hero", snapshot: duel.snapshot() })
+      ),
   };
 };
 
@@ -55,90 +73,170 @@ const settle = (tick: () => Intent) => {
 };
 
 describe(createHumanController, () => {
-  it("walks with the left stick and nudges the aim with the right stick", () => {
-    const { tick } = holding([1, -1, -1, 1]);
+  it("walks with the left stick and casts the Light Spell while □ is down", () => {
+    const { press, tick } = holding([1, -1, 0, 0]);
+    press(square, true);
 
-    const intent = settle(tick);
+    const intent = tick();
 
     expect(intent.move.x).toBeCloseTo(Math.SQRT1_2);
     expect(intent.move.y).toBeCloseTo(Math.SQRT1_2);
-    expect(intent.aim.x).toBeCloseTo(-Math.SQRT1_2);
-    expect(intent.aim.y).toBeCloseTo(-Math.SQRT1_2);
+    expect(intent.lightSpell).toBeTruthy();
   });
 
-  it("casts the Light Spell while □ is down", () => {
-    const pad = dualSense([0, 0, 0, 0]);
-    const square = 2;
+  describe("the right stick turns the camera", () => {
+    it("turns right with the stick right and looks up with the stick up", () => {
+      const { tick } = holding([0, 0, 1, -1]);
 
-    const controller = createHumanController(() =>
-      readDualSense(
-        {
-          ...pad,
-          buttons: pad.buttons.map((button, index) =>
-            index === square ? { pressed: true, value: 1 } : button
-          ),
-        },
-        tuning.input
-      )
-    );
+      const { look } = settle(tick);
 
-    const view = { self: "hero", snapshot: duel.snapshot() };
+      expect(look.yaw).toBeCloseTo(Math.SQRT1_2 * maxYawSpeed);
+      expect(look.pitch).toBeCloseTo(Math.SQRT1_2 * maxPitchSpeed);
+    });
 
-    expect(controller.intent(view).lightSpell).toBeTruthy();
-  });
-
-  describe("the right stick's response", () => {
-    it("eases the aim in instead of snapping it to the stick", () => {
+    it("eases the turn in instead of snapping to full speed", () => {
       const { tick } = holding([0, 0, 1, 0]);
 
       const first = tick();
       const second = tick();
 
-      expect(first.aim.x).toBeGreaterThan(0);
-      expect(first.aim.x).toBeLessThan(0.3);
-      expect(second.aim.x).toBeGreaterThan(first.aim.x);
+      expect(first.look.yaw).toBeGreaterThan(0);
+      expect(first.look.yaw).toBeLessThan(0.3 * maxYawSpeed);
+      expect(second.look.yaw).toBeGreaterThan(first.look.yaw);
     });
 
-    it("reaches full aim at full tilt, never beyond it", () => {
+    it("reaches full turn speed at full tilt, never beyond it", () => {
       const { tick } = holding([0, 0, 1, 0]);
 
       let peak = 0;
 
       for (let index = 0; index < ticksToSettle; index += 1) {
-        peak = Math.max(peak, tick().aim.x);
+        peak = Math.max(peak, tick().look.yaw);
       }
 
-      expect(peak).toBeLessThanOrEqual(1);
-      expect(settle(tick).aim.x).toBeCloseTo(1);
+      expect(peak).toBeLessThanOrEqual(maxYawSpeed);
+      expect(settle(tick).look.yaw).toBeCloseTo(maxYawSpeed);
     });
 
     it("is fine near the centre and fast at full tilt", () => {
-      // Half tilt, rescaled past the dead zone, lands well under half the aim.
+      // Half tilt, rescaled past the dead zone, turns well under half speed.
       const halfTilt = 0.12 + (1 - 0.12) / 2;
       const { tick } = holding([0, 0, halfTilt, 0]);
 
-      expect(settle(tick).aim.x).toBeLessThan(0.35);
-      expect(settle(tick).aim.x).toBeGreaterThan(0.1);
+      const { look } = settle(tick);
+
+      expect(look.yaw).toBeLessThan(0.35 * maxYawSpeed);
+      expect(look.yaw).toBeGreaterThan(0.1 * maxYawSpeed);
     });
 
     it("keeps the direction of a diagonal push", () => {
-      const { tick } = holding([0, 0, 0.6, -0.3]);
+      const { tick } = holding([0, 0, 0.6, 0.3]);
 
-      const { aim } = settle(tick);
+      const { look } = settle(tick);
 
-      expect(aim.y / aim.x).toBeCloseTo(0.3 / 0.6);
+      expect(look.pitch / maxPitchSpeed / (look.yaw / maxYawSpeed)).toBeCloseTo(
+        -0.3 / 0.6
+      );
     });
 
-    it("eases back to the centre once the stick is released", () => {
+    it("eases back to rest once the stick is released", () => {
       const { pad, tick } = holding([0, 0, 1, 0]);
 
       settle(tick);
       pad.axes = [0, 0, 0, 0];
 
-      const released = tick();
+      expect(tick().look.yaw).toBeGreaterThan(0.5 * maxYawSpeed);
+      expect(settle(tick).look.yaw).toBeCloseTo(0);
+    });
+  });
 
-      expect(released.aim.x).toBeGreaterThan(0.5);
-      expect(settle(tick).aim.x).toBeCloseTo(0);
+  describe("R3", () => {
+    it("toggles Lock-on once per press, however long it is held", () => {
+      const { press, ticks } = holding([0, 0, 0, 0]);
+
+      press(r3, true);
+      const held = ticks(4);
+      press(r3, false);
+      const released = ticks(2);
+      press(r3, true);
+      const again = ticks(1);
+
+      expect(
+        [...held, ...released, ...again].map((intent) => intent.lockOn)
+      ).toStrictEqual([true, false, false, false, false, false, true]);
+    });
+
+    it("ignores a right stick knocked by the R3 click for a moment", () => {
+      const { press, ticks } = holding([0, 0, 1, 0]);
+
+      press(r3, true);
+      const settling = ticks(ticksOf(tuning.input.lockOnSettleSeconds));
+      const after = ticks(3);
+
+      expect(settling.every((intent) => intent.look.yaw === 0)).toBeTruthy();
+      expect(
+        settling.every((intent) => intent.switchTarget === 0)
+      ).toBeTruthy();
+      expect(after.at(-1)?.look.yaw).toBeGreaterThan(0);
+    });
+  });
+
+  describe("flicking the right stick", () => {
+    it("switches Target once toward the flick, then not again until the stick recentres", () => {
+      const { pad, ticks } = holding([0, 0, 0, 0]);
+
+      const resting = ticks(2);
+      pad.axes = [0, 0, 1, 0];
+      const right = ticks(5);
+      pad.axes = [0, 0, 0, 0];
+      const recentred = ticks(ticksOf(tuning.input.flick.cooldownSeconds));
+      pad.axes = [0, 0, -1, 0];
+      const left = ticks(1);
+
+      expect(
+        [...resting, ...right, ...recentred, ...left].map(
+          (intent) => intent.switchTarget
+        )
+      ).toStrictEqual([0, 0, 1, 0, 0, 0, 0, ...recentred.map(() => 0), -1]);
+    });
+
+    it("does not switch on a slow push to full tilt", () => {
+      const { pad, ticks } = holding([0, 0, 0, 0]);
+      const switches: number[] = [];
+      const steps = ticksOf(0.5);
+
+      for (let step = 1; step <= steps; step += 1) {
+        pad.axes = [0, 0, step / steps, 0];
+        switches.push(...ticks(1).map((intent) => intent.switchTarget));
+      }
+
+      expect(switches.every((each) => each === 0)).toBeTruthy();
+    });
+
+    it("does not switch on a small nudge", () => {
+      const { pad, ticks } = holding([0, 0, 0, 0]);
+
+      ticks(2);
+      pad.axes = [0, 0, 0.6, 0];
+
+      expect(
+        ticks(10).every((intent) => intent.switchTarget === 0)
+      ).toBeTruthy();
+    });
+
+    it("ignores a second flick within the cooldown", () => {
+      const { pad, ticks } = holding([0, 0, 0, 0]);
+
+      ticks(1);
+      pad.axes = [0, 0, 1, 0];
+      const first = ticks(1);
+      pad.axes = [0, 0, 0, 0];
+      ticks(1);
+      pad.axes = [0, 0, 1, 0];
+      const tooSoon = ticks(1);
+
+      expect(first[0]?.switchTarget).toBe(1);
+      expect(tooSoon[0]?.switchTarget).toBe(0);
     });
   });
 
@@ -151,9 +249,11 @@ describe(createHumanController, () => {
     });
 
     expect(intent).toStrictEqual({
-      aim: { x: 0, y: 0 },
       lightSpell: false,
+      lockOn: false,
+      look: { pitch: 0, yaw: 0 },
       move: { x: 0, y: 0 },
+      switchTarget: 0,
     });
   });
 });
