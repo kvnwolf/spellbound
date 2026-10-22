@@ -10,6 +10,7 @@ import { PerspectiveCamera, Vector3 } from "three/webgpu";
 import { direction, rightOf } from "../duel/geometry";
 import type { GroundPoint } from "../duel/geometry";
 import type { Tuning } from "../tuning";
+import type { CameraShake } from "./camera-shake";
 
 export interface CameraRig {
   readonly camera: PerspectiveCamera;
@@ -24,7 +25,9 @@ export interface CameraRig {
 
 export const createCameraRig = (
   settings: Tuning["camera"],
-  chestHeight: number
+  chestHeight: number,
+  /** Impact shake layered on top of the framing, if any. */
+  shake?: CameraShake
 ): CameraRig => {
   const camera = new PerspectiveCamera(settings.fov, 1, 0.1, 200);
   const position = new Vector3();
@@ -74,6 +77,7 @@ export const createCameraRig = (
 
       camera.position.copy(position);
       camera.lookAt(focus);
+      shake?.apply(camera, seconds);
     },
     resize: (aspect) => {
       camera.aspect = aspect;

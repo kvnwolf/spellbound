@@ -16,8 +16,16 @@ import type { DuelistSample } from "./interpolate";
 
 export interface DuelistView {
   readonly object: Group;
-  readonly show: (sample: DuelistSample) => void;
+  /** Draws `sample`, easing poses over the `seconds` since the last frame. */
+  readonly show: (sample: DuelistSample, seconds: number) => void;
 }
+
+/** Backward tilts, in radians: lying on the back, and a Stagger's lean. */
+const knockedOutTilt = -Math.PI / 2;
+const staggerTilt = -0.3;
+
+/** How quickly poses ease toward their tilt, per second. */
+const tiltSharpness = 9;
 
 const skin = new MeshStandardNodeMaterial({ color: "#d9b38c", roughness: 0.7 });
 const wood = new MeshStandardNodeMaterial({ color: "#4a2f1d", roughness: 0.6 });
@@ -44,12 +52,28 @@ export const createDuelistView = (robeColor: string): DuelistView => {
   wand.position.set(0.28, 1.15, 0.35);
 
   object.add(robe, head, hat, wand);
+  // Heading first, then the tilt in the Duelist's own frame, so leaning and
+  // falling are always backward whatever way they face.
+  object.rotation.order = "YXZ";
+  let tilt = 0;
 
   return {
     object,
-    show: (sample) => {
+    show: (sample, seconds) => {
       object.position.set(sample.position.x, 0, sample.position.z);
       object.rotation.y = Math.atan2(sample.facing.x, sample.facing.z);
+
+      // Knocked Out: topple onto the back. Staggered: rock back on the heels.
+      let wanted = 0;
+
+      if (sample.knockedOut) {
+        wanted = knockedOutTilt;
+      } else if (sample.staggered) {
+        wanted = staggerTilt;
+      }
+
+      tilt += (wanted - tilt) * (1 - Math.exp(-tiltSharpness * seconds));
+      object.rotation.x = tilt;
     },
   };
 };

@@ -116,6 +116,12 @@ export const tuning = {
     windowRadiance: 2.6,
   },
 
+  /** Development aids, switched on from the URL (see `main.ts`). */
+  debug: {
+    /** With `?rival=casts`, the stationary opponent presses Stupefy this often. */
+    rivalCastInterval: 0.6,
+  },
+
   duelist: {
     /** A Duelist's body is a circle on the Arena floor for collision. */
     bodyRadius: 0.45,
@@ -129,12 +135,27 @@ export const tuning = {
     wandTip: { forward: 0.55, height: 1.15, right: 0.28 },
   },
 
+  hud: {
+    /** How long "¡Duelo!" stays up once control is given. */
+    duelCalloutSeconds: 0.9,
+    /** The pale "damage taken" part of a Health bar lingers this long... */
+    healthLagDelay: 0.35,
+    /** ...then drains at this many Health points per second. */
+    healthLagRate: 60,
+  },
+
   input: {
     /** Stick deflection below this radius reads as centred. */
     stickDeadZone: 0.12,
     /** Trigger travel below this value reads as released. */
     triggerDeadZone: 0.04,
   },
+
+  /**
+   * The Knockout shot: the camera frames the fallen Duelist from the
+   * winner's side, as if standing this far from them.
+   */
+  knockoutCamera: { standOff: 2.5 },
 
   /** The render pipeline: tone, bloom and anti-aliasing quality knobs. */
   render: {
