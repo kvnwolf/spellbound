@@ -8,7 +8,8 @@
  * On, the same circle rides onto the Target's chest at the size of the old
  * lock ring (the same on screen at any distance) and fades while the Target
  * is out of sight behind Cover. Locking and unlocking slide it between the
- * two on the camera's own transition progress, so it never jumps.
+ * two on the camera's own transition progress, so it never jumps, and the
+ * ring blends from a neutral light to gold on that same progress.
  */
 import { Vector3 } from "three/webgpu";
 import type { PerspectiveCamera } from "three/webgpu";
@@ -86,6 +87,7 @@ export const createReticle = (
         `${mix(freeSize, lockedSize, lockShare).toFixed(2)}px`
       );
       ring.style.setProperty("--dot", (1 - lockShare).toFixed(3));
+      ring.style.setProperty("--lock", lockShare.toFixed(3));
       ring.style.left = `${x.toFixed(2)}px`;
       ring.style.top = `${y.toFixed(2)}px`;
     },

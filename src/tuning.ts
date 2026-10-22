@@ -330,11 +330,11 @@ export const tuning = {
     /**
      * R3 only Locks On to an opponent whose body is within this many
      * reticle radii of the crosshair: the acquire angle is
-     * `acquireCrosses * aimAssist.bendAngle` (about 2.5 degrees), measured
+     * `acquireCrosses * aimAssist.bendAngle` (about 5 degrees), measured
      * like Aim Assist (to the body's edge, as seen from the free camera), on
      * top of range and sight. Tying it to the reticle's circle keeps the two in step.
      */
-    acquireCrosses: 2.5,
+    acquireCrosses: 5,
     /**
      * Spells cast while Locked On fly at the Target's current chest (no lead)
      * and turn toward it at no more than `turnRate` (radians per second) for

@@ -28,10 +28,15 @@ body {
 /*
  * The reticle: one rune circle. Free, it sits at the screen centre (where
  * free-aimed Spells go) and its radius is the Aim Assist boundary; Locked On
- * it rides onto the Target's chest. Position and --size are set per frame,
- * easing between the two with the camera's lock transition.
+ * it rides onto the Target's chest. Position, --size and --lock (0 free, 1
+ * Locked On) are set per frame, easing between the two with the camera's lock
+ * transition; the ring colour blends from --reticle-free to --reticle-locked
+ * on the same --lock.
  */
 #reticle {
+  --reticle-free: #efe4c8;
+  --reticle-locked: #d8b46a;
+
   position: fixed;
   width: var(--size, 36px);
   height: var(--size, 36px);
@@ -40,24 +45,19 @@ body {
   transition: opacity 0.2s;
 }
 
-#reticle::before,
-#reticle::after {
-  position: absolute;
-  border-radius: 50%;
-  content: "";
-}
-
-/* Outer dashed runes, slowly turning, and a solid inner ring. */
+/* The solid ring, neutral at rest and gold once locked. */
 #reticle::before {
+  position: absolute;
   inset: 0;
-  border: 2px dashed var(--gold);
-  filter: drop-shadow(0 0 4px rgb(216 180 106 / 80%));
-  animation: reticle-turn 6s linear infinite;
-}
-
-#reticle::after {
-  inset: calc(var(--size, 36px) * 0.2);
-  border: 1.5px solid rgb(239 228 200 / 85%);
+  border: 1.5px solid
+    color-mix(
+      in srgb,
+      var(--reticle-locked) calc(var(--lock, 0) * 100%),
+      var(--reticle-free)
+    );
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgb(10 12 24 / 45%);
+  content: "";
 }
 
 /* The tiny centre dot, gone once the circle has left the centre. */
@@ -68,7 +68,7 @@ body {
   width: 3px;
   height: 3px;
   border-radius: 50%;
-  background: var(--parchment);
+  background: var(--reticle-free);
   box-shadow: 0 0 0 1px rgb(10 12 24 / 60%);
   opacity: var(--dot, 1);
   translate: -50% -50%;
@@ -77,12 +77,6 @@ body {
 /* The Target is out of sight behind Cover: the lock is about to break. */
 #reticle.reticle-hidden {
   opacity: 0.35;
-}
-
-@keyframes reticle-turn {
-  to {
-    rotate: 1turn;
-  }
 }
 
 #overlay {

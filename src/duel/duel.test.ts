@@ -746,9 +746,9 @@ describe("Lock-on", () => {
   });
 
   describe.each([14, 22])("with the rival %i m away", (distance) => {
-    // The acquire angle is 2.5 crosses: 0.04375 rad of body edge.
-    it("locks on to an opponent whose body edge is just within 2.5 times the cross", () => {
-      const duel = duelAimedBeyondEdge(distance, 0.04, withoutAimAssist);
+    // The acquire angle is 5 crosses: 0.0875 rad of body edge.
+    it("locks on to an opponent whose body edge is just within 5 times the cross", () => {
+      const duel = duelAimedBeyondEdge(distance, 0.08, withoutAimAssist);
 
       toggleLock(duel);
 
@@ -756,7 +756,7 @@ describe("Lock-on", () => {
     });
 
     it("does not lock on to an opponent just outside it", () => {
-      const duel = duelAimedBeyondEdge(distance, 0.048, withoutAimAssist);
+      const duel = duelAimedBeyondEdge(distance, 0.095, withoutAimAssist);
 
       const events = [
         ...toggleLock(duel),
