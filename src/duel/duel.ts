@@ -20,7 +20,7 @@ export type DuelistId = string;
 
 export type TeamId = string;
 
-/** A column of Cover standing on the Arena floor, as a circle. */
+/** A column of Cover or an Obstruction standing on the Arena floor, as a circle. */
 export interface CoverColumn {
   readonly center: GroundPoint;
   readonly radius: number;
@@ -30,7 +30,10 @@ export interface CoverColumn {
 export interface ArenaLayout {
   /** The walkable rectangle spans ±halfWidth on x and ±halfDepth on z. */
   readonly bounds: { readonly halfDepth: number; readonly halfWidth: number };
+  /** Stops both Duelists and Spells. */
   readonly cover: readonly CoverColumn[];
+  /** Low geometry that stops Duelists only: Spells fly over it. */
+  readonly obstructions: readonly CoverColumn[];
 }
 
 export interface DuelistSetup {
@@ -171,7 +174,7 @@ export interface Duel {
   readonly step: (intents: Readonly<Record<DuelistId, Intent>>) => DuelTick;
 }
 
-/** A circle a Duelist's body cannot overlap: a column of Cover or another Duelist. */
+/** A circle a Duelist's body cannot overlap: a column of Cover, an Obstruction or another Duelist. */
 interface Obstacle {
   readonly center: GroundPoint;
   readonly radius: number;
@@ -658,7 +661,7 @@ export const createDuel = (config: DuelConfig): Duel => {
         .filter((other) => other.id !== self.id)
         .map((other) => ({ center: other.position, radius: bodyRadius }));
 
-      const obstacles = [...arena.cover, ...others];
+      const obstacles = [...arena.cover, ...arena.obstructions, ...others];
 
       return {
         ...self,

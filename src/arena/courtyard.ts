@@ -8,6 +8,9 @@ import type { GroundPoint } from "../duel/geometry";
 
 const columnRadius = 0.55;
 
+/** Outer radius of the central fountain's rim, metres: shared by the view and the layout. */
+export const fountainRadius = 1.65;
+
 export const courtyard: ArenaLayout = {
   bounds: { halfDepth: 14, halfWidth: 11 },
   // Two rows of columns flanking the centre line, plus one on each side:
@@ -20,6 +23,9 @@ export const courtyard: ArenaLayout = {
     { center: { x: -7.5, z: 0 }, radius: columnRadius },
     { center: { x: 7.5, z: 0 }, radius: columnRadius },
   ],
+  // The fountain basin is low enough for Spells to fly over, but not for a
+  // Duelist to walk through.
+  obstructions: [{ center: { x: 0, z: 0 }, radius: fountainRadius }],
 };
 
 /** Where each Team's Duelist starts, facing each other down the courtyard. */

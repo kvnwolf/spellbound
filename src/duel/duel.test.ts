@@ -8,6 +8,7 @@ import type { Intent } from "./intent";
 const openArena: ArenaLayout = {
   bounds: { halfDepth: 10, halfWidth: 10 },
   cover: [],
+  obstructions: [],
 };
 
 const secondsToTicks = (seconds: number) =>
@@ -172,6 +173,30 @@ describe("Duel collision", () => {
     const duel = fight({
       ...openArena,
       cover: [{ center: { x: 0.3, z: 0 }, radius: 1 }],
+    });
+
+    hold(duel, intent({ move: { x: 0, y: 1 } }), 3);
+
+    expect(duelist(duel, "hero").position.z).toBeLessThan(0);
+  });
+
+  it("stops the Duelist against an Obstruction standing in the way", () => {
+    const duel = fight({
+      ...openArena,
+      obstructions: [{ center: { x: 0, z: 0 }, radius: 1 }],
+    });
+
+    hold(duel, intent({ move: { x: 0, y: 1 } }), 2);
+
+    const { position } = duelist(duel, "hero");
+    expect(position.x).toBeCloseTo(0);
+    expect(position.z).toBeCloseTo(1 + tuning.duelist.bodyRadius);
+  });
+
+  it("slides the Duelist around an Obstruction it walks into off-centre", () => {
+    const duel = fight({
+      ...openArena,
+      obstructions: [{ center: { x: 0.3, z: 0 }, radius: 1 }],
     });
 
     hold(duel, intent({ move: { x: 0, y: 1 } }), 3);
@@ -387,6 +412,18 @@ describe("Stagger", () => {
 });
 
 describe("Spell flight", () => {
+  it("flies over an Obstruction standing between the Duelists", () => {
+    const duel = fight({
+      ...openArena,
+      obstructions: [{ center: { x: 0, z: 0 }, radius: 0.6 }],
+    });
+
+    const events = [...tapLight(duel, "hero"), ...settle(duel)];
+
+    expect(ofType(events, "spell-stopped")).toStrictEqual([]);
+    expect(ofType(events, "spell-hit")).toHaveLength(1);
+  });
+
   it("is stopped by Cover standing between the Duelists", () => {
     const duel = fight({
       ...openArena,

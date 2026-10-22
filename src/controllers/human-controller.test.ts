@@ -8,7 +8,11 @@ import { tuning } from "../tuning";
 import { createHumanController } from "./human-controller";
 
 const duel = createDuel({
-  arena: { bounds: { halfDepth: 10, halfWidth: 10 }, cover: [] },
+  arena: {
+    bounds: { halfDepth: 10, halfWidth: 10 },
+    cover: [],
+    obstructions: [],
+  },
   duelists: [
     { id: "hero", spawn: { x: 0, z: 5 }, team: "gryffindor" },
     { id: "rival", spawn: { x: 0, z: -5 }, team: "slytherin" },

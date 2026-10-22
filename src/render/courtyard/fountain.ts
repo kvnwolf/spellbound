@@ -2,10 +2,9 @@
  * The central fountain: a low round basin of still, rippling water with a
  * small tiered spout spilling a thin veil into it.
  *
- * It is deliberately low (Spells fly over it at chest height) and is not in
- * the Arena's collision layout, so it is scenery, not Cover. Making it Cover
- * would be one more circle in `courtyard.cover` at the centre, sized to
- * `fountainRadius`.
+ * It is deliberately low (Spells fly over it at chest height), so the Arena
+ * layout makes it an Obstruction, not Cover: Duelists cannot walk through it
+ * and Spells are not stopped. Its radius comes from the layout.
  */
 import {
   color,
@@ -30,13 +29,11 @@ import {
   Vector2,
 } from "three/webgpu";
 
+import { fountainRadius } from "../../arena/courtyard";
 import type { Tuning } from "../../tuning";
 import { fresnel } from "./materials";
 import { skyRadiance } from "./sky";
 import { bumpNormal } from "./surface";
-
-/** Outer radius of the basin's rim, metres. */
-export const fountainRadius = 1.65;
 
 const waterLevel = 0.32;
 const innerRadius = 1.38;
