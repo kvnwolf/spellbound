@@ -177,5 +177,9 @@ The bounded space a Duel takes place in.
 _Avoid_: Map, level, stage
 
 **Cover**:
-Arena geometry that stops Spells.
+Arena geometry that stops both Duelists and Spells.
 _Avoid_: Obstacle, wall
+
+**Obstruction**:
+Low Arena geometry that stops Duelists but that Spells fly over, such as the fountain basin.
+_Avoid_: Obstacle, blocker
