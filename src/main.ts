@@ -12,6 +12,8 @@ import { createDebugCasterController } from "./controllers/debug-caster";
 import { createHumanController } from "./controllers/human-controller";
 import { readDualSense, scanGamepads } from "./dualsense/input";
 import type { DualSenseSnapshot } from "./dualsense/input";
+import { createMenuInput } from "./dualsense/menu-input";
+import type { Difficulty } from "./duel/difficulty";
 import { createDuel } from "./duel/duel";
 import type { DuelEvent, DuelistId, DuelSnapshot } from "./duel/duel";
 import { idleIntent } from "./duel/intent";
@@ -29,7 +31,13 @@ import { createFramePipeline } from "./render/pipeline";
 import { createWebGPURenderer } from "./render/renderer";
 import { createReticle } from "./render/reticle";
 import { createSpellVfx } from "./render/spell-vfx";
-import { text } from "./text";
+import {
+  initialScreenState,
+  reduceScreens,
+  showsDuel,
+} from "./screens/screens";
+import type { PadKind, ScreenEvent } from "./screens/screens";
+import { viewOf } from "./screens/view";
 import { tuning } from "./tuning";
 
 const localId: DuelistId = "local";
@@ -67,19 +75,24 @@ const start = async () => {
   const renderer = await createWebGPURenderer(canvas);
 
   if (!renderer) {
-    overlay.show(text.unsupportedBrowser.heading, text.unsupportedBrowser.body);
+    const view = viewOf(initialScreenState(false).screen);
+
+    if (view) {
+      overlay.show(view);
+    }
 
     return;
   }
 
-  const duel = createDuel({
-    arena: courtyard,
-    duelists: [
-      { id: localId, spawn: courtyardSpawns.near, team: "near" },
-      { id: opponentId, spawn: courtyardSpawns.far, team: "far" },
-    ],
-    tuning,
-  });
+  // Which screen the game is on; the Duel only runs on the Duel screen.
+  let screens = initialScreenState(true);
+
+  const send = (event: ScreenEvent) => {
+    screens = reduceScreens(screens, event, tuning.screens);
+  };
+
+  const menuInput = createMenuInput(tuning.menu);
+  let lastPad: PadKind = "none";
 
   // The DualSense is read once per frame; the human Controller reads that
   // frame's snapshot for every tick run during the frame.
@@ -90,17 +103,35 @@ const start = async () => {
   const rivalCasts =
     new URLSearchParams(window.location.search).get("rival") === "casts";
 
-  const controllers = new Map<DuelistId, Controller>([
-    [localId, createHumanController(() => pad)],
-    [
-      opponentId,
-      rivalCasts
-        ? createDebugCasterController(
-            Math.round(tuning.debug.rivalCastInterval * tuning.tickRate)
-          )
-        : idleController,
-    ],
-  ]);
+  const createDuelFor = (difficulty: Difficulty) =>
+    createDuel({
+      arena: courtyard,
+      difficulty,
+      duelists: [
+        { id: localId, spawn: courtyardSpawns.near, team: "near" },
+        { id: opponentId, spawn: courtyardSpawns.far, team: "far" },
+      ],
+      tuning,
+    });
+
+  const createControllers = () =>
+    new Map<DuelistId, Controller>([
+      [localId, createHumanController(() => pad)],
+      [
+        opponentId,
+        rivalCasts
+          ? createDebugCasterController(
+              Math.round(tuning.debug.rivalCastInterval * tuning.tickRate)
+            )
+          : idleController,
+      ],
+    ]);
+
+  // Behind the title and the Difficulty select sits a fresh Duel (run 0),
+  // frozen at its start; every Duel the screens start is a new run.
+  let duel = createDuelFor("duelista");
+  let controllers = createControllers();
+  let activeRun = 0;
 
   const shake = createCameraShake(tuning.cameraShake);
 
@@ -169,7 +200,7 @@ const start = async () => {
     roundsToWin: tuning.round.roundsToWin,
   });
 
-  const clock = createFixedStepClock(tuning.tickRate);
+  let clock = createFixedStepClock(tuning.tickRate);
 
   const resize = () => {
     renderer.setSize(window.innerWidth, window.innerHeight);
@@ -183,6 +214,18 @@ const start = async () => {
   let current: DuelSnapshot = previous;
   let lastFrame: number | undefined;
 
+  /** Swaps in a brand-new Duel, as the first or a restarted one. */
+  const startRun = (run: number, difficulty: Difficulty) => {
+    // Hide any Spell still flying from the old Duel before its ids repeat.
+    vfx.update(current.spells, [], 0, 0);
+    duel = createDuelFor(difficulty);
+    controllers = createControllers();
+    clock = createFixedStepClock(tuning.tickRate);
+    previous = duel.snapshot();
+    current = previous;
+    activeRun = run;
+  };
+
   const intentsFor = (snapshot: DuelSnapshot) => {
     const intents: Record<DuelistId, Intent> = {};
 
@@ -192,6 +235,58 @@ const start = async () => {
     }
 
     return intents;
+  };
+
+  /**
+   * Tells the screens what the controller did this frame, then builds a new
+   * Duel if they now call for one: a Duel they just started is a new
+   * simulation, and the title and the Difficulty select show a fresh one
+   * waiting at its start.
+   */
+  const syncScreens = (padKind: PadKind, seconds: number) => {
+    if (padKind !== lastPad) {
+      lastPad = padKind;
+      send({ pad: padKind, type: "pad" });
+    }
+
+    for (const event of menuInput.read(pad, seconds)) {
+      send(event);
+    }
+
+    const { screen } = screens;
+
+    if (screen.kind === "duel" && screen.run !== activeRun) {
+      startRun(screen.run, screen.difficulty);
+    } else if (
+      (screen.kind === "title" || screen.kind === "difficulty") &&
+      activeRun !== 0
+    ) {
+      startRun(0, "duelista");
+    }
+
+    return screen;
+  };
+
+  /** Runs the ticks owed for `simSeconds`; the screens hear when the Duel ends. */
+  const advance = (simSeconds: number) => {
+    const { ticks, alpha } = clock.advance(simSeconds);
+    const events: DuelEvent[] = [];
+
+    for (let tick = 0; tick < ticks; tick += 1) {
+      previous = current;
+      const result = duel.step(intentsFor(current));
+      current = result.snapshot;
+      events.push(...result.events);
+    }
+
+    for (const event of events) {
+      if (event.type === "duel-end") {
+        const local = current.duelists.find((each) => each.id === localId);
+        send({ type: "duel-ended", won: event.winner === local?.team });
+      }
+    }
+
+    return { alpha, events };
   };
 
   // Resolves once the loop is installed; the loop itself runs every frame.
@@ -205,32 +300,34 @@ const start = async () => {
         ? readDualSense(scan.gamepad, tuning.input)
         : undefined;
 
-    if (scan.kind === "none") {
-      overlay.show(text.title, text.connectDualSense);
-    } else if (scan.kind === "unsupported") {
-      overlay.show(text.title, text.requiresDualSense);
-    } else {
-      overlay.hide();
-    }
+    // The screens act first, so everything below sees the screen this frame ends on.
+    const screen = syncScreens(scan.kind, seconds);
 
-    // The Duel only runs with a DualSense in hand, so the Round's countdown
-    // never plays out behind the connect prompt. A Knockout plays in slow
+    // The Duel only advances on its own screen: never behind a menu, the
+    // pause or the "Reconecta tu mando" prompt. A Knockout plays in slow
     // motion: slow motion only scales the time fed to the simulation.
-    const playing = scan.kind === "dualsense";
-    hudElement.hidden = !playing;
+    const playing = screen.kind === "duel";
+    const inDuel = showsDuel(screen);
+    hudElement.hidden = !inDuel;
+    // Behind the pause the Round's call-out would fight the menu for the centre.
+    hudElement.classList.toggle("hud-held", inDuel && !playing);
 
     const timeScale =
       current.round.phase === "knockout" ? tuning.round.knockout.timeScale : 1;
 
     const simSeconds = playing ? seconds * timeScale : 0;
-    const { ticks, alpha } = clock.advance(simSeconds);
-    const events: DuelEvent[] = [];
+    const { alpha, events } = advance(simSeconds);
 
-    for (let tick = 0; tick < ticks; tick += 1) {
-      previous = current;
-      const result = duel.step(intentsFor(current));
-      current = result.snapshot;
-      events.push(...result.events);
+    if (playing) {
+      send({ seconds, type: "tick" });
+    }
+
+    const view = viewOf(screens.screen);
+
+    if (view) {
+      overlay.show(view);
+    } else {
+      overlay.hide();
     }
 
     shakeOnHits(events);
@@ -270,6 +367,10 @@ const start = async () => {
 
       rig.follow(localSample, target?.position, seconds);
       reticle.show(localSample.aimPoint, rig.camera);
+    }
+
+    if (!inDuel) {
+      reticleElement.hidden = true;
     }
 
     frame.render();

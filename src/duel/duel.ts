@@ -4,6 +4,7 @@
  * feed it one Intent per Duelist per tick. No three.js, no DOM.
  */
 import type { Tuning } from "../tuning";
+import type { Difficulty } from "./difficulty";
 import { fly } from "./flight";
 import {
   clamp,
@@ -45,6 +46,8 @@ export interface DuelistSetup {
 /** Everything a Duel is created from. */
 export interface DuelConfig {
   readonly arena: ArenaLayout;
+  /** Carried for the AI Controller to read; the simulation itself ignores it. */
+  readonly difficulty?: Difficulty;
   readonly duelists: readonly DuelistSetup[];
   readonly tuning: Tuning;
 }
