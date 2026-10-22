@@ -7,6 +7,7 @@ import type { Tuning } from "../tuning";
 import {
   addAim,
   aimAt,
+  angleToBody,
   aimPivot,
   castAimRay,
   sightBlocked,
@@ -592,9 +593,9 @@ export const createDuel = (config: DuelConfig): Duel => {
     );
 
   /**
-   * The opponent in sight whose chest is the smallest angle off `self`'s
-   * crosshair, with that angle (radians, seen from the aim pivot): what Aim
-   * Assist helps toward, and what R3 Locks On to.
+   * The opponent in sight whose body (its nearest edge, not its centre) is
+   * the smallest angle off `self`'s crosshair, with that angle (radians, seen
+   * from the free camera): what Aim Assist helps toward, and what R3 Locks On to.
    */
   const nearestToCrosshair = (
     self: DuelistState,
@@ -605,13 +606,24 @@ export const createDuel = (config: DuelConfig): Duel => {
     | undefined => {
     const pivot = aimPivot(self.position, self.aim.yaw, arena, eye);
     const ray = directionOf(self.aim);
+    // Angles are taken from where the free camera sits, straight behind the
+    // pivot, so the crosshair on screen marks exactly what they measure.
+    const back = tuning.camera.free.distance;
+
+    const viewpoint = {
+      x: pivot.x - ray.x * back,
+      y: pivot.y - ray.y * back,
+      z: pivot.z - ray.z * back,
+    };
+
     let best: { opponent: DuelistState; angle: number } | undefined;
 
     for (const opponent of inSight(self, duelists, range)) {
-      const angle = angleBetween(
-        ray,
-        towardPoint(pivot, chestOf(opponent, tuning))
-      );
+      const angle = angleToBody(viewpoint, ray, {
+        height: tuning.duelist.height,
+        position: opponent.position,
+        radius: bodyRadius,
+      });
 
       if (!best || angle < best.angle) {
         best = { angle, opponent };
@@ -646,9 +658,8 @@ export const createDuel = (config: DuelConfig): Duel => {
     const near = nearestToCrosshair(self, duelists)?.angle ?? Infinity;
 
     const friction =
-      near < assist.frictionAngle
-        ? assist.friction +
-          (1 - assist.friction) * (near / assist.frictionAngle)
+      near < assist.bendAngle
+        ? assist.friction + (1 - assist.friction) * (near / assist.bendAngle)
         : 1;
 
     return {

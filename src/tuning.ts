@@ -32,18 +32,18 @@ export const tuning = {
 
   /**
    * Aim Assist, for a free-aiming Duelist: gentle help toward an opponent near
-   * the crosshair (in sight, not behind Cover). Angles are radians, measured
-   * at the aim pivot between the crosshair's ray and the opponent's chest.
+   * the crosshair (in sight, not behind Cover). The angle is measured at the
+   * aim pivot between the crosshair's ray and the nearest point of the
+   * opponent's body (its edge, not its centre), so it means the same at any
+   * distance. The crosshair's arm tips are drawn at exactly `bendAngle`.
    */
   aimAssist: {
-    /** A cast whose crosshair is within this angle of an opponent bends toward them at launch (about 7 degrees). */
-    bendAngle: 0.12,
+    /** A cast whose crosshair is within this angle of an opponent's body bends toward them at launch, and turning eases (about 2 degrees). */
+    bendAngle: 0.035,
     /** Share of the gap to the opponent's chest the launch direction closes (1 aims dead at the chest). */
     bendStrength: 0.85,
-    /** Turn speed multiplier with the crosshair right on an opponent, easing back to 1 at `frictionAngle`. */
+    /** Turn speed multiplier with the crosshair on an opponent's body, easing back to 1 at `bendAngle` off its edge. */
     friction: 0.55,
-    /** Turning eases while the crosshair is within this angle of an opponent (about 4.6 degrees). */
-    frictionAngle: 0.08,
   },
 
   camera: {

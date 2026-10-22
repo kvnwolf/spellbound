@@ -228,14 +228,55 @@ const turnSpeed = (duel: Duel, rate: number) => {
   return (duelist(duel, "hero").aim.yaw - before) * tuning.tickRate;
 };
 
-/** Casts once with the crosshair turned `yaw` radians off the rival and reports whether it hit. */
-const castsOff = (yaw: number, settings: Tuning) => {
-  const duel = fight(openArena, settings);
-  turn(duel, { pitch: 0, yaw });
+const longArena: ArenaLayout = {
+  ...openArena,
+  bounds: { halfDepth: 30, halfWidth: 10 },
+};
 
-  const events = [...tapLight(duel, "hero"), ...settle(duel)];
+/**
+ * Casts once, with the rival `distance` m away, with the aim ray passing
+ * `beyond` radians outside the edge of the rival's body (seen from the free
+ * camera behind the aim pivot, which is what the crosshair shows), and reports
+ * whether the Spell hit and the velocity it launched with.
+ */
+const castsBeyondEdge = (
+  distance: number,
+  beyond: number,
+  settings: Tuning
+) => {
+  const rivalZ = 5 - distance;
 
-  return ofType(events, "spell-hit").length > 0;
+  const duel = createDuel({
+    arena: longArena,
+    duelists: [
+      { id: "hero", spawn: { x: 0, z: 5 }, team: "gryffindor" },
+      { id: "rival", spawn: { x: 0, z: rivalZ }, team: "slytherin" },
+    ],
+    tuning: settings,
+  });
+
+  skipIntro(duel);
+
+  // The crosshair starts on the rival's chest. The aim ray, turned right
+  // about the pivot, passes the body's axis at `away * sin(turn)`: its edge
+  // when that is the body radius, and `beyond` more (as seen from the camera,
+  // `back` behind the pivot) at the extra gap below.
+  const hero = duelist(duel, "hero");
+  const right = rightOf(hero.facing);
+  const pivotX = hero.position.x + right.x * tuning.aim.eye.shoulder;
+  const pivotZ = hero.position.z + right.z * tuning.aim.eye.shoulder;
+  const away = Math.hypot(pivotX, pivotZ - rivalZ);
+
+  const gap =
+    tuning.duelist.bodyRadius + (away + tuning.camera.free.distance) * beyond;
+
+  turn(duel, { pitch: 0, yaw: Math.asin(gap / away) });
+
+  const cast = tapLight(duel, "hero");
+  const velocity = ofType(cast, "spell-cast")[0]?.spell.velocity;
+  const hit = ofType([...cast, ...settle(duel)], "spell-hit").length > 0;
+
+  return { hit, velocity };
 };
 
 describe("Aim Assist", () => {
@@ -251,17 +292,27 @@ describe("Aim Assist", () => {
     expect(clear).toBeCloseTo(0.5);
   });
 
-  it("bends a cast toward an opponent just off the crosshair, only at launch", () => {
+  describe.each([14, 22])("with the rival %i m away", (distance) => {
     const bendOnly: Tuning = {
       ...tuning,
       aimAssist: { ...tuning.aimAssist, friction: 1 },
     };
 
-    // About 6 degrees off: wide of the body without Aim Assist.
-    expect(castsOff(0.1, withoutAimAssist)).toBeFalsy();
-    expect(castsOff(0.1, bendOnly)).toBeTruthy();
-    // Well outside the Aim Assist cone, nothing bends.
-    expect(castsOff(0.16, bendOnly)).toBeFalsy();
+    it("bends a cast whose aim passes just within the angle of the body, and it hits", () => {
+      const plain = castsBeyondEdge(distance, 0.03, withoutAimAssist);
+      const assisted = castsBeyondEdge(distance, 0.03, bendOnly);
+
+      expect(assisted.hit).toBeTruthy();
+      expect(assisted.velocity).not.toStrictEqual(plain.velocity);
+    });
+
+    it("does not bend a cast whose aim passes outside the angle, and it misses", () => {
+      const plain = castsBeyondEdge(distance, 0.05, withoutAimAssist);
+      const assisted = castsBeyondEdge(distance, 0.05, bendOnly);
+
+      expect(assisted.hit).toBeFalsy();
+      expect(assisted.velocity).toStrictEqual(plain.velocity);
+    });
   });
 
   it("flies straight after launch: the bend is no homing", () => {

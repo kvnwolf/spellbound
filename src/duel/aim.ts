@@ -8,6 +8,7 @@
  */
 import type { ArenaLayout, CoverColumn } from "./duel";
 import {
+  angleBetween,
   clamp,
   distanceBetween,
   forwardOf,
@@ -265,3 +266,56 @@ export const sightBlocked = (
 /** The unit direction from `from` to `to`. */
 export const towardPoint = (from: Point3, to: Point3): Point3 =>
   unit3({ x: to.x - from.x, y: to.y - from.y, z: to.z - from.z });
+
+/**
+ * The angle, seen from `pivot`, between the unit aim `ray` and the nearest
+ * point of `body`: 0 when the ray passes through it. Measured to the body's
+ * edge rather than its centre, so a body is as easy to pick out at any
+ * distance. A body behind the pivot counts by its centre.
+ */
+export const angleToBody = (
+  pivot: Point3,
+  ray: Point3,
+  body: AimBody
+): number => {
+  const toCentre = {
+    x: body.position.x - pivot.x,
+    y: body.height / 2 - pivot.y,
+    z: body.position.z - pivot.z,
+  };
+
+  // How far along the ray the body's axis is closest to it.
+  const along = toCentre.x * ray.x + toCentre.z * ray.z;
+  const alongRay = along / Math.max(ray.x ** 2 + ray.z ** 2, 1e-12);
+
+  if (alongRay <= 0) {
+    return angleBetween(ray, unit3(toCentre));
+  }
+
+  const reached = {
+    x: pivot.x + ray.x * alongRay,
+    y: pivot.y + ray.y * alongRay,
+    z: pivot.z + ray.z * alongRay,
+  };
+
+  // The point of the cylinder nearest the ray at that depth.
+  const gapX = reached.x - body.position.x;
+  const gapZ = reached.z - body.position.z;
+  const gap = Math.hypot(gapX, gapZ);
+  const pull = gap > body.radius ? body.radius / gap : 1;
+
+  const nearest = {
+    x: body.position.x + gapX * pull,
+    y: clamp(reached.y, 0, body.height),
+    z: body.position.z + gapZ * pull,
+  };
+
+  return angleBetween(
+    ray,
+    unit3({
+      x: nearest.x - pivot.x,
+      y: nearest.y - pivot.y,
+      z: nearest.z - pivot.z,
+    })
+  );
+};

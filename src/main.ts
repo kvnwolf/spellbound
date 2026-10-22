@@ -199,7 +199,7 @@ const start = async () => {
   const frame = createFramePipeline(renderer, scene, rig.camera, tuning.render);
 
   const reticleElement = element("#reticle", HTMLElement);
-  const reticle = createReticle(reticleElement);
+  const reticle = createReticle(reticleElement, tuning.aimAssist.bendAngle);
   const hudElement = element("#hud", HTMLElement);
 
   const hud = createHud(hudElement, localId, {
