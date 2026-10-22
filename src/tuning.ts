@@ -403,6 +403,12 @@ export const tuning = {
     vignette: 0.35,
   },
 
+  /** The aiming reticle's own fade, independent of the camera's Lock-on transition. */
+  reticle: {
+    /** Seconds to fade fully out on Lock-on, and back in on unlock or a broken lock: near-instant but not abrupt (smoothstep). */
+    fadeSeconds: 0.1,
+  },
+
   round: {
     /** The "3, 2, 1" countdown before control is given at the start of every Round. */
     introSeconds: 3,

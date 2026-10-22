@@ -199,7 +199,13 @@ const start = async () => {
   const frame = createFramePipeline(renderer, scene, rig.camera, tuning.render);
 
   const reticleElement = element("#reticle", HTMLElement);
-  const reticle = createReticle(reticleElement, tuning.aimAssist.bendAngle);
+
+  const reticle = createReticle(
+    reticleElement,
+    tuning.aimAssist.bendAngle,
+    tuning.reticle.fadeSeconds
+  );
+
   const hudElement = element("#hud", HTMLElement);
 
   const hud = createHud(hudElement, localId, {
@@ -339,7 +345,7 @@ const start = async () => {
         },
         seconds
       );
-      reticle.show({ lockShare: 0, visible: false }, rig.camera);
+      reticle.show({ locked: false, visible: false }, rig.camera, seconds);
     } else if (localSample) {
       const target =
         localSample.targetId === null
@@ -347,8 +353,8 @@ const start = async () => {
           : samples.get(localSample.targetId);
 
       // Free: the camera follows the aim and the reticle marks where
-      // Spells go. Locked On: the camera frames both, the reticle fades
-      // out and the Target's glow marks the lock.
+      // Spells go. Locked On: the camera frames both, the reticle quickly
+      // fades out and the Target's glow marks the lock.
       rig.follow(
         localSample,
         target && {
@@ -359,7 +365,11 @@ const start = async () => {
         seconds
       );
 
-      reticle.show({ lockShare: rig.lockShare(), visible: true }, rig.camera);
+      reticle.show(
+        { locked: target !== undefined, visible: true },
+        rig.camera,
+        seconds
+      );
     }
   };
 
