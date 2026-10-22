@@ -274,7 +274,7 @@ const createCastle = (
  * evenly, so warm pools of light ring the Arena. None sits on the centre line
  * behind a spawn, where the over-the-shoulder camera sits most of the time.
  */
-const torchSpots = (bounds: ArenaLayout["bounds"]): Vector3[] => {
+export const torchSpots = (bounds: ArenaLayout["bounds"]): Vector3[] => {
   const x = bounds.halfWidth + parapetThickness / 2;
   const z = bounds.halfDepth + parapetThickness / 2;
   const endOffset = bounds.halfWidth / 2;

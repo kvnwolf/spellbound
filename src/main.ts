@@ -21,7 +21,7 @@ import { createHud } from "./hud";
 import { createOverlay } from "./overlay";
 import { createCameraRig } from "./render/camera-rig";
 import { createCameraShake } from "./render/camera-shake";
-import { createCourtyardScene } from "./render/courtyard-view";
+import { createCourtyardScene, torchSpots } from "./render/courtyard-view";
 import { createDuelistView } from "./render/duelist-view";
 import { sampleDuelist } from "./render/interpolate";
 import type { DuelistSample } from "./render/interpolate";
@@ -137,10 +137,23 @@ const start = async () => {
   const vfx = createSpellVfx();
   scene.add(vfx.object);
 
+  // The camera must also stay clear of the torch stands on the parapet, which
+  // are scenery rather than Cover, so Spells ignore them.
+  const cameraObstacles = {
+    ...courtyard,
+    cover: [
+      ...courtyard.cover,
+      ...torchSpots(courtyard.bounds).map((spot) => ({
+        center: { x: spot.x, z: spot.z },
+        radius: tuning.camera.clearance.torchRadius,
+      })),
+    ],
+  };
+
   const rig = createCameraRig(
     tuning.camera,
     tuning.duelist.chestHeight,
-    courtyard,
+    cameraObstacles,
     shake
   );
 

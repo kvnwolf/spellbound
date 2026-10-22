@@ -15,14 +15,14 @@ export const tuning = {
   camera: {
     /**
      * The soft lock-on keeps the Target in frame, but the framing leans toward
-     * the aim: the point the camera looks at is shifted by this fraction of the
-     * aim offset from the Target (the rest of the offset shows as the reticle
-     * moving across the screen).
+     * the aim: the camera turns toward the aim by this share of the aim's angle
+     * off the Target (the rest shows as the reticle moving across the screen).
+     * 1 would pin the reticle to the screen centre, 0 is the old fixed camera.
      */
     aimFollow: {
-      /** Sideways share of the aim offset the framing follows. */
+      /** Sideways share of the aim's angle the framing follows. */
       horizontal: 0.6,
-      /** Vertical share of the aim offset the framing follows. */
+      /** Vertical share of the aim's angle the framing follows. */
       vertical: 0.5,
     },
     /**
@@ -50,11 +50,13 @@ export const tuning = {
       /** What a radian of swing costs, in metres of lost camera distance: higher swings less. */
       swingCost: 1.4,
       /** Exponential smoothing rate of the swing itself, per second: how fast the camera slides round to open ground and back. */
-      swingSharpness: 9,
+      swingSharpness: 12,
       /** Search resolution of that swing (radians). */
       swingStep: 0.1,
       /** Extra cost per metre the camera ends up closer than `minDistance`. */
       tooCloseCost: 3,
+      /** Radius the camera treats a torch stand on the parapet as (the stand and its cap, with a little air), so it never clips one. */
+      torchRadius: 0.55,
     },
     /**
      * When the Target is close the camera pulls back and rises so both

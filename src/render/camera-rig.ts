@@ -124,12 +124,8 @@ export const createCameraRig = (
       const forward = target ? direction(self.position, target) : self.facing;
       const right = rightOf(forward);
 
-      const near = target
-        ? closeness(
-            distanceBetween(self.position, target),
-            settings.closeTarget
-          )
-        : 0;
+      const separation = target ? distanceBetween(self.position, target) : 0;
+      const near = target ? closeness(separation, settings.closeTarget) : 0;
 
       const distance = settings.distance + near * settings.closeTarget.pullBack;
 
@@ -146,9 +142,17 @@ export const createCameraRig = (
       };
 
       // Lean the framing toward the aim: the aim point's offset from the Target's chest.
-      const aimX = target ? self.aimPoint.x - target.x : 0;
-      const aimY = target ? self.aimPoint.y - chestHeight : 0;
-      const aimZ = target ? self.aimPoint.z - target.z : 0;
+      // The look-at point is nearer than the Target, so the same sideways
+      // shift turns the camera further; scaling by the ratio of the two
+      // distances makes `aimFollow` a share of the aim's *angle* on screen.
+      const lever = target
+        ? (settings.distance + settings.focusBias * separation) /
+          (settings.distance + separation)
+        : 0;
+
+      const aimX = target ? (self.aimPoint.x - target.x) * lever : 0;
+      const aimY = target ? (self.aimPoint.y - chestHeight) * lever : 0;
+      const aimZ = target ? (self.aimPoint.z - target.z) * lever : 0;
 
       const wantedYaw = Math.atan2(wanted.x, wanted.z);
       const wantedArm = Math.hypot(wanted.x, wanted.z);
