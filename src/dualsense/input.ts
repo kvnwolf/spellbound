@@ -42,14 +42,22 @@ const modelByProductId = new Map<string, DualSenseModel>([
  * Identifies a DualSense from a `Gamepad.id`. Browsers format the id
  * differently ("… Vendor: 054c Product: 0ce6)" in Chrome, "054c-0ce6-…" in
  * Firefox), so this looks for Sony's vendor id followed by a product id.
+ * Chrome on macOS gives no ids at all ("DualSense Wireless Controller
+ * (STANDARD GAMEPAD)"), so without them it falls back to the name.
  */
 const modelOf = (id: string): DualSenseModel | undefined => {
   const product = /054c\D{1,10}(?<product>[0-9a-f]{4})/iu.exec(id)?.groups
     ?.product;
 
-  return product === undefined
-    ? undefined
-    : modelByProductId.get(product.toLowerCase());
+  if (product !== undefined) {
+    return modelByProductId.get(product.toLowerCase());
+  }
+
+  if (/dualsense edge/iu.test(id)) {
+    return "DualSense Edge";
+  }
+
+  return /dualsense/iu.test(id) ? "DualSense" : undefined;
 };
 
 /** Picks the first DualSense (or DualSense Edge) among `navigator.getGamepads()`. */

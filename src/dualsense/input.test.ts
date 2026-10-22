@@ -11,6 +11,12 @@ const chromeEdgeId =
 
 const firefoxDualSenseId = "054c-0ce6-DualSense Wireless Controller";
 
+// Chrome on macOS reads pads through GameController.framework, which gives
+// no vendor or product id, only the name.
+const macChromeDualSenseId = "DualSense Wireless Controller (STANDARD GAMEPAD)";
+
+const macChromeEdgeId = "DualSense Edge Wireless Controller (STANDARD GAMEPAD)";
+
 const xboxId =
   "Xbox Wireless Controller (STANDARD GAMEPAD Vendor: 045e Product: 0b13)";
 
@@ -44,6 +50,8 @@ describe(scanGamepads, () => {
     ["DualSense on Chrome", chromeDualSenseId, "DualSense"],
     ["DualSense on Firefox", firefoxDualSenseId, "DualSense"],
     ["DualSense Edge", chromeEdgeId, "DualSense Edge"],
+    ["DualSense on macOS Chrome", macChromeDualSenseId, "DualSense"],
+    ["DualSense Edge on macOS Chrome", macChromeEdgeId, "DualSense Edge"],
   ])("accepts a %s", (_label, id, model) => {
     const pad = fakePad(id);
 
