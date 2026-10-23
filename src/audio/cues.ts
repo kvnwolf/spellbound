@@ -25,6 +25,7 @@ export type Sound =
       readonly charge: number;
       readonly empowered: boolean;
     }
+  | { readonly kind: "expelliarmus-cast" }
   | { readonly kind: "incendio-cast" }
   | { readonly kind: "petrificus-cast" }
   /** Depulso's gust: it lands as it is cast, so its cast is the whole of it. */
@@ -70,7 +71,15 @@ export type Sound =
   /** A full Charge left the Perfect Release window: a moment from Backfiring. */
   | { readonly kind: "overcharge-warning" }
   /** A Petrified Duelist breaking out of the stone. */
-  | { readonly kind: "petrify-break" };
+  | { readonly kind: "petrify-break" }
+  /** Expelliarmus knocking a Wand out of a hand. */
+  | { readonly kind: "disarm" }
+  /** A loose Wand clattering onto the floor. */
+  | { readonly kind: "wand-land" }
+  /** A Disarmed Duelist grabbing their Wand off the floor. */
+  | { readonly kind: "wand-pickup" }
+  /** A loose Wand flying back into its owner's hand on its own. */
+  | { readonly kind: "wand-return" };
 
 /** How a Round ended for the local Duelist. */
 export type RoundOutcome = "draw" | "lost" | "won";
@@ -89,6 +98,7 @@ const impactOf = (spell: SpellState): Sound | null => {
     };
   }
 
+  // Expelliarmus's hit is its Disarm, reported on its own.
   return spell.kind === "petrificus" ? { kind: "petrify" } : null;
 };
 
@@ -244,6 +254,10 @@ const eventSounds: EventSounds = {
   backfire: (event, _frame, place) => [
     place.by(event.duelistId, { kind: "backfire" }, event.position),
   ],
+  // The Wand snapping out of the hand, as loud whoever cast it.
+  disarm: (event, _frame, place) => [
+    place.on(event.duelistId, { kind: "disarm" }, event.position),
+  ],
   dodge: bodily,
   "duel-end": (event, frame) => [
     announce({ kind: "duel-end", won: event.winner === localTeamOf(frame) }),
@@ -315,6 +329,17 @@ const eventSounds: EventSounds = {
     place.world(event.position, { kind: "spells-cancelled" }),
   ],
   "stamina-short": ownControl,
+  "wand-landed": (event, _frame, place) => [
+    place.world(
+      { x: event.position.x, y: 0, z: event.position.z },
+      { kind: "wand-land" }
+    ),
+  ],
+  // Picked up where it lay; returned into the owner's hand.
+  "wand-recovered": (event, _frame, place) =>
+    event.how === "pickup"
+      ? [place.by(event.duelistId, { kind: "wand-pickup" }, event.position)]
+      : [place.by(event.duelistId, { kind: "wand-return" })],
 };
 
 /** What one of the simulation's events sounds like. */

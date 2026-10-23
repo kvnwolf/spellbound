@@ -514,3 +514,75 @@ describe("AI attack", () => {
     expect(playerWins("maestro")).toBeLessThanOrEqual(0.3);
   });
 });
+
+/** A scripted player who Locks On and casts Expelliarmus (R2 + ○) two seconds into the fight. */
+const disarmingPlayer = (): Controller => {
+  let tick = 0;
+
+  return {
+    intent: ({ self, snapshot }) => {
+      if (snapshot.round.phase === "fighting") {
+        tick += 1;
+      }
+
+      return {
+        ...idleIntent,
+        lockOn: find(snapshot, self).targetId === null && tick % 10 === 1,
+        spellSlots: {
+          held: tick === ticksOf(2),
+          press: tick === ticksOf(2) ? "circle" : null,
+        },
+      };
+    },
+  };
+};
+
+/** Expelliarmus for free, so the scripted player can cast it at once. */
+const freeExpelliarmus: Tuning = {
+  ...tuning,
+  expelliarmus: { ...tuning.expelliarmus, segments: 0 },
+};
+
+describe("AI Disarmed", () => {
+  it("gets its Wand back, holding fire meanwhile, and duels on", () => {
+    const trials = seeds(8).map((seed) => {
+      const { events } = play({
+        difficulty: "novato",
+        player: disarmingPlayer(),
+        seconds: 14,
+        seed,
+        settings: freeExpelliarmus,
+        sturdy: true,
+      });
+
+      const disarmAt = events.findIndex(
+        (event) => event.type === "disarm" && event.duelistId === "ai"
+      );
+
+      const recoveredAt = events.findIndex(
+        (event) => event.type === "wand-recovered" && event.duelistId === "ai"
+      );
+
+      const castBy = (from: number, to: number) =>
+        ofType(events.slice(from, to), "spell-cast").filter(
+          (event) => event.spell.casterId === "ai"
+        ).length;
+
+      return {
+        castAfter: castBy(recoveredAt, events.length),
+        castWhileDisarmed: castBy(disarmAt, recoveredAt),
+        disarmed: disarmAt !== -1,
+        recovered: recoveredAt > disarmAt,
+      };
+    });
+
+    const disarmed = trials.filter((each) => each.disarmed);
+
+    expect(disarmed.length).toBeGreaterThan(0);
+
+    for (const trial of disarmed) {
+      expect(trial).toMatchObject({ castWhileDisarmed: 0, recovered: true });
+      expect(trial.castAfter).toBeGreaterThan(0);
+    }
+  });
+});

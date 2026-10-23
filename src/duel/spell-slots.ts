@@ -11,9 +11,14 @@
 import type { Tuning } from "../tuning";
 
 /** The Special Spells cast from the Spell Slots. */
-export type SpecialSpellKind = "depulso" | "incendio" | "petrificus";
+export type SpecialSpellKind =
+  | "depulso"
+  | "expelliarmus"
+  | "incendio"
+  | "petrificus";
 
 export const specialSpellKinds: readonly SpecialSpellKind[] = [
+  "expelliarmus",
   "incendio",
   "petrificus",
   "depulso",
@@ -41,7 +46,7 @@ export const boundTo = (
 
 type CostSettings = Pick<
   Tuning,
-  "depulso" | "focus" | "incendio" | "petrificus"
+  "depulso" | "expelliarmus" | "focus" | "incendio" | "petrificus"
 >;
 
 /** The Focus points a Special Spell costs: its segments, whole. */

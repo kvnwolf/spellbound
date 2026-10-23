@@ -20,6 +20,10 @@ export const text = {
   },
   hud: {
     defeat: "Derrota",
+    /** Called out when the local Duelist Disarms an opponent or is Disarmed. */
+    disarmed: "¡Desarmado!",
+    /** Under "¡Desarmado!" when it is the local Duelist who lost their Wand. */
+    disarmedHint: "Recoge tu varita",
     draw: "Empate",
     /** Shown as control is given, after the countdown. */
     duel: "¡Duelo!",
@@ -53,8 +57,6 @@ export const text = {
     /** Accessible label of the Focus orbs. */
     focus: "Concentración",
     incendio: "Incendio",
-    /** On a Spell Slot kept for a Special Spell that is not in the game yet. */
-    locked: "Próximamente",
     petrificus: "Petrificus Totalus",
   },
   /**
@@ -64,6 +66,7 @@ export const text = {
   spellCallouts: {
     confringo: "¡Confringo!",
     depulso: "¡Depulso!",
+    expelliarmus: "¡Expelliarmus!",
     incendio: "¡Incendio!",
     petrificus: "¡Petrificus Totalus!",
   },

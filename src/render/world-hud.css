@@ -50,6 +50,10 @@
   opacity: 0;
 }
 
+.wh-spell[data-spell="expelliarmus"] {
+  color: var(--expelliarmus);
+}
+
 .wh-spell[data-spell="incendio"] {
   color: var(--incendio);
 }

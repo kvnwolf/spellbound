@@ -18,7 +18,10 @@
  *   embers that drift up over it; a Burning Duelist sheds rising embers and
  *   a flickering warm light. Petrificus Totalus is a pale-blue bolt that
  *   lands in a cold flash and a puff of stone dust (the stone itself is the
- *   Duelist view's).
+ *   Duelist view's). Expelliarmus is a scarlet bolt with a white heart; a
+ *   Disarm bursts scarlet and white where the Wand leaves the hand, and a
+ *   Wand picked up or returned flares where it lay (the Wand itself is
+ *   `loose-wand-view.ts`'s).
  * - A Charging Wand sheds sparks from the same ring at a rate that rises with
  *   the Charge, and crackles hotter and wilder as Overcharge nears.
  * - A small fixed pool of point lights follows the brightest Spells, flashes
@@ -110,6 +113,8 @@ const palettes: Record<SpellKind, Palette> = {
   confringo: { hot: new Color("#ffe2a0"), main: new Color("#ff6a12") },
   /** Depulso's wind: a pale, cool white. It never flies; its wave is `depulso-vfx.ts`. */
   depulso: { hot: new Color("#ffffff"), main: new Color("#cfe6f5") },
+  /** A scarlet disarming bolt round a white heart. */
+  expelliarmus: { hot: new Color("#fff4f6"), main: new Color("#ff1a3c") },
   /** A fireball: blood-orange flame round a pale yellow heart. */
   incendio: { hot: new Color("#fff1b8"), main: new Color("#ff3d0a") },
   /** A cold, pale-blue binding light. */
@@ -142,6 +147,12 @@ const looks: Record<ProjectileKind, BoltLook> = {
     glow: { intensity: 2.6, size: 1.7 },
     light: { distance: 10, intensity: 16 },
     trail: { intensity: 2.2, length: 3.4, width: 0.17 },
+  },
+  expelliarmus: {
+    core: { intensity: 9, radius: 0.1 },
+    glow: { intensity: 2.8, size: 1.15 },
+    light: { distance: 8, intensity: 11 },
+    trail: { intensity: 3, length: 3.8, width: 0.08 },
   },
   incendio: {
     core: { intensity: 8, radius: 0.15 },
@@ -314,6 +325,36 @@ const burnEmbers = {
   size: 0.06,
   speed: 0.7,
   to: 1.75,
+};
+
+/** A Wand knocked out of a hand: a sharp scarlet-and-white crack. */
+const disarmBurst: BurstStyle = {
+  flashLife: 0.2,
+  flashSize: 2.2,
+  life: 0.6,
+  light: 70,
+  lightLife: 0.35,
+  size: 0.07,
+  sparks: 70,
+  speed: 8,
+};
+
+/** A loose Wand picked up or flying home: a soft flare where it lay. */
+const wandBackBurst: BurstStyle = {
+  flashLife: 0.18,
+  flashSize: 1.2,
+  life: 0.5,
+  light: 25,
+  lightLife: 0.3,
+  size: 0.05,
+  sparks: 30,
+  speed: 3,
+};
+
+/** The Wand's own glow: a warm gold over the scarlet. */
+const wandPalette: Palette = {
+  hot: new Color("#fff4f6"),
+  main: new Color("#ffb04a"),
 };
 
 /** Petrificus Totalus landing: a cold flash and a puff of stone dust. */
@@ -810,6 +851,7 @@ export const createSpellVfx = (settings: SpellVfxSettings): SpellVfx => {
 
   const pools: Record<ProjectileKind, ReturnType<typeof createBoltPool>> = {
     confringo: createBoltPool("confringo", object),
+    expelliarmus: createBoltPool("expelliarmus", object),
     incendio: createBoltPool("incendio", object),
     petrificus: createBoltPool("petrificus", object),
     stupefy: createBoltPool("stupefy", object),
@@ -1009,6 +1051,11 @@ export const createSpellVfx = (settings: SpellVfxSettings): SpellVfx => {
           event.spell.kind === "confringo" ? bursts.confringoStop : bursts.stop;
 
         burst(event.position, stop, palettes[event.spell.kind]);
+      } else if (event.type === "disarm") {
+        burst(event.position, disarmBurst, palettes.expelliarmus);
+        burst(event.position, disarmBurst, wandPalette, 0.5);
+      } else if (event.type === "wand-recovered") {
+        burst(event.position, wandBackBurst, wandPalette);
       } else if (event.type === "parry") {
         // The reflected Spell's trail starts from the Shield, not the Wand.
         castPoints.set(event.reflected.id, event.position);

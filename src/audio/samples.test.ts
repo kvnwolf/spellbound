@@ -51,12 +51,14 @@ const everySound: EverySound = {
   ],
   countdown: [1, 2, 3].map((beat) => ({ beat, kind: "countdown" as const })),
   "depulso-cast": [{ kind: "depulso-cast" }],
+  disarm: [{ kind: "disarm" }],
   dodge: [{ kind: "dodge" }],
   "duel-end": [
     { kind: "duel-end", won: true },
     { kind: "duel-end", won: false },
   ],
   "duel-start": [{ kind: "duel-start" }],
+  "expelliarmus-cast": [{ kind: "expelliarmus-cast" }],
   fizzle: [{ kind: "fizzle" }],
   "incendio-cast": [{ kind: "incendio-cast" }],
   "incendio-explosion": [{ kind: "incendio-explosion" }],
@@ -91,6 +93,9 @@ const everySound: EverySound = {
     { kind: "stupefy-hit", strong: false },
     { kind: "stupefy-hit", strong: true },
   ],
+  "wand-land": [{ kind: "wand-land" }],
+  "wand-pickup": [{ kind: "wand-pickup" }],
+  "wand-return": [{ kind: "wand-return" }],
 };
 
 const menuSounds: MenuSound[] = [

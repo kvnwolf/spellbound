@@ -3,7 +3,7 @@
  * keeping the centre clear. Bottom-left, the local Duelist's bars with no
  * labels (a thick Health bar over a thinner blue Stamina bar) beside the Potion
  * Slots; top-centre, only small diamonds for the Rounds each side has won; in
- * the middle, the call-outs (the "3, 2, 1, ¡Duelo!" countdown, "¡Parry!", the
+ * the middle, the call-outs (the "3, 2, 1, ¡Duelo!" countdown, "¡Parry!", "¡Desarmado!", the
  * Knockout and each Round's result); and just under the reticle, the name of
  * a Special Spell the local Duelist casts, or "¡Confringo!" on a Perfect
  * Release. It only writes to the DOM when what it shows changes, since it
@@ -27,6 +27,8 @@ export interface HudSettings {
   readonly maxStamina: number;
   /** How long "¡Parry!" stays up after the local Duelist Parries. */
   readonly parryCalloutSeconds: number;
+  /** How long "¡Desarmado!" stays up after a Disarm the local Duelist was part of. */
+  readonly disarmCalloutSeconds: number;
   /** How long the Stamina bar flashes when a defence is refused for want of Stamina. */
   readonly staminaShortSeconds: number;
   /** How long the Spell Slot and Potion Slot diamonds take to spread or tighten. */
@@ -223,6 +225,9 @@ export const createHud = (
   const spellCallout = createSpellCallout(root, settings);
   let duelCallout = 0;
   let parryCallout = 0;
+  // "¡Desarmado!": how long it stays up, and whether the local Duelist is the one Disarmed.
+  let disarmCallout = 0;
+  let disarmedSelf = false;
 
   /** The message for the Round's phase, from the local Duelist's point of view. */
   const message = (
@@ -236,6 +241,13 @@ export const createHud = (
       return {
         detail: text.hud.round(round.number),
         heading: `${Math.max(Math.ceil(round.phaseSecondsLeft), 1)}`,
+      };
+    }
+
+    if (round.phase === "fighting" && disarmCallout > 0) {
+      return {
+        detail: disarmedSelf ? text.hud.disarmedHint : "",
+        heading: text.hud.disarmed,
       };
     }
 
@@ -290,6 +302,18 @@ export const createHud = (
       parryCallout = mine("parry")
         ? settings.parryCalloutSeconds
         : Math.max(parryCallout - seconds, 0);
+
+      disarmCallout = Math.max(disarmCallout - seconds, 0);
+
+      for (const event of events) {
+        if (
+          event.type === "disarm" &&
+          (event.duelistId === localId || event.casterId === localId)
+        ) {
+          disarmCallout = settings.disarmCalloutSeconds;
+          disarmedSelf = event.duelistId === localId;
+        }
+      }
 
       stamina.show(self?.stamina ?? 0, mine("stamina-short"), seconds);
       health.show(self?.health ?? 0, seconds);

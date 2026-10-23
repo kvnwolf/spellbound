@@ -9,9 +9,12 @@
  * samples; the procedural wizard and its poses come later. While it is the local
  * Duelist's Lock-on Target, a fresnel rim glow traces its silhouette.
  * Petrified, it turns to grey stone with a cold, pale rim of light.
+ * Disarmed, the hand is empty (the loose Wand is `loose-wand-view.ts`'s);
+ * with the Focus full, the Wand in hand breathes a scarlet aura.
  */
 import {
   color,
+  float,
   mix,
   normalView,
   positionViewDirection,
@@ -122,7 +125,10 @@ const bodyExtent = (() => {
   return points;
 })();
 
-const wood = new MeshStandardNodeMaterial({ color: "#8a6038", roughness: 0.5 });
+/** The full-Focus aura's settings, with the Focus that fills the meter. */
+export type WandAuraSettings = Tuning["wandAura"] & {
+  readonly focusMax: number;
+};
 
 /** Fresnel: 1 where the surface turns away from the camera (the silhouette), sharper with `power`. */
 const silhouette = (power: number) =>
@@ -133,7 +139,8 @@ export const createDuelistView = (
   glow: Tuning["lockOnGlow"],
   stone: Tuning["petrifiedLook"],
   duelist: Tuning["duelist"],
-  dodgeSeconds: number
+  dodgeSeconds: number,
+  aura: WandAuraSettings
 ): DuelistView => {
   // The rim glow: brightest where the surface turns away from the camera
   // (the silhouette), scaled by a per-Duelist strength the view eases.
@@ -163,6 +170,32 @@ export const createDuelistView = (
   skin.colorNode = mix(color("#d9b38c"), color(stone.stoneColor), petrify);
   robeMaterial.emissiveNode = rim;
   skin.emissiveNode = rim;
+
+  // The Wand's own wood, glowing scarlet from within while the Focus is full.
+  const auraStrength = uniform(0);
+  const wood = new MeshStandardNodeMaterial({ roughness: 0.5 });
+  wood.colorNode = color("#8a6038");
+  wood.emissiveNode = color(aura.color).mul(
+    float(aura.radiance).mul(auraStrength)
+  );
+  let auraClock = 0;
+
+  /** Full Focus: the Wand in hand breathes its aura, easing in and out. */
+  const breathe = (sample: DuelistSample, seconds: number) => {
+    auraClock += seconds;
+
+    const breath =
+      aura.low +
+      (1 - aura.low) *
+        (0.5 + 0.5 * Math.sin(auraClock * aura.pulseSpeed * Math.PI * 2));
+
+    const wantedAura =
+      sample.focus >= aura.focusMax && !sample.disarmed ? breath : 0;
+
+    auraStrength.value +=
+      (wantedAura - auraStrength.value) *
+      (1 - Math.exp(-aura.fadeSharpness * seconds));
+  };
 
   const object = new Group();
 
@@ -425,6 +458,10 @@ export const createDuelistView = (
 
       const fade = 1 - Math.exp(-glow.fadeSharpness * seconds);
       glowStrength.value += (wantedGlow - glowStrength.value) * fade;
+
+      // Disarmed, the hand is empty.
+      stick.visible = !sample.disarmed;
+      breathe(sample, seconds);
 
       const turn = 1 - Math.exp(-stone.fadeSharpness * seconds);
       petrify.value += ((sample.petrified ? 1 : 0) - petrify.value) * turn;

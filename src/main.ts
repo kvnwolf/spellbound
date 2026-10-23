@@ -37,6 +37,7 @@ import { createDefenceVfx } from "./render/defence-vfx";
 import { createDuelistView } from "./render/duelist-view";
 import { sampleDuelist } from "./render/interpolate";
 import type { DuelistSample } from "./render/interpolate";
+import { createLooseWandView } from "./render/loose-wand-view";
 import { createFramePipeline } from "./render/pipeline";
 import { createWebGPURenderer } from "./render/renderer";
 import { createReticle } from "./render/reticle";
@@ -214,6 +215,9 @@ const start = async () => {
 
   const scene = createCourtyardScene(courtyard);
 
+  // The Wand's aura once the Focus is full.
+  const wandAura = { ...tuning.wandAura, focusMax: tuning.focus.max };
+
   const views = new Map([
     [
       localId,
@@ -222,7 +226,8 @@ const start = async () => {
         tuning.lockOnGlow,
         tuning.petrifiedLook,
         tuning.duelist,
-        tuning.defence.dodge.seconds
+        tuning.defence.dodge.seconds,
+        wandAura
       ),
     ],
     [
@@ -232,7 +237,8 @@ const start = async () => {
         tuning.lockOnGlow,
         tuning.petrifiedLook,
         tuning.duelist,
-        tuning.defence.dodge.seconds
+        tuning.defence.dodge.seconds,
+        wandAura
       ),
     ],
   ]);
@@ -240,6 +246,14 @@ const start = async () => {
   for (const view of views.values()) {
     scene.add(view.object);
   }
+
+  // Disarmed Duelists' Wands, flying off, on the floor and flying home.
+  const looseWands = createLooseWandView(
+    tuning.looseWand,
+    tuning.duelist.wand.length
+  );
+
+  scene.add(looseWands.object);
 
   const vfx = createSpellVfx({
     blastRadius: tuning.incendio.blastRadius,
@@ -482,7 +496,16 @@ const start = async () => {
           local.targetHiddenSeconds > 0 ? tuning.lockOnGlow.hiddenShare : 1;
       }
 
-      views.get(state.id)?.show(sample, seconds, glow);
+      // A Wand flying home is not in the hand until it lands in it.
+      views
+        .get(state.id)
+        ?.show(
+          looseWands.returning(state.id)
+            ? { ...sample, disarmed: true }
+            : sample,
+          seconds,
+          glow
+        );
     }
 
     defenceVfx.show(samples, seconds);
@@ -615,7 +638,11 @@ const start = async () => {
       }
     }
 
+    looseWands.handle(events);
     const samples = showDuelists(alpha, seconds);
+    looseWands.show(previous, current, alpha, simSeconds, (id) =>
+      views.get(id)?.wandTipPosition()
+    );
     worldHud.show(current, events, samples, rig.camera, seconds);
     audio.frame({
       events,

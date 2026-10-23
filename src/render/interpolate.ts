@@ -27,6 +27,10 @@ export interface DuelistSample {
   readonly dodging: boolean;
   /** Frozen by Petrificus Totalus. */
   readonly petrified: boolean;
+  /** Disarmed: the Wand is out of the hand. */
+  readonly disarmed: boolean;
+  /** Focus points, for the full-Focus aura on the Wand. */
+  readonly focus: number;
 }
 
 const lerp = (from: number, to: number, alpha: number) =>
@@ -61,9 +65,11 @@ export const sampleDuelist = (
 ): DuelistSample => ({
   aim: lerpAim(previous.aim, current.aim, alpha),
   charging: current.chargeSeconds > 0,
+  disarmed: current.looseWand !== null,
   dodging: current.dodgeSeconds > 0,
   elevation: lerp(previous.elevation, current.elevation, alpha),
   facing: blendDirection(previous.facing, current.facing, alpha),
+  focus: current.focus,
   knockedOut: current.knockedOut,
   lockNudge: lerpAim(previous.lockNudge, current.lockNudge, alpha),
   petrified: current.petrifiedSeconds > 0,

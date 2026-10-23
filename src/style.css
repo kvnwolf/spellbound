@@ -4,6 +4,7 @@
   --ink: rgb(10 12 24 / 72%);
   /* Each Spell's colour as the HUD tints it: softer than its VFX. */
   --confringo: #ffb25e;
+  --expelliarmus: #ff5a6e;
   --incendio: #ff8a52;
   --petrificus: #a9c0ff;
   --depulso: #d9ecf2;
@@ -319,6 +320,10 @@ body {
 
 .hud-spell-callout[data-spell="confringo"] {
   color: var(--confringo);
+}
+
+.hud-spell-callout[data-spell="expelliarmus"] {
+  color: var(--expelliarmus);
 }
 
 .hud-spell-callout[data-spell="incendio"] {

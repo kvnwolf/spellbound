@@ -397,6 +397,75 @@ describe(cuesFor, () => {
     });
   });
 
+  describe("Disarm and the Wand", () => {
+    const hand = { x: 0.3, y: 1.4, z: -7.3 };
+    const landing = { x: 0, z: -11 };
+
+    it("whips an Expelliarmus out of the Wand", () => {
+      expect(
+        cues([
+          { spell: spell(local, { kind: "expelliarmus" }), type: "spell-cast" },
+        ]).map((cue) => cue.sound)
+      ).toStrictEqual([{ kind: "expelliarmus-cast" }]);
+    });
+
+    it("snaps the Wand out of the hand it hit, clatters it where it lands and sounds it coming back", () => {
+      expect(
+        cues([
+          {
+            casterId: local,
+            duelistId: opponent,
+            landing,
+            position: hand,
+            type: "disarm",
+          },
+          { duelistId: opponent, position: landing, type: "wand-landed" },
+          {
+            duelistId: opponent,
+            how: "pickup",
+            position: { ...landing, y: 0 },
+            type: "wand-recovered",
+          },
+          {
+            duelistId: local,
+            how: "return",
+            position: { ...landing, y: 0 },
+            type: "wand-recovered",
+          },
+        ])
+      ).toStrictEqual([
+        { at: hand, opponent: false, sound: { kind: "disarm" } },
+        {
+          at: { ...landing, y: 0 },
+          opponent: false,
+          sound: { kind: "wand-land" },
+        },
+        {
+          at: { ...landing, y: 0 },
+          opponent: true,
+          sound: { kind: "wand-pickup" },
+        },
+        { at: null, opponent: false, sound: { kind: "wand-return" } },
+      ]);
+    });
+
+    it("snaps the local Duelist's own Wand away at the listener", () => {
+      expect(
+        cues([
+          {
+            casterId: opponent,
+            duelistId: local,
+            landing,
+            position: hand,
+            type: "disarm",
+          },
+        ])
+      ).toStrictEqual([
+        { at: null, opponent: false, sound: { kind: "disarm" } },
+      ]);
+    });
+  });
+
   describe("Rounds", () => {
     it("beats the countdown's first number as soon as an intro is heard", () => {
       expect(beats(null, introAt(3))).toStrictEqual([

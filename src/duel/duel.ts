@@ -150,6 +150,26 @@ export interface DuelistState {
   readonly burnSeconds: number;
   /** Seconds left Petrified by Petrificus Totalus, frozen and unable to act; 0 when not. */
   readonly petrifiedSeconds: number;
+  /**
+   * The Duelist's Wand while they are Disarmed: knocked loose by
+   * Expelliarmus, flying off and then lying on the Arena floor. Null while
+   * it is in their hand. Disarmed, they cannot cast or Shield.
+   */
+  readonly looseWand: LooseWand | null;
+}
+
+/** A Disarmed Duelist's Wand, out of their hand. */
+export interface LooseWand {
+  /** Where it is now: arcing through the air from the hand, then lying on the floor (y = 0). */
+  readonly position: Point3;
+  /** Where it comes to rest on the Arena floor: inside the walls, clear of Cover and Obstructions. */
+  readonly landing: GroundPoint;
+  /** Which way along the floor it was knocked (a unit vector), the way the hit flew. */
+  readonly heading: GroundPoint;
+  /** Lying on the floor, where its owner can pick it up by walking over it; false while still flying. */
+  readonly grounded: boolean;
+  /** Seconds until it returns to its owner's hand on its own. */
+  readonly returnSeconds: number;
 }
 
 /** Stupefy is the Light Spell; Confringo the Heavy Spell; the rest are Special Spells. */
@@ -339,6 +359,34 @@ export type DuelEvent =
       readonly spell: SpellState;
       readonly position: Point3;
       readonly burned: readonly DuelistId[];
+    }
+  /**
+   * An Expelliarmus (cast by `casterId`) Disarmed `duelistId`: their Wand
+   * leaves their hand at `position` and flies off to land at `landing`.
+   */
+  | {
+      readonly type: "disarm";
+      readonly duelistId: DuelistId;
+      readonly casterId: DuelistId;
+      readonly position: Point3;
+      readonly landing: GroundPoint;
+    }
+  /** A Disarmed Duelist's Wand came to rest on the Arena floor at `position`. */
+  | {
+      readonly type: "wand-landed";
+      readonly duelistId: DuelistId;
+      readonly position: GroundPoint;
+    }
+  /**
+   * A Disarmed Duelist has their Wand back: they walked over it (`pickup`)
+   * or it returned to their hand on its own (`return`). `position` is where
+   * it was, on the floor or still in the air.
+   */
+  | {
+      readonly type: "wand-recovered";
+      readonly duelistId: DuelistId;
+      readonly how: "pickup" | "return";
+      readonly position: Point3;
     }
   /** A defence was asked for without enough Stamina, and refused. */
   | {
@@ -545,6 +593,16 @@ interface Bookkeeping {
   burnTicks: number;
   /** Ticks left Petrified. */
   petrifiedTicks: number;
+  /** The Wand knocked loose by Expelliarmus, while Disarmed. */
+  wand: LostWand | undefined;
+}
+
+/** A Wand knocked loose: where it left the hand, where it lands, and how many ticks since. */
+interface LostWand {
+  readonly from: Point3;
+  readonly landing: GroundPoint;
+  readonly heading: GroundPoint;
+  ageTicks: number;
 }
 
 /**
@@ -561,7 +619,7 @@ const freshBookkeeping = (): Bookkeeping => ({
   buttons: { dodge: false, jump: false, shield: false, sprint: false },
   chain: 0,
   chargeTicks: 0,
-  cooldownTicks: { depulso: 0, incendio: 0, petrificus: 0 },
+  cooldownTicks: { depulso: 0, expelliarmus: 0, incendio: 0, petrificus: 0 },
   dodgeStep: { x: 0, z: 0 },
   dodgeTicks: 0,
   heavyHeld: false,
@@ -579,6 +637,7 @@ const freshBookkeeping = (): Bookkeeping => ({
   staggerTicks: 0,
   ticksSinceCast: Number.POSITIVE_INFINITY,
   verticalSpeed: 0,
+  wand: undefined,
 });
 
 const noNudge: Aim = { pitch: 0, yaw: 0 };
@@ -642,6 +701,7 @@ export const createDuel = (config: DuelConfig): Duel => {
   const {
     confringo,
     depulso,
+    expelliarmus,
     incendio,
     petrificus,
     round: rounds,
@@ -795,7 +855,7 @@ export const createDuel = (config: DuelConfig): Duel => {
       aimPoint: { x: setup.spawn.x, y: 0, z: setup.spawn.z },
       burnSeconds: 0,
       chargeSeconds: 0,
-      cooldowns: { depulso: 0, incendio: 0, petrificus: 0 },
+      cooldowns: { depulso: 0, expelliarmus: 0, incendio: 0, petrificus: 0 },
       dodgeSeconds: 0,
       elevation: 0,
       facing: defaultForward,
@@ -806,6 +866,7 @@ export const createDuel = (config: DuelConfig): Duel => {
       knockbackSeconds: 0,
       knockedOut: false,
       lockNudge: noNudge,
+      looseWand: null,
       petrifiedSeconds: 0,
       position: setup.spawn,
       shielding: false,
@@ -1161,6 +1222,13 @@ export const createDuel = (config: DuelConfig): Duel => {
 
   const { defence } = tuning;
 
+  /**
+   * The Wand in hand and not mid-Dodge: free to Shield or cast. Disarmed,
+   * the Wand is not in hand: no Shield, no Spells.
+   */
+  const handsFree = (book: Bookkeeping) =>
+    book.dodgeTicks === 0 && book.wand === undefined;
+
   /** Stamina as it is spent through one tick. */
   interface Purse {
     stamina: number;
@@ -1379,7 +1447,7 @@ export const createDuel = (config: DuelConfig): Duel => {
     readonly dash: GroundPoint | undefined;
     /** The walking stride's multiplier: faster sprinting, slower behind the Shield. */
     readonly pace: number;
-    /** No casting mid-Dodge or behind the Shield. */
+    /** No casting mid-Dodge, behind the Shield or Disarmed. */
     readonly canCast: boolean;
     /** Off the floor (or leaving it this tick): only the Light Spell can be cast. */
     readonly airborne: boolean;
@@ -1430,12 +1498,14 @@ export const createDuel = (config: DuelConfig): Duel => {
       startJump(self, purse, draft);
     }
 
-    // The Shield drops mid-Dodge, when Staggered or on release.
+    const handy = handsFree(book);
+
+    // The Shield drops mid-Dodge, when Staggered or Disarmed, or on release.
     const shielding = keepHolding(
       self,
       "shield",
       {
-        allowed: canGuard && !dodging,
+        allowed: canGuard && handy,
         held: intent.shield,
         pressed: pressed("shield"),
         running: book.shieldHeld,
@@ -1472,7 +1542,7 @@ export const createDuel = (config: DuelConfig): Duel => {
 
     return {
       airborne: elevation > 0 || book.verticalSpeed > 0,
-      canCast: !dodging && !shielding,
+      canCast: handy && !shielding,
       dash: dodging ? book.dodgeStep : undefined,
       pace: paceOf(shielding, sprinting),
       state: {
@@ -1613,7 +1683,9 @@ export const createDuel = (config: DuelConfig): Duel => {
       return { amount: incendio.damage, knockback: 0 };
     }
 
-    if (spell.kind === "petrificus") {
+    // Neither Petrificus Totalus nor Expelliarmus deals damage: one
+    // Petrifies, the other Disarms.
+    if (spell.kind === "petrificus" || spell.kind === "expelliarmus") {
       return { amount: 0, knockback: 0 };
     }
 
@@ -1702,6 +1774,155 @@ export const createDuel = (config: DuelConfig): Duel => {
   };
 
   /**
+   * Where a Wand knocked from a Duelist standing at `from` comes to rest:
+   * `flightDistance` metres along `heading`, or short of it where the
+   * flight would leave the walkable Arena or come within `clearance` of
+   * Cover or an Obstruction, so its owner can always walk to it.
+   */
+  const landingOf = (from: GroundPoint, heading: GroundPoint): GroundPoint => {
+    const { clearance, flightDistance } = expelliarmus.wand;
+    const maxX = arena.bounds.halfWidth - bodyRadius;
+    const maxZ = arena.bounds.halfDepth - bodyRadius;
+    const blockers = [...arena.cover, ...arena.obstructions];
+    const stepLength = 0.05;
+    const steps = Math.ceil(flightDistance / stepLength);
+    let landing = from;
+
+    for (let index = 1; index <= steps; index += 1) {
+      const reach = (flightDistance * index) / steps;
+
+      const at = {
+        x: from.x + heading.x * reach,
+        z: from.z + heading.z * reach,
+      };
+
+      const clear =
+        Math.abs(at.x) <= maxX &&
+        Math.abs(at.z) <= maxZ &&
+        blockers.every(
+          (blocker) =>
+            distanceBetween(blocker.center, at) >= blocker.radius + clearance
+        );
+
+      if (!clear) {
+        break;
+      }
+
+      landing = at;
+    }
+
+    return landing;
+  };
+
+  /**
+   * An Expelliarmus landed on `self`: their Wand flies from their hand along
+   * the Spell's flight. A Duelist already Disarmed is not Disarmed again.
+   */
+  const disarm = (draft: Draft, self: DuelistState, spell: SpellState) => {
+    const book = books(self.id);
+
+    if (book.wand) {
+      return;
+    }
+
+    const heading = direction(
+      { x: 0, z: 0 },
+      { x: spell.velocity.x, z: spell.velocity.z }
+    );
+
+    const from = wandTip(self, tuning);
+    const landing = landingOf(self.position, heading);
+
+    book.wand = { ageTicks: 0, from, heading, landing };
+    draft.events.push({
+      casterId: spell.casterId,
+      duelistId: self.id,
+      landing,
+      position: from,
+      type: "disarm",
+    });
+  };
+
+  /** Where a loose Wand is `ageTicks` into its flight: an arc from the hand down to its landing. */
+  const wandPosition = (wand: LostWand): Point3 => {
+    const flight = expelliarmus.wand;
+    const progress = Math.min(wand.ageTicks / ticksOf(flight.flightSeconds), 1);
+
+    if (progress === 1) {
+      return { x: wand.landing.x, y: 0, z: wand.landing.z };
+    }
+
+    return {
+      x: wand.from.x + (wand.landing.x - wand.from.x) * progress,
+      y:
+        wand.from.y * (1 - progress) +
+        4 * flight.flightHeight * progress * (1 - progress),
+      z: wand.from.z + (wand.landing.z - wand.from.z) * progress,
+    };
+  };
+
+  /**
+   * One tick of every loose Wand, once the Duelists have moved: it flies on
+   * and lands; lying on the floor, its owner (and only its owner) picks it
+   * up by walking over it; and it returns to their hand on its own once its
+   * time is up, wherever it is.
+   */
+  const tendWands = (draft: Draft) => {
+    const flight = expelliarmus.wand;
+    const flightTicks = ticksOf(flight.flightSeconds);
+    const returnTicks = ticksOf(flight.returnSeconds);
+
+    draft.duelists = draft.duelists.map((self) => {
+      const book = books(self.id);
+      const { wand } = book;
+
+      if (!wand) {
+        return self.looseWand === null ? self : { ...self, looseWand: null };
+      }
+
+      wand.ageTicks += 1;
+      const grounded = wand.ageTicks >= flightTicks;
+      const position = wandPosition(wand);
+
+      if (wand.ageTicks === flightTicks) {
+        draft.events.push({
+          duelistId: self.id,
+          position: wand.landing,
+          type: "wand-landed",
+        });
+      }
+
+      const pickedUp =
+        grounded &&
+        !self.knockedOut &&
+        distanceBetween(self.position, wand.landing) <= flight.pickupRadius;
+
+      if (pickedUp || wand.ageTicks >= returnTicks) {
+        book.wand = undefined;
+        draft.events.push({
+          duelistId: self.id,
+          how: pickedUp ? "pickup" : "return",
+          position,
+          type: "wand-recovered",
+        });
+
+        return { ...self, looseWand: null };
+      }
+
+      return {
+        ...self,
+        looseWand: {
+          grounded,
+          heading: wand.heading,
+          landing: wand.landing,
+          position,
+          returnSeconds: (returnTicks - wand.ageTicks) * tickSeconds,
+        },
+      };
+    });
+  };
+
+  /**
    * Spells in flight travel against where everyone stood at the start of the
    * tick. Duelists can only be hit while the Round is being fought, so a
    * Spell still in the air after a Knockout flies over the fallen. Returns
@@ -1754,6 +1975,11 @@ export const createDuel = (config: DuelConfig): Duel => {
         // Petrificus Totalus freezes the Duelist it hits.
         if (spell.kind === "petrificus") {
           books(targetId).petrifiedTicks = ticksOf(petrificus.petrifiedSeconds);
+        }
+
+        // Expelliarmus knocks the Wand out of the hand it hits.
+        if (spell.kind === "expelliarmus" && struck) {
+          disarm(draft, struck, spell);
         }
 
         // Confringo knocks the Duelist it hits back along its flight.
@@ -2022,6 +2248,7 @@ export const createDuel = (config: DuelConfig): Duel => {
   /** The Special Spells' Cooldowns as the snapshot shows them, in seconds. */
   const cooldownsOf = (book: Bookkeeping) => ({
     depulso: book.cooldownTicks.depulso * tickSeconds,
+    expelliarmus: book.cooldownTicks.expelliarmus * tickSeconds,
     incendio: book.cooldownTicks.incendio * tickSeconds,
     petrificus: book.cooldownTicks.petrificus * tickSeconds,
   });
@@ -2507,6 +2734,7 @@ export const createDuel = (config: DuelConfig): Duel => {
     // A Backfire hurts its caster like any hit, and can Knock them Out.
     applyDamage(draft, draft.backfires);
     decideRound(draft);
+    tendWands(draft);
     cast(draft, releases);
     // Depulso lands as it is cast, and can Knock an opponent Out.
     applyDamage(draft, draft.blasts);

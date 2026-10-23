@@ -756,6 +756,39 @@ export const tuning = {
   },
 
   /**
+   * Expelliarmus, a Special Spell on the ○ Spell Slot: no damage, but the
+   * Duelist it hits is Disarmed. Their Wand flies off along the hit and lands
+   * on the Arena floor, where only they can pick it up by walking over it, or
+   * it returns to their hand on its own. A Disarmed Duelist cannot cast or
+   * Shield. A Parried Expelliarmus flies back and Disarms its caster.
+   */
+  expelliarmus: {
+    cooldownSeconds: 10,
+    radius: 0.2,
+    /** After the cast, no Light Spell can follow for this long. */
+    recoverySeconds: 0.35,
+    /** Focus segments it costs: the whole meter. */
+    segments: 3,
+    speed: 24,
+    /**
+     * The Wand knocked loose: it flies `flightDistance` metres along the hit
+     * over `flightSeconds`, arcing `flightHeight` metres above the straight
+     * line from the hand to the floor, and stops short of Cover, Obstructions
+     * (by `clearance` metres) and the Arena's walls. Once it lies on the
+     * floor its owner picks it up with their body's centre within
+     * `pickupRadius` of it; either way it returns `returnSeconds` after the Disarm.
+     */
+    wand: {
+      clearance: 0.35,
+      flightDistance: 4,
+      flightHeight: 1.1,
+      flightSeconds: 0.6,
+      pickupRadius: 0.8,
+      returnSeconds: 6,
+    },
+  },
+
+  /**
    * Focus: the three-segment meter a Duelist builds through skilful play and
    * spends on Special Spells. It starts empty every Round and never decays.
    * Points; a Special Spell costs whole segments.
@@ -835,6 +868,8 @@ export const tuning = {
       spreadPixels: 14,
       strongScale: 1.4,
     },
+    /** How long "¡Desarmado!" stays up after a Disarm the local Duelist was part of. */
+    disarmCalloutSeconds: 1.2,
     /** How long "¡Duelo!" stays up once control is given. */
     duelCalloutSeconds: 0.9,
     /**
@@ -989,6 +1024,31 @@ export const tuning = {
     radiance: 2.2,
   },
 
+  /**
+   * How a loose Wand looks while its owner is Disarmed: the Wand glowing
+   * scarlet, tumbling end over end `spinTurns` times a second while it
+   * flies, then lying on the floor in a soft ring of light that breathes
+   * `pulseSpeed` times a second. Returning on its own, it zips back into
+   * the hand over `returnSeconds`. Colours are hex; radiance is
+   * scene-linear HDR (above the bloom threshold glows).
+   */
+  looseWand: {
+    color: "#ff3d55",
+    /** The glow sprite round the Wand: size in metres, and radiance. */
+    glowRadiance: 1.4,
+    glowSize: 0.85,
+    /** How much of the glow the breathing takes away at its lowest (0 steady). */
+    pulseDepth: 0.45,
+    pulseSpeed: 1.5,
+    /** The Wand's own wood, lit from within. */
+    radiance: 2.6,
+    returnSeconds: 0.3,
+    /** The ring of light on the floor round where it lies: radius in metres, and radiance. */
+    ringRadiance: 1.2,
+    ringRadius: 0.6,
+    spinTurns: 2.5,
+  },
+
   /** Navigating menus with the D-pad and the left stick. */
   menu: {
     /** Seconds a direction must be held before it starts repeating. */
@@ -1118,11 +1178,10 @@ export const tuning = {
 
   /**
    * The Special Spell bound to each Spell Slot (one per face button), or
-   * null for an empty slot. ○ is kept for Expelliarmus, which is not in the
-   * game yet.
+   * null for an empty slot.
    */
   spellSlots: {
-    circle: null,
+    circle: "expelliarmus",
     cross: "depulso",
     square: "petrificus",
     triangle: "incendio",
@@ -1147,6 +1206,19 @@ export const tuning = {
 
   /** The Duel simulation advances on a fixed timestep at this rate (Hz). */
   tickRate: 60,
+
+  /**
+   * Full Focus (Expelliarmus ready): the Wand in hand glows scarlet,
+   * breathing `pulseSpeed` times a second between `low` and full
+   * `radiance` (scene-linear HDR), easing in and out at `fadeSharpness` per second.
+   */
+  wandAura: {
+    color: "#ff5a6e",
+    fadeSharpness: 8,
+    low: 0.45,
+    pulseSpeed: 1.8,
+    radiance: 3.2,
+  },
 } as const;
 
 /** Literal numbers and strings widened, so a variant (a test's, or a future option's) can hold other values. */

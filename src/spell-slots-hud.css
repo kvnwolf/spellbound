@@ -83,6 +83,30 @@
   stroke-linejoin: round;
 }
 
+.sd-slot[data-spell="expelliarmus"] .ss-glyph {
+  stroke: var(--expelliarmus);
+}
+
+/* Expelliarmus ready (the Focus full): its badge lights up and breathes. */
+.sd-slot[data-spell="expelliarmus"][data-state="ready"] .sd-badge {
+  border-color: var(--expelliarmus);
+  animation: ss-expelliarmus-ready 1.2s ease-in-out infinite alternate;
+}
+
+@keyframes ss-expelliarmus-ready {
+  from {
+    box-shadow:
+      0 0 6px rgb(255 90 110 / 45%),
+      inset 0 0 6px rgb(255 90 110 / 20%);
+  }
+
+  to {
+    box-shadow:
+      0 0 16px rgb(255 90 110 / 85%),
+      inset 0 0 10px rgb(255 220 225 / 35%);
+  }
+}
+
 .sd-slot[data-spell="incendio"] .ss-glyph {
   stroke: var(--incendio);
 }
@@ -110,14 +134,4 @@
 .sd-slot[data-state="focus"] .ss-glyph,
 .sd-slot[data-state="cooldown"] .ss-glyph {
   opacity: 0.4;
-}
-
-/* ○, kept for Expelliarmus: locked. */
-.sd-slot[data-state="locked"] {
-  opacity: 0.4;
-}
-
-.sd-slot[data-state="locked"] .sd-badge {
-  border-color: rgb(216 180 106 / 35%);
-  box-shadow: none;
 }

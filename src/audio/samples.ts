@@ -93,9 +93,11 @@ const sampleOfSound: SampleTable = {
   "confringo-cast": charged("confringo-cast"),
   countdown: just("countdown-beat"),
   "depulso-cast": just("depulso-blast"),
+  disarm: just("disarm"),
   dodge: just("dodge-roll"),
   "duel-end": either({ no: "defeat", yes: "victory" }, ({ won }) => won),
   "duel-start": just("duel-start"),
+  "expelliarmus-cast": just("expelliarmus-cast"),
   fizzle: just("spell-fizzle"),
   "incendio-cast": just("incendio-cast"),
   "incendio-explosion": just("incendio-explosion"),
@@ -136,6 +138,9 @@ const sampleOfSound: SampleTable = {
     { no: "stupefy-hit", yes: "stupefy-hit-strong" },
     ({ strong }) => strong
   ),
+  "wand-land": just("wand-land"),
+  "wand-pickup": just("wand-pickup"),
+  "wand-return": just("wand-return"),
 };
 
 /** Sounds that are the HUD's rather than the courtyard's: dry, on the `ui` bus. */

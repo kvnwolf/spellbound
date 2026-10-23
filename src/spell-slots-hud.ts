@@ -5,9 +5,10 @@
  * colour and a dark radial Cooldown that uncovers as it recovers, and to its
  * right the three Focus orbs. While R2 is held the diamond spreads apart and
  * shows the names. A slot dims while its Special Spell cannot be cast (short
- * of Focus, or cooling down); ○ is shown locked, kept for Expelliarmus, and
- * an empty slot is a dashed ring. Reads the local Duelist's snapshot and only
- * touches the DOM when what it shows changes.
+ * of Focus, or cooling down), and an empty slot is a dashed ring.
+ * Expelliarmus, which takes the whole meter, lights up in its scarlet once
+ * the Focus is full. Reads the local Duelist's snapshot and only touches the
+ * DOM when what it shows changes.
  */
 import "./spell-slots-hud.css";
 import type { DuelistId, DuelistState, DuelSnapshot } from "./duel/duel";
@@ -20,7 +21,12 @@ import type { Tuning } from "./tuning";
 
 type SpellSlotsHudSettings = Pick<
   Tuning,
-  "depulso" | "focus" | "incendio" | "petrificus" | "spellSlots"
+  | "depulso"
+  | "expelliarmus"
+  | "focus"
+  | "incendio"
+  | "petrificus"
+  | "spellSlots"
 >;
 
 export interface SpellSlotsHud {
@@ -29,19 +35,17 @@ export interface SpellSlotsHud {
 
 const svgNs = "http://www.w3.org/2000/svg";
 
-/** ○ is kept for Expelliarmus, which is not in the game yet: shown locked. */
-const reservedSlot: SpellSlot = "circle";
-
-/** Small line glyphs: a gust fanning out, a flame, a frozen crystal, a wand flying off (locked). */
-const glyphs: Record<SpecialSpellKind | "locked", string> = {
+/** Small line glyphs: a gust fanning out, a Wand bursting at the tip, a flame, a frozen crystal. */
+const glyphs: Record<SpecialSpellKind, string> = {
   depulso: "M3 12h5m-5 0 3-3m-3 3 3 3M11 7c3 1 3 9 0 10m4-13c5 2 5 14 0 16",
+  expelliarmus:
+    "M4 20 14.5 9.5M17 3.5v3M20.5 7h-3M19.5 4.5l-2 2M12.5 4.5l1.5 2.5M19.5 11.5 17 10",
   incendio:
     "M12 2c1 4 6 6 6 12a6 6 0 0 1-12 0c0-3 2-5 3-7 0 2 1 3 2 3 0-3-1-5 1-8Z",
-  locked: "M5 19 17 7m-2-3 5 5M4 20l2-2",
   petrificus: "M12 2 20 7v10l-8 5-8-5V7l8-5Zm0 0v20M4 7l16 10M20 7 4 17",
 };
 
-const glyph = (kind: SpecialSpellKind | "locked", parent: Element) => {
+const glyph = (kind: SpecialSpellKind, parent: Element) => {
   const svg = document.createElementNS(svgNs, "svg");
   svg.setAttribute("viewBox", "0 0 24 24");
   svg.classList.add("ss-glyph");
@@ -93,24 +97,18 @@ const createSlot = (
   settings: SpellSlotsHudSettings
 ) => {
   const kind = boundTo(slot, settings);
-  const reserved = kind === null && slot === reservedSlot;
 
   if (kind) {
     glyph(kind, badge);
     item.dataset.spell = kind;
     name.textContent = text.specials[kind];
-  } else if (reserved) {
-    glyph("locked", badge);
-    name.textContent = text.specials.expelliarmus;
-    item.title = text.specials.locked;
   }
 
   const timer = create("span", "ss-timer", badge);
-  const empty = reserved ? "locked" : "empty";
 
   return {
     show: (self: DuelistState) => {
-      setData(item, "state", kind ? readiness(kind, self, settings) : empty);
+      setData(item, "state", kind ? readiness(kind, self, settings) : "empty");
 
       const left = kind ? self.cooldowns[kind] : 0;
       const share = kind ? left / settings[kind].cooldownSeconds : 0;
