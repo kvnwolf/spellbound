@@ -343,8 +343,28 @@ export const tuning = {
     /** Spells hit a Duelist anywhere from the floor up to this height. */
     height: 2,
     walkSpeed: 4.5,
-    /** Where Spells leave the Wand, relative to the Duelist: ahead, to the right and up. */
-    wandTip: { forward: 0.55, height: 1.15, right: 0.28 },
+    /**
+     * The visible Wand. Idle, a right hand holds it out level, its tip on
+     * `wandTip` below. A cast flicks the whole arm up by `flickRaise`
+     * radians and back over `flickSeconds` (a touch inward, by
+     * `flickInward`, toward the aim); Charging holds it raised by
+     * `chargeRaise`, easing there at `poseSharpness` per second.
+     */
+    wand: {
+      chargeRaise: 0.18,
+      flickInward: 0.12,
+      flickRaise: 0.55,
+      flickSeconds: 0.2,
+      /** How long the Wand is, from the hand to the tip. */
+      length: 0.4,
+      poseSharpness: 14,
+    },
+    /**
+     * Where Spells leave the Wand, relative to the Duelist and their facing:
+     * ahead, to the right and up (about shoulder height). The Duelist view
+     * draws its Wand with the tip exactly here when idle.
+     */
+    wandTip: { forward: 0.72, height: 1.4, right: 0.32 },
   },
 
   /**

@@ -178,8 +178,11 @@ const start = async () => {
   const scene = createCourtyardScene(courtyard);
 
   const views = new Map([
-    [localId, createDuelistView("#8a1c24", tuning.lockOnGlow)],
-    [opponentId, createDuelistView("#1f5a3a", tuning.lockOnGlow)],
+    [localId, createDuelistView("#8a1c24", tuning.lockOnGlow, tuning.duelist)],
+    [
+      opponentId,
+      createDuelistView("#1f5a3a", tuning.lockOnGlow, tuning.duelist),
+    ],
   ]);
 
   for (const view of views.values()) {
@@ -484,6 +487,14 @@ const start = async () => {
     hud.show(current, events, seconds);
 
     showCharge(current, events, seconds, inDuel);
+
+    // A cast flicks the caster's Wand.
+    for (const event of events) {
+      if (event.type === "spell-cast") {
+        views.get(event.spell.casterId)?.flick();
+      }
+    }
+
     showDuelists(alpha, seconds);
 
     if (!inDuel) {

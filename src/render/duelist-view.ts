@@ -1,8 +1,10 @@
 /**
- * A blockout Duelist: robe, head, pointed hat and a Wand held out in front,
- * tinted by Team. It only reads presentation samples; the procedural wizard
- * and its poses come later. While it is the local Duelist's Lock-on Target, a
- * fresnel rim glow traces its silhouette.
+ * A blockout Duelist: robe, head, pointed hat and a right arm holding a Wand
+ * out in front, tinted by Team. The Wand tip is the simulation's own
+ * (`tuning.duelist.wandTip`), where Spells leave it; a cast flicks the arm up
+ * and Charging keeps it raised. It only reads presentation samples; the
+ * procedural wizard and its poses come later. While it is the local
+ * Duelist's Lock-on Target, a fresnel rim glow traces its silhouette.
  */
 import { color, normalView, positionViewDirection, uniform } from "three/tsl";
 import {
@@ -19,6 +21,8 @@ import type { DuelistSample } from "./interpolate";
 
 export interface DuelistView {
   readonly object: Group;
+  /** The Duelist cast a Spell: the arm flicks up and settles. */
+  readonly flick: () => void;
   /**
    * Draws `sample`, easing poses over the `seconds` since the last frame.
    * `glow` is the rim glow it eases toward: 0 off, 1 the full lock mark of
@@ -34,11 +38,27 @@ const staggerTilt = -0.3;
 /** How quickly poses ease toward their tilt, per second. */
 const tiltSharpness = 9;
 
-const wood = new MeshStandardNodeMaterial({ color: "#4a2f1d", roughness: 0.6 });
+/** Eases out: fast at first, settling. */
+const easeOut = (progress: number) => 1 - (1 - progress) ** 3;
+
+/** Eases in and out. */
+const smooth = (progress: number) => progress * progress * (3 - 2 * progress);
+
+/** How far a cast flick has raised the arm, 0 to 1 over its progress: a quick snap up, then a smooth settle. */
+const flickLift = (progress: number) => {
+  const peak = 0.35;
+
+  return progress < peak
+    ? easeOut(progress / peak)
+    : 1 - smooth((progress - peak) / (1 - peak));
+};
+
+const wood = new MeshStandardNodeMaterial({ color: "#8a6038", roughness: 0.5 });
 
 export const createDuelistView = (
   robeColor: string,
-  glow: Tuning["lockOnGlow"]
+  glow: Tuning["lockOnGlow"],
+  duelist: Tuning["duelist"]
 ): DuelistView => {
   // The rim glow: brightest where the surface turns away from the camera
   // (the silhouette), scaled by a per-Duelist strength the view eases.
@@ -78,17 +98,49 @@ export const createDuelistView = (
   const hat = new Mesh(new ConeGeometry(0.24, 0.55, 24), robeMaterial);
   hat.position.y = 1.98;
 
-  // The Wand points along the model's +z, which `show` turns toward the facing.
-  const wand = new Mesh(new BoxGeometry(0.03, 0.03, 0.4), wood);
-  wand.position.set(0.28, 1.15, 0.35);
+  // The model faces +z with +x to its LEFT, so the right hand is at -x. The
+  // arm hangs from a shoulder pivot level with the Wand tip, so at rest the
+  // tip sits exactly on the simulation's `wandTip`; turning the pivot raises
+  // the whole arm.
+  const { forward, height, right } = duelist.wandTip;
+  const { length } = duelist.wand;
+  const handAt = forward - length;
 
-  object.add(robe, head, hat, wand);
+  const shoulders = new Mesh(
+    new BoxGeometry(2 * right + 0.12, 0.14, 0.2),
+    robeMaterial
+  );
+
+  shoulders.position.y = height;
+
+  const arm = new Group();
+  arm.position.set(-right, height, 0);
+
+  const sleeve = new Mesh(new BoxGeometry(0.09, 0.09, handAt), robeMaterial);
+  sleeve.position.z = handAt / 2;
+
+  const hand = new Mesh(new SphereGeometry(0.06, 12, 8), skin);
+  hand.position.z = handAt;
+
+  const wand = new Mesh(new BoxGeometry(0.03, 0.03, length), wood);
+  wand.position.z = handAt + length / 2;
+
+  arm.add(sleeve, hand, wand);
+
+  object.add(robe, head, hat, shoulders, arm);
   // Heading first, then the tilt in the Duelist's own frame, so leaning and
   // falling are always backward whatever way they face.
   object.rotation.order = "YXZ";
   let tilt = 0;
+  // How raised the arm is from Charging (eased), and how long ago the
+  // current flick began.
+  let chargeRaise = 0;
+  let flickAge = Number.POSITIVE_INFINITY;
 
   return {
+    flick: () => {
+      flickAge = 0;
+    },
     object,
     show: (sample, seconds, wantedGlow) => {
       object.position.set(
@@ -109,6 +161,23 @@ export const createDuelistView = (
 
       tilt += (wanted - tilt) * (1 - Math.exp(-tiltSharpness * seconds));
       object.rotation.x = tilt;
+
+      const { flickInward, flickRaise, flickSeconds, poseSharpness } =
+        duelist.wand;
+
+      chargeRaise +=
+        ((sample.charging ? duelist.wand.chargeRaise : 0) - chargeRaise) *
+        (1 - Math.exp(-poseSharpness * seconds));
+
+      flickAge += seconds;
+
+      const flick =
+        flickAge < flickSeconds ? flickLift(flickAge / flickSeconds) : 0;
+
+      // Pitching up is a negative turn about the model's x axis; the inward
+      // yaw swings the tip from the right hand toward the aim.
+      arm.rotation.x = -Math.max(chargeRaise, flick * flickRaise);
+      arm.rotation.y = flick * flickInward;
 
       const fade = 1 - Math.exp(-glow.fadeSharpness * seconds);
       glowStrength.value += (wantedGlow - glowStrength.value) * fade;

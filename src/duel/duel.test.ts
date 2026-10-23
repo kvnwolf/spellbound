@@ -66,6 +66,7 @@ const intent = (overrides: Partial<Intent>): Intent => ({
 });
 
 const castLight = intent({ lightSpell: true });
+const chargeHeavy = intent({ heavySpell: true });
 
 /** Steps the Duel for `seconds` with the hero holding `heroIntent` and the rival idle. */
 const hold = (duel: Duel, heroIntent: Intent, seconds: number) => {
@@ -407,6 +408,55 @@ describe("Duel collision", () => {
     expect(rival.position).toStrictEqual({ x: 0, z: -5 });
     expect(hero.position.z - rival.position.z).toBeCloseTo(
       2 * tuning.duelist.bodyRadius
+    );
+  });
+});
+
+/** Where a right hand holding the Wand forward puts its tip, from tuning: ahead and to the right of the Duelist along their facing. */
+const wandTipOf = ({ facing, position, elevation }: DuelistState): Point3 => {
+  const { forward, height, right } = tuning.duelist.wandTip;
+  const side = rightOf(facing);
+
+  return {
+    x: position.x + facing.x * forward + side.x * right,
+    y: height + elevation,
+    z: position.z + facing.z * forward + side.z * right,
+  };
+};
+
+describe("The Wand", () => {
+  it("is held forward at about shoulder height, to the right of the body", () => {
+    const { forward, height, right } = tuning.duelist.wandTip;
+
+    expect(forward).toBeGreaterThan(tuning.duelist.bodyRadius);
+    expect(right).toBeGreaterThan(0);
+    expect(height).toBeGreaterThan(1.2);
+    expect(height).toBeLessThan(tuning.duelist.height);
+  });
+
+  describe.each(["stupefy", "confringo"] as const)("a cast %s", (kind) => {
+    it.each([0, 1, -2.3])(
+      "leaves the Wand tip with the aim turned by %s rad",
+      (yaw) => {
+        const duel = fight();
+        turn(duel, { pitch: 0, yaw });
+
+        const events =
+          kind === "stupefy"
+            ? run(duel, 1, { hero: castLight })
+            : [
+                ...run(duel, secondsToTicks(0.3), { hero: chargeHeavy }),
+                ...run(duel, 1),
+              ];
+
+        const [cast] = ofType(events, "spell-cast");
+        const tip = wandTipOf(duelist(duel, "hero"));
+
+        expect(cast?.spell.kind).toBe(kind);
+        expect(cast?.spell.position.x).toBeCloseTo(tip.x);
+        expect(cast?.spell.position.y).toBeCloseTo(tip.y);
+        expect(cast?.spell.position.z).toBeCloseTo(tip.z);
+      }
     );
   });
 });
@@ -1057,8 +1107,6 @@ describe("Rounds and the Duel", () => {
     expect(duel.snapshot().round).toMatchObject({ number: 2, phase: "over" });
   });
 });
-
-const chargeHeavy = intent({ heavySpell: true });
 
 /**
  * The hero holds the Heavy Spell for `seconds` (whole ticks), then lets go

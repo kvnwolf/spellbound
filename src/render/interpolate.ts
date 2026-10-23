@@ -19,6 +19,8 @@ export interface DuelistSample {
   /** States are not blended: they switch on the tick that changes them. */
   readonly knockedOut: boolean;
   readonly staggered: boolean;
+  /** Charging a Heavy Spell: the Wand stays raised. */
+  readonly charging: boolean;
   /** Height of the feet off the floor, mid-jump. */
   readonly elevation: number;
   readonly shielding: boolean;
@@ -56,6 +58,7 @@ export const sampleDuelist = (
   alpha: number
 ): DuelistSample => ({
   aim: lerpAim(previous.aim, current.aim, alpha),
+  charging: current.chargeSeconds > 0,
   dodging: current.dodgeSeconds > 0,
   elevation: lerp(previous.elevation, current.elevation, alpha),
   facing: blendDirection(previous.facing, current.facing, alpha),
