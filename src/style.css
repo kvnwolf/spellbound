@@ -6,6 +6,7 @@
   --confringo: #ffb25e;
   --incendio: #ff8a52;
   --petrificus: #a9c0ff;
+  --depulso: #d9ecf2;
   /* The Stamina bar: a calm magical blue, cool against the gold. */
   --stamina: #5f8fd8;
 
@@ -326,6 +327,10 @@ body {
 
 .hud-spell-callout[data-spell="petrificus"] {
   color: var(--petrificus);
+}
+
+.hud-spell-callout[data-spell="depulso"] {
+  color: var(--depulso);
 }
 
 .hud-callout {

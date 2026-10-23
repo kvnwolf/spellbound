@@ -11,11 +11,12 @@
 import type { Tuning } from "../tuning";
 
 /** The Special Spells cast from the Spell Slots. */
-export type SpecialSpellKind = "incendio" | "petrificus";
+export type SpecialSpellKind = "depulso" | "incendio" | "petrificus";
 
 export const specialSpellKinds: readonly SpecialSpellKind[] = [
   "incendio",
   "petrificus",
+  "depulso",
 ];
 
 /** The four Spell Slots, named after the face button each sits on. */
@@ -38,7 +39,10 @@ export const boundTo = (
   return specialSpellKinds.find((kind) => kind === binding) ?? null;
 };
 
-type CostSettings = Pick<Tuning, "focus" | "incendio" | "petrificus">;
+type CostSettings = Pick<
+  Tuning,
+  "depulso" | "focus" | "incendio" | "petrificus"
+>;
 
 /** The Focus points a Special Spell costs: its segments, whole. */
 export const focusCost = (kind: SpecialSpellKind, settings: CostSettings) =>

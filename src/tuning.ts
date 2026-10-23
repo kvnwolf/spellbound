@@ -438,6 +438,8 @@ export const tuning = {
     confringoBonus: 0.4,
     /** Trauma lost per second. */
     decay: 1.8,
+    /** Trauma added when the local Duelist casts Depulso: the recoil of the blast. */
+    depulsoCast: 0.4,
     /** Trauma added by an Incendio explosion: all of it when the local Duelist is caught in the blast, half otherwise. */
     explosion: 0.5,
     /** Shake frequency in Hz. */
@@ -633,6 +635,63 @@ export const tuning = {
     },
   },
 
+  /**
+   * Depulso, a Special Spell: a short cone of force from the caster, not a
+   * projectile. Instantly on the cast, every opponent within `range` metres
+   * (measured to the edge of their body) and `coneDegrees` (the whole
+   * angle, centred on the caster's facing), not Dodging and not behind
+   * Cover, takes `damage` and is knocked straight away from the caster,
+   * losing any Charge (no Backfire). A Shield facing the caster blocks the
+   * damage, not the push.
+   */
+  depulso: {
+    coneDegrees: 70,
+    cooldownSeconds: 5,
+    /** Health points: little. */
+    damage: 6,
+    /**
+     * The push, metres: `near` point-blank, falling steadily to `far` for a
+     * body whose edge is at the end of the range; behind a Shield it is
+     * `shieldScale` of that. The slide takes `seconds`, during which they
+     * cannot move or act (a Shield stays up through it).
+     */
+    knockback: { far: 1.8, near: 5, seconds: 0.45, shieldScale: 0.4 },
+    range: 4,
+    /** After the cast, no Light Spell can follow for this long. */
+    recoverySeconds: 0.35,
+    /** Focus segments it costs. */
+    segments: 1,
+  },
+
+  /**
+   * How Depulso looks: a pale wave of wind and force filling its cone from
+   * the Wand, its front racing out to the range over `seconds` and fading as
+   * it goes, kicking up dust from the floor as it passes. The cone is as
+   * wide as the gameplay one and `height` metres tall (half above, half
+   * below the Wand) at its far end. Colours are hex; radiance is
+   * scene-linear HDR (above the bloom threshold glows).
+   */
+  depulsoLook: {
+    color: "#dcefff",
+    /** Puffs of floor dust per metre the front travels, their size, life, drift speed and rise (negative gravity). */
+    dust: {
+      color: "#b9b2a4",
+      intensity: 1.1,
+      life: 0.9,
+      perMetre: 14,
+      rise: -0.15,
+      size: 0.32,
+      speed: 1.4,
+    },
+    /** How sharp the front's band is, as a share of the cone's length. */
+    frontWidth: 0.14,
+    height: 2.2,
+    radiance: 1.5,
+    seconds: 0.42,
+    /** Wind streaks round the cone. */
+    streaks: 11,
+  },
+
   duelist: {
     /** A Duelist's body is a circle on the Arena floor for collision. */
     bodyRadius: 0.45,
@@ -677,6 +736,9 @@ export const tuning = {
       /** How long the Wand is, from the hand to the tip. */
       length: 0.4,
       poseSharpness: 14,
+      /** A Depulso cast thrusts the arm forward this many metres, levelled at the aim, and back over `pushSeconds`. */
+      pushReach: 0.22,
+      pushSeconds: 0.32,
       recoilDropShare: 0.35,
       recoilKick: 0.25,
       recoilSeconds: 0.4,
@@ -1061,7 +1123,7 @@ export const tuning = {
    */
   spellSlots: {
     circle: null,
-    cross: null,
+    cross: "depulso",
     square: "petrificus",
     triangle: "incendio",
   },

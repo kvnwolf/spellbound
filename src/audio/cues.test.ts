@@ -164,6 +164,34 @@ describe(cuesFor, () => {
     ]);
   });
 
+  it("blasts Depulso as it is cast, its hits and blocks adding a thump on the Shield only", () => {
+    const blast = spell(local, { kind: "depulso" });
+    const at = { x: 0, y: 1.3, z: -2 };
+
+    const sounds = cues([
+      { spell: blast, type: "spell-cast" },
+      {
+        damage: 6,
+        position: at,
+        spell: blast,
+        staggered: false,
+        targetId: opponent,
+        type: "spell-hit",
+      },
+      {
+        duelistId: opponent,
+        position: at,
+        spell: blast,
+        type: "spell-blocked",
+      },
+    ]).map((cue) => cue.sound);
+
+    expect(sounds).toStrictEqual([
+      { kind: "depulso-cast" },
+      { heavy: true, kind: "shield-block" },
+    ]);
+  });
+
   it("adds a sting to a Perfect Release", () => {
     const empowered = spell(local, {
       charge: 1,

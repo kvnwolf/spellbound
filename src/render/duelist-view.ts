@@ -3,7 +3,8 @@
  * out in front, tinted by Team. The Wand tip is the simulation's own
  * (`tuning.duelist.wandTip`), where Spells leave it. The arm acts out each
  * Spell: Stupefy flicks it up, Charging a Confringo raises it overhead and
- * the cast swings it down at the aim, a Backfire drops it. A Dodge is a
+ * the cast swings it down at the aim, Depulso thrusts it forward, level, and
+ * a Backfire drops it. A Dodge is a
  * roll: tucked, tumbling toward where it goes. It only reads presentation
  * samples; the procedural wizard and its poses come later. While it is the local
  * Duelist's Lock-on Target, a fresnel rim glow traces its silhouette.
@@ -37,7 +38,7 @@ export interface DuelistView {
   readonly object: Group;
   /** Where the Wand tip is on screen right now, as last drawn: the raised arm moves it off the simulation's `wandTip`. */
   readonly wandTipPosition: () => Point3;
-  /** The Duelist cast a Spell of `kind`: Stupefy flicks the arm up, Confringo swings it down at the aim. */
+  /** The Duelist cast a Spell of `kind`: Stupefy flicks the arm up, Confringo swings it down at the aim, Depulso thrusts it forward. */
   readonly cast: (kind: SpellKind) => void;
   /** The Duelist's Charge Backfired: the arm drops back to rest. */
   readonly backfire: () => void;
@@ -67,6 +68,15 @@ const smooth = (progress: number) => progress * progress * (3 - 2 * progress);
 /** How far a cast flick has raised the arm, 0 to 1 over its progress: a quick snap up, then a smooth settle. */
 const flickLift = (progress: number) => {
   const peak = 0.35;
+
+  return progress < peak
+    ? easeOut(progress / peak)
+    : 1 - smooth((progress - peak) / (1 - peak));
+};
+
+/** How far a Depulso thrust has pushed the arm out, 0 to 1 over its progress: a hard shove out, then an easy draw back. */
+const thrustOut = (progress: number) => {
+  const peak = 0.25;
 
   return progress < peak
     ? easeOut(progress / peak)
@@ -209,6 +219,8 @@ export const createDuelistView = (
   // current flick began.
   let chargeRaise = 0;
   let flickAge = Number.POSITIVE_INFINITY;
+  // How long ago the current Depulso thrust began.
+  let pushAge = Number.POSITIVE_INFINITY;
   let drop: Drop | null = null;
   // The arm's pitch last frame, radians up: where a swing or recoil starts.
   let armPitch = 0;
@@ -237,10 +249,14 @@ export const createDuelistView = (
       }
 
       flickAge = Number.POSITIVE_INFINITY;
+      pushAge = Number.POSITIVE_INFINITY;
 
       if (kind === "confringo") {
         drop = { age: 0, from: armPitch, kind: "swing" };
         chargeRaise = 0;
+      } else if (kind === "depulso") {
+        drop = null;
+        pushAge = 0;
       } else {
         flickAge = 0;
       }
@@ -259,9 +275,10 @@ export const createDuelistView = (
       ({ petrified } = sample);
 
       if (petrified) {
-        // Stone does not swing, flick or roll: any motion in progress ends.
+        // Stone does not swing, flick, thrust or roll: any motion in progress ends.
         drop = null;
         flickAge = Number.POSITIVE_INFINITY;
+        pushAge = Number.POSITIVE_INFINITY;
         rollAge = Number.POSITIVE_INFINITY;
       }
 
@@ -338,6 +355,12 @@ export const createDuelistView = (
         yaw = flick * wand.flickInward;
       }
 
+      // Depulso: the arm shoves forward along the aim and draws back.
+      pushAge += seconds;
+
+      const thrust =
+        pushAge < wand.pushSeconds ? thrustOut(pushAge / wand.pushSeconds) : 0;
+
       // Pitching up is a negative turn about the model's x axis; the inward
       // yaw swings the tip from the right hand toward the aim.
       armPitch = pitch;
@@ -397,6 +420,7 @@ export const createDuelistView = (
       }
 
       arm.rotation.x = -pitch * (1 - tuck) + roll.armTuck * tuck;
+      arm.position.z = thrust * wand.pushReach * (1 - tuck);
       arm.rotation.y = yaw * (1 - tuck);
 
       const fade = 1 - Math.exp(-glow.fadeSharpness * seconds);

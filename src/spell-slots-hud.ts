@@ -20,7 +20,7 @@ import type { Tuning } from "./tuning";
 
 type SpellSlotsHudSettings = Pick<
   Tuning,
-  "focus" | "incendio" | "petrificus" | "spellSlots"
+  "depulso" | "focus" | "incendio" | "petrificus" | "spellSlots"
 >;
 
 export interface SpellSlotsHud {
@@ -32,8 +32,9 @@ const svgNs = "http://www.w3.org/2000/svg";
 /** ○ is kept for Expelliarmus, which is not in the game yet: shown locked. */
 const reservedSlot: SpellSlot = "circle";
 
-/** Small line glyphs: a flame, a frozen crystal, a wand flying off (locked). */
+/** Small line glyphs: a gust fanning out, a flame, a frozen crystal, a wand flying off (locked). */
 const glyphs: Record<SpecialSpellKind | "locked", string> = {
+  depulso: "M3 12h5m-5 0 3-3m-3 3 3 3M11 7c3 1 3 9 0 10m4-13c5 2 5 14 0 16",
   incendio:
     "M12 2c1 4 6 6 6 12a6 6 0 0 1-12 0c0-3 2-5 3-7 0 2 1 3 2 3 0-3-1-5 1-8Z",
   locked: "M5 19 17 7m-2-3 5 5M4 20l2-2",

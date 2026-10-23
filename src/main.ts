@@ -177,6 +177,15 @@ const start = async () => {
         shake.add(backfire);
       }
 
+      // Depulso's blast recoils through its caster.
+      if (
+        event.type === "spell-cast" &&
+        event.spell.kind === "depulso" &&
+        event.spell.casterId === localId
+      ) {
+        shake.add(tuning.cameraShake.depulsoCast);
+      }
+
       // An Incendio blast jolts the camera, hardest for the one caught in it.
       if (event.type === "explosion") {
         shake.add(
@@ -232,7 +241,12 @@ const start = async () => {
     scene.add(view.object);
   }
 
-  const vfx = createSpellVfx({ blastRadius: tuning.incendio.blastRadius });
+  const vfx = createSpellVfx({
+    blastRadius: tuning.incendio.blastRadius,
+    depulso: tuning.depulso,
+    depulsoLook: tuning.depulsoLook,
+  });
+
   scene.add(vfx.object);
 
   // Protego domes and Parry flashes.

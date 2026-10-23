@@ -114,11 +114,10 @@ const untilBoltWithin = (duel: Duel, seconds: number) => {
 /** Lets every Spell in flight land, and any Stagger or Petrified wear off. */
 const settle = (duel: Duel): DuelEvent[] => run(duel, secondsToTicks(2));
 
-/** The Spell Slots as the tuning binds them: △ Incendio, □ Petrificus Totalus, ○ kept for Expelliarmus, ✕ empty. */
+/** The Spell Slots as the tuning binds them: △ Incendio, □ Petrificus Totalus, ○ kept for Expelliarmus (✕ is Depulso's, in `depulso.test.ts`). */
 const toIncendio: SpellSlot = "triangle";
 const toPetrificus: SpellSlot = "square";
 const toReserved: SpellSlot = "circle";
-const toEmpty: SpellSlot = "cross";
 
 /** R2 held this tick, with `press` the slot whose face button went down on it. */
 const slot = (press: SpellSlot | null, extra: Partial<Intent> = {}) =>
@@ -285,12 +284,17 @@ describe("Spell Slots", () => {
   });
 
   it("casts nothing from an empty slot, or ○'s, kept for Expelliarmus", () => {
-    const duel = fight();
+    // ✕ bound to no Special Spell, for this test only.
+    const duel = fight({
+      ...sturdy,
+      spellSlots: { ...sturdy.spellSlots, cross: "" },
+    });
+
     buildFocus(duel, focus.max);
 
     const events = [
       ...castFromSlot(duel, toReserved),
-      ...castFromSlot(duel, toEmpty),
+      ...castFromSlot(duel, "cross"),
     ];
 
     expect(ofType(events, "spell-cast")).toStrictEqual([]);

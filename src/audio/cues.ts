@@ -27,6 +27,8 @@ export type Sound =
     }
   | { readonly kind: "incendio-cast" }
   | { readonly kind: "petrificus-cast" }
+  /** Depulso's gust: it lands as it is cast, so its cast is the whole of it. */
+  | { readonly kind: "depulso-cast" }
   | { readonly kind: "perfect-release" }
   | { readonly kind: "stupefy-hit"; readonly strong: boolean }
   /** Confringo going off, on a Duelist or anywhere it stops; bigger with its Charge. */
@@ -43,7 +45,7 @@ export type Sound =
   | { readonly kind: "spells-cancelled" }
   | { readonly kind: "incendio-explosion" }
   | { readonly kind: "backfire" }
-  /** A Shield stopping a Spell; `heavy` for Confringo and Incendio. */
+  /** A Shield stopping a Spell; `heavy` for Confringo, Incendio and Depulso. */
   | { readonly kind: "shield-block"; readonly heavy: boolean }
   | { readonly kind: "parry" }
   | { readonly kind: "dodge" }
@@ -73,7 +75,7 @@ export type Sound =
 /** How a Round ended for the local Duelist. */
 export type RoundOutcome = "draw" | "lost" | "won";
 
-/** A Spell landing on a Duelist; Incendio's is its explosion, reported on its own. */
+/** A Spell landing on a Duelist; Incendio's is its explosion, reported on its own, and Depulso's its cast. */
 const impactOf = (spell: SpellState): Sound | null => {
   if (spell.kind === "stupefy") {
     return { kind: "stupefy-hit", strong: spell.strong };
@@ -284,7 +286,9 @@ const eventSounds: EventSounds = {
   "round-start": () => [announce({ kind: "duel-start" })],
   "spell-blocked": (event, _frame, place) => {
     const heavy =
-      event.spell.kind === "confringo" || event.spell.kind === "incendio";
+      event.spell.kind === "confringo" ||
+      event.spell.kind === "incendio" ||
+      event.spell.kind === "depulso";
 
     return [
       place.by(

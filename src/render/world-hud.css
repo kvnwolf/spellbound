@@ -58,6 +58,10 @@
   color: var(--petrificus);
 }
 
+.wh-spell[data-spell="depulso"] {
+  color: var(--depulso);
+}
+
 /* A damage number: white, gold and larger for a strong hit. */
 .wh-number {
   color: #f6f1e4;

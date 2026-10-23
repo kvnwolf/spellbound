@@ -155,6 +155,12 @@ export interface DuelistState {
 /** Stupefy is the Light Spell; Confringo the Heavy Spell; the rest are Special Spells. */
 export type SpellKind = "confringo" | "stupefy" | SpecialSpellKind;
 
+/**
+ * The Spells that fly as projectiles: every one but Depulso, a cone of force
+ * that lands the moment it is cast and is never in `DuelSnapshot.spells`.
+ */
+export type ProjectileKind = Exclude<SpellKind, "depulso">;
+
 /** A Spell in flight. Ids are unique for the whole Duel, so views can track one across ticks. */
 export interface SpellState {
   readonly id: number;
@@ -167,8 +173,12 @@ export interface SpellState {
   readonly charge: number;
   /** A Confringo released with a Perfect Release: more damage and knockback. */
   readonly empowered: boolean;
+  /** Where it is; for Depulso, the Wand tip it blasts from. */
   readonly position: Point3;
-  /** Metres per second. Spells fly straight, unless homing. */
+  /**
+   * Metres per second. Spells fly straight, unless homing. Depulso never
+   * flies: its velocity is the axis of its cone, a unit vector on the floor.
+   */
   readonly velocity: Point3;
   /**
    * A Spell cast while Locked On turns weakly toward its Target for a short
@@ -497,13 +507,15 @@ interface Bookkeeping {
   /** Ticks the current Charge has been held, the press included; 0 when not Charging. */
   chargeTicks: number;
   /**
-   * A Confringo knockback in progress: sliding `distance` metres along
-   * `direction` over `ticks` ticks, `ticksLeft` of them still to go.
+   * A knockback in progress (Confringo's, or Depulso's): sliding `distance`
+   * metres along `direction` over `ticks` ticks, `ticksLeft` of them still to
+   * go. A `guarded` slide (Depulso's push on a Shield) keeps the Shield up.
    */
   knockback:
     | {
         readonly direction: GroundPoint;
         readonly distance: number;
+        readonly guarded?: boolean;
         readonly ticks: number;
         ticksLeft: number;
       }
@@ -549,7 +561,7 @@ const freshBookkeeping = (): Bookkeeping => ({
   buttons: { dodge: false, jump: false, shield: false, sprint: false },
   chain: 0,
   chargeTicks: 0,
-  cooldownTicks: { incendio: 0, petrificus: 0 },
+  cooldownTicks: { depulso: 0, incendio: 0, petrificus: 0 },
   dodgeStep: { x: 0, z: 0 },
   dodgeTicks: 0,
   heavyHeld: false,
@@ -626,10 +638,19 @@ const dodgeHeading = (
 export const createDuel = (config: DuelConfig): Duel => {
   const { arena, tuning } = config;
   const { bodyRadius } = tuning.duelist;
-  const { confringo, incendio, petrificus, round: rounds, stupefy } = tuning;
 
-  /** The radius of a Spell's sphere, for collisions. */
-  const spellRadius = (spell: SpellState) => tuning[spell.kind].radius;
+  const {
+    confringo,
+    depulso,
+    incendio,
+    petrificus,
+    round: rounds,
+    stupefy,
+  } = tuning;
+
+  /** The radius of a Spell's sphere, for collisions; Depulso never flies. */
+  const spellRadius = (spell: SpellState) =>
+    spell.kind === "depulso" ? 0 : tuning[spell.kind].radius;
 
   const tickSeconds = 1 / tuning.tickRate;
   const stride = tuning.duelist.walkSpeed * tickSeconds;
@@ -774,7 +795,7 @@ export const createDuel = (config: DuelConfig): Duel => {
       aimPoint: { x: setup.spawn.x, y: 0, z: setup.spawn.z },
       burnSeconds: 0,
       chargeSeconds: 0,
-      cooldowns: { incendio: 0, petrificus: 0 },
+      cooldowns: { depulso: 0, incendio: 0, petrificus: 0 },
       dodgeSeconds: 0,
       elevation: 0,
       facing: defaultForward,
@@ -1134,6 +1155,8 @@ export const createDuel = (config: DuelConfig): Duel => {
     readonly events: DuelEvent[];
     /** What Backfires cost their casters this tick, applied once the Duelists have acted. */
     readonly backfires: Map<DuelistId, number>;
+    /** What Depulso's cone costs the Duelists it caught this tick, applied once the Spells are cast. */
+    readonly blasts: Map<DuelistId, number>;
   }
 
   const { defence } = tuning;
@@ -1369,14 +1392,17 @@ export const createDuel = (config: DuelConfig): Duel => {
    * up on the press (which is what times a Parry) and the sprint starts on
    * it, both lasting while held. Anything costing more Stamina than is left
    * is refused. Gravity and regeneration run even when the Duelist cannot
-   * act (Staggered, or outside the fight).
+   * act (Staggered, or outside the fight). `canGuard`: whether the Shield
+   * can stay up, as when they can act, or sliding back from a Depulso
+   * behind it, when they cannot.
    */
   const defend = (
     self: DuelistState,
     intent: Intent,
     canAct: boolean,
     target: DuelistState | undefined,
-    draft: Draft
+    draft: Draft,
+    canGuard = canAct
   ): Guard => {
     const book = books(self.id);
     const was = book.buttons;
@@ -1409,7 +1435,7 @@ export const createDuel = (config: DuelConfig): Duel => {
       self,
       "shield",
       {
-        allowed: canAct && !dodging,
+        allowed: canGuard && !dodging,
         held: intent.shield,
         pressed: pressed("shield"),
         running: book.shieldHeld,
@@ -1995,6 +2021,7 @@ export const createDuel = (config: DuelConfig): Duel => {
 
   /** The Special Spells' Cooldowns as the snapshot shows them, in seconds. */
   const cooldownsOf = (book: Bookkeeping) => ({
+    depulso: book.cooldownTicks.depulso * tickSeconds,
     incendio: book.cooldownTicks.incendio * tickSeconds,
     petrificus: book.cooldownTicks.petrificus * tickSeconds,
   });
@@ -2048,6 +2075,18 @@ export const createDuel = (config: DuelConfig): Duel => {
     book.staggerTicks === 0 &&
     book.petrifiedTicks === 0 &&
     book.knockback === undefined;
+
+  /** Whether a standing Duelist is only sliding back behind their Shield from a Depulso, mid-fight: they can keep it up. */
+  const guardedSlide = (
+    self: DuelistState,
+    book: Bookkeeping,
+    phase: RoundPhase
+  ) =>
+    phase === "fighting" &&
+    !self.knockedOut &&
+    book.staggerTicks === 0 &&
+    book.petrifiedTicks === 0 &&
+    book.knockback?.guarded === true;
 
   /** One tick off every per-Duelist timer: recovery, Stagger, Petrified and the Cooldowns. */
   const countDown = (book: Bookkeeping) => {
@@ -2108,7 +2147,16 @@ export const createDuel = (config: DuelConfig): Duel => {
 
       // Defence runs first, and even for a Duelist who cannot act: a jump
       // still falls and Stamina still regenerates.
-      const guard = defend(self, intent, canAct, target, draft);
+      // Pushed back behind a Shield by Depulso, the Shield stays up.
+      const guard = defend(
+        self,
+        intent,
+        canAct,
+        target,
+        draft,
+        canAct || guardedSlide(self, book, phase)
+      );
+
       const defended = { ...self, ...guard.state };
 
       // Other Duelists block at their position from the start of the tick, so
@@ -2191,6 +2239,103 @@ export const createDuel = (config: DuelConfig): Duel => {
    * was released with; released in the Perfect Release window it is a full
    * Charge, empowered, and the Perfect Release is reported.
    */
+  /**
+   * Depulso's cone, the moment it is cast: every opponent of the caster
+   * standing within its range (to the edge of their body) and its angle
+   * round the caster's facing, not Dodging and not behind Cover, while the
+   * Round is fought. Each is pushed straight away from the caster, harder the
+   * closer they stand, losing any Charge (no Backfire), and takes its damage,
+   * unless a Shield facing the caster blocks it (it cannot be Parried): then
+   * the push is weaker, and the Shield stays up through the slide.
+   * Interrupting a Potion being drunk is left to Potions (#8), which a hit
+   * interrupts: Depulso's is a `spell-hit` like any other.
+   */
+  const blast = (draft: Draft, caster: DuelistState, spell: SpellState) => {
+    if (draft.round.phase !== "fighting") {
+      return;
+    }
+
+    const { coneDegrees, damage, knockback, range } = depulso;
+    const halfAngle = (coneDegrees * Math.PI) / 360;
+    const ticks = ticksOf(knockback.seconds);
+    const caught = new Set<DuelistId>();
+
+    for (const other of draft.duelists) {
+      const distance = distanceBetween(caster.position, other.position);
+      const away = direction(caster.position, other.position);
+      const reach = Math.max(distance - bodyRadius, 0);
+
+      const off = Math.acos(
+        clamp(away.x * caster.facing.x + away.z * caster.facing.z, -1, 1)
+      );
+
+      if (
+        other.team === caster.team ||
+        other.knockedOut ||
+        other.dodgeSeconds > 0 ||
+        reach > range ||
+        off > halfAngle ||
+        sightBlocked(caster.position, other.position, arena.cover)
+      ) {
+        continue;
+      }
+
+      // A Shield facing the caster: the caster stands in front of its line.
+      const shielded =
+        other.shielding &&
+        (caster.position.x - other.position.x) * other.facing.x +
+          (caster.position.z - other.position.z) * other.facing.z >=
+          0;
+
+      const metres =
+        (knockback.near + (knockback.far - knockback.near) * (reach / range)) *
+        (shielded ? knockback.shieldScale : 1);
+
+      const book = books(other.id);
+      book.chargeTicks = 0;
+      book.queued = false;
+      book.knockback = {
+        direction: away,
+        distance: metres,
+        guarded: shielded,
+        ticks,
+        ticksLeft: ticks,
+      };
+      caught.add(other.id);
+
+      const position = chestOf(other, tuning);
+
+      if (shielded) {
+        draft.events.push({
+          duelistId: other.id,
+          position,
+          spell,
+          type: "spell-blocked",
+        });
+      } else {
+        draft.blasts.set(other.id, (draft.blasts.get(other.id) ?? 0) + damage);
+        draft.events.push({
+          damage,
+          position,
+          spell,
+          staggered: false,
+          targetId: other.id,
+          type: "spell-hit",
+        });
+      }
+    }
+
+    draft.duelists = draft.duelists.map((each) =>
+      caught.has(each.id)
+        ? {
+            ...each,
+            chargeSeconds: 0,
+            knockbackSeconds: ticks * tickSeconds,
+          }
+        : each
+    );
+  };
+
   const cast = (draft: Draft, releases: Map<DuelistId, Release>) => {
     for (const self of draft.duelists) {
       const release = releases.get(self.id);
@@ -2229,6 +2374,28 @@ export const createDuel = (config: DuelConfig): Duel => {
       book.ticksSinceCast = 0;
 
       const origin = wandTip(self, tuning);
+
+      // Depulso does not fly: its cone lands on everyone in it at once.
+      if (release.kind === "depulso") {
+        const spell: SpellState = {
+          casterId: self.id,
+          charge: 0,
+          empowered: false,
+          homing: null,
+          id: nextSpellId,
+          kind: "depulso",
+          position: origin,
+          strong: false,
+          team: self.team,
+          velocity: { x: self.facing.x, y: 0, z: self.facing.z },
+        };
+
+        nextSpellId += 1;
+        draft.events.push({ spell, type: "spell-cast" });
+        blast(draft, self, spell);
+        continue;
+      }
+
       const launch = towardPoint(origin, self.aimPoint);
 
       // Every Spell aims the same way. Locked On: straight at the Target's
@@ -2324,7 +2491,12 @@ export const createDuel = (config: DuelConfig): Duel => {
   };
 
   const step = (intents: Readonly<Record<DuelistId, Intent>>): DuelTick => {
-    const draft: Draft = { ...current, backfires: new Map(), events: [] };
+    const draft: Draft = {
+      ...current,
+      backfires: new Map(),
+      blasts: new Map(),
+      events: [],
+    };
 
     advanceClock(draft);
     applyDamage(draft, burn(draft, flySpells(draft)));
@@ -2336,6 +2508,9 @@ export const createDuel = (config: DuelConfig): Duel => {
     applyDamage(draft, draft.backfires);
     decideRound(draft);
     cast(draft, releases);
+    // Depulso lands as it is cast, and can Knock an opponent Out.
+    applyDamage(draft, draft.blasts);
+    decideRound(draft);
     gainFocus(draft);
 
     current = {

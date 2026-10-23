@@ -50,6 +50,7 @@ const everySound: EverySound = {
     { charge: 1, empowered: true, kind: "confringo-cast" },
   ],
   countdown: [1, 2, 3].map((beat) => ({ beat, kind: "countdown" as const })),
+  "depulso-cast": [{ kind: "depulso-cast" }],
   dodge: [{ kind: "dodge" }],
   "duel-end": [
     { kind: "duel-end", won: true },

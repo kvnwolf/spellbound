@@ -91,6 +91,10 @@
   stroke: var(--petrificus);
 }
 
+.sd-slot[data-spell="depulso"] .ss-glyph {
+  stroke: var(--depulso);
+}
+
 /* Short of Focus or cooling down: dimmed. */
 .sd-slot[data-state="focus"] .sd-badge,
 .sd-slot[data-state="cooldown"] .sd-badge {

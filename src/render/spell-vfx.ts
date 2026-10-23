@@ -58,8 +58,15 @@ import {
   Vector3,
 } from "three/webgpu";
 
-import type { DuelEvent, SpellKind, SpellState } from "../duel/duel";
+import type {
+  DuelEvent,
+  ProjectileKind,
+  SpellKind,
+  SpellState,
+} from "../duel/duel";
 import type { Point3 } from "../duel/geometry";
+import type { Tuning } from "../tuning";
+import { createDepulsoWaves } from "./depulso-vfx";
 import { sampleSpell } from "./interpolate";
 
 /** A Wand that is Charging this frame, as the views see it. */
@@ -101,6 +108,8 @@ interface Palette {
 const palettes: Record<SpellKind, Palette> = {
   /** Fire: a deep orange with a pale gold heart. */
   confringo: { hot: new Color("#ffe2a0"), main: new Color("#ff6a12") },
+  /** Depulso's wind: a pale, cool white. It never flies; its wave is `depulso-vfx.ts`. */
+  depulso: { hot: new Color("#ffffff"), main: new Color("#cfe6f5") },
   /** A fireball: blood-orange flame round a pale yellow heart. */
   incendio: { hot: new Color("#fff1b8"), main: new Color("#ff3d0a") },
   /** A cold, pale-blue binding light. */
@@ -127,7 +136,7 @@ interface BoltLook {
   };
 }
 
-const looks: Record<SpellKind, BoltLook> = {
+const looks: Record<ProjectileKind, BoltLook> = {
   confringo: {
     core: { intensity: 7, radius: 0.17 },
     glow: { intensity: 2.6, size: 1.7 },
@@ -625,7 +634,7 @@ const sizeOf = (spell: SpellState) => {
 };
 
 /** One kind's pool of bolts, grown on demand and reused frame to frame. */
-const createBoltPool = (kind: SpellKind, parent: Group) => {
+const createBoltPool = (kind: ProjectileKind, parent: Group) => {
   const look = looks[kind];
   const materials = createBoltMaterials(palettes[kind], look);
   const bolts: Bolt[] = [];
@@ -767,15 +776,39 @@ const createShockwaves = (parent: Group, blastRadius: number) => {
 /** How the Spell VFX is set up: the blast radius comes from the simulation's tuning, so the shockwave shows its true reach. */
 export interface SpellVfxSettings {
   readonly blastRadius: number;
+  /** Depulso's cone, as the simulation has it, and how its wave looks. */
+  readonly depulso: Pick<Tuning["depulso"], "coneDegrees" | "range">;
+  readonly depulsoLook: Tuning["depulsoLook"];
 }
 
 export const createSpellVfx = (settings: SpellVfxSettings): SpellVfx => {
   const object = new Group();
   const sparks = createSparkRing();
   const shockwaves = createShockwaves(object, settings.blastRadius);
+  const { dust } = settings.depulsoLook;
+  const dustColor = new Color(dust.color);
+
+  // Depulso's wave, kicking up dust from the floor as its front passes.
+  const waves = createDepulsoWaves(object, {
+    cone: settings.depulso,
+    kick: (at) => {
+      sparks.emit(
+        at,
+        dustColor,
+        dust.intensity,
+        dust.size,
+        dust.speed,
+        dust.life,
+        dust.rise
+      );
+    },
+    look: settings.depulsoLook,
+    random: seededRandom(23),
+  });
+
   const random = seededRandom(11);
 
-  const pools: Record<SpellKind, ReturnType<typeof createBoltPool>> = {
+  const pools: Record<ProjectileKind, ReturnType<typeof createBoltPool>> = {
     confringo: createBoltPool("confringo", object),
     incendio: createBoltPool("incendio", object),
     petrificus: createBoltPool("petrificus", object),
@@ -911,6 +944,14 @@ export const createSpellVfx = (settings: SpellVfxSettings): SpellVfx => {
   const handle = (events: readonly DuelEvent[]) => {
     // Round and Duel events have no Spell look.
     for (const event of events) {
+      if (event.type === "spell-cast" && event.spell.kind === "depulso") {
+        // Its velocity is its cone's axis.
+        waves.start(event.spell.position, {
+          x: event.spell.velocity.x,
+          z: event.spell.velocity.z,
+        });
+      }
+
       if (event.type === "spell-cast") {
         castPoints.set(event.spell.id, event.spell.position);
         burst(
@@ -1048,6 +1089,7 @@ export const createSpellVfx = (settings: SpellVfxSettings): SpellVfx => {
   ) => {
     sparks.advance(seconds);
     shockwaves.advance(seconds);
+    waves.advance(seconds);
     clock += seconds;
     const before = new Map(previous.map((spell) => [spell.id, spell]));
 
@@ -1062,6 +1104,11 @@ export const createSpellVfx = (settings: SpellVfxSettings): SpellVfx => {
     }
 
     for (const spell of current) {
+      // Depulso never flies, so it is never in the air to draw.
+      if (spell.kind === "depulso") {
+        continue;
+      }
+
       const pool = pools[spell.kind];
       const { look } = pool;
       const bolt = pool.take();

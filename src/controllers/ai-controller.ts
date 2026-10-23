@@ -208,6 +208,11 @@ export const createAiController = ({
       offsetZ - velocity.z * closestAt
     );
 
+    // Depulso never flies, so it is never in the air to see coming.
+    if (spell.kind === "depulso") {
+      return undefined;
+    }
+
     const { radius } = tuning[spell.kind];
     const contact = bodyRadius + radius;
 

@@ -92,6 +92,7 @@ const sampleOfSound: SampleTable = {
   "confringo-blast": charged("confringo-blast"),
   "confringo-cast": charged("confringo-cast"),
   countdown: just("countdown-beat"),
+  "depulso-cast": just("depulso-blast"),
   dodge: just("dodge-roll"),
   "duel-end": either({ no: "defeat", yes: "victory" }, ({ won }) => won),
   "duel-start": just("duel-start"),

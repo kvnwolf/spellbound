@@ -48,6 +48,7 @@ export const text = {
   },
   /** The Special Spells, as the Spell Slots in the HUD (and over an opponent's Health bar) name them. */
   specials: {
+    depulso: "Depulso",
     expelliarmus: "Expelliarmus",
     /** Accessible label of the Focus orbs. */
     focus: "Concentración",
@@ -62,6 +63,7 @@ export const text = {
    */
   spellCallouts: {
     confringo: "¡Confringo!",
+    depulso: "¡Depulso!",
     incendio: "¡Incendio!",
     petrificus: "¡Petrificus Totalus!",
   },
