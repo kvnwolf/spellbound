@@ -980,9 +980,9 @@ export const tuning = {
         raisedTwist: 1.1,
         speedSharpness: 10,
         stride: [0.4, 1.3],
-        tuck: { run: 0.24, walk: 0.1 },
+        tuck: { run: 0.24, walk: 0.14 },
         twistSharpness: 10,
-        upright: { run: 0.37, walk: 0.08 },
+        upright: { run: 0.37, walk: 0.16 },
       },
       /** The head looks this share of the aim's pitch. */
       headPitch: 0.5,
