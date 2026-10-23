@@ -148,7 +148,12 @@ export const createChargeRing = (
       delete root.dataset.flourish;
       root.dataset.stage = stage;
 
-      pulse += seconds * ring.warnPulse * Math.PI * 2;
+      // The warning is brief, so it opens at its brightest peak rather than
+      // wherever the pulse happened to be.
+      pulse =
+        stage === "full"
+          ? pulse + seconds * ring.warnPulse * Math.PI * 2
+          : Math.PI / 2;
 
       root.style.setProperty(
         "--level",

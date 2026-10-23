@@ -169,7 +169,7 @@ export const tuning = {
      * them Out) and Staggers them for `staggerSeconds`. It comes
      * `delaySeconds` after the Charge fills; that moment is the only warning.
      */
-    backfire: { damage: 8, delaySeconds: 0.25, staggerSeconds: 1 },
+    backfire: { damage: 8, delaySeconds: 0.1, staggerSeconds: 1 },
     /** Movement speed is multiplied by this while Charging: Charging is a commitment. */
     chargeMoveScale: 0.45,
     /** Damage at the smallest Charge (a tap) and at a full Charge. */
@@ -185,9 +185,10 @@ export const tuning = {
     /**
      * The Perfect Release window, right as the Charge fills: releasing from
      * `early` seconds before full until `late` seconds after it counts. It
-     * casts a full Charge, empowered.
+     * casts a full Charge, empowered. It must end before the Backfire
+     * (`late` at most `backfire.delaySeconds`).
      */
-    perfectRelease: { early: 0.04, late: 0.08 },
+    perfectRelease: { early: 0.04, late: 0.06 },
     /** A Perfect Release multiplies damage and knockback by this. */
     perfectScale: 1.35,
     /** The projectile is a sphere of this radius for collisions: a big, slow blast. */

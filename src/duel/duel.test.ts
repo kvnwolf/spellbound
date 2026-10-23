@@ -1108,7 +1108,7 @@ const backfireSeconds =
   tuning.confringo.fullSeconds + tuning.confringo.backfire.delaySeconds;
 
 /** A Charge held full but short of its Backfire, and outside the Perfect Release window. */
-const heldFull = 0.68;
+const heldFull = 0.58;
 
 /** The hero holds the Heavy Spell one tick past the moment it Backfires; returns those ticks' events. */
 const overcharge = (duel: Duel): DuelEvent[] =>
@@ -1228,7 +1228,7 @@ describe("Confringo and Charge", () => {
     expect(crept / walked).toBeCloseTo(tuning.confringo.chargeMoveScale);
   });
 
-  describe.each([0.47, 0.5, 0.56])("released after %s s", (seconds) => {
+  describe.each([0.47, 0.5, 0.55])("released after %s s", (seconds) => {
     it("is a Perfect Release: a full Charge, empowered, with a Perfect Release event", () => {
       const { cast, events, hit } = confringoHit(seconds);
 
@@ -1244,7 +1244,7 @@ describe("Confringo and Charge", () => {
     });
   });
 
-  describe.each([0.4, 0.68])("released after %s s", (seconds) => {
+  describe.each([0.4, 0.58])("released after %s s", (seconds) => {
     it("is no Perfect Release", () => {
       const { cast, events, hit } = confringoHit(seconds);
 
@@ -1261,14 +1261,14 @@ describe("Confringo and Charge", () => {
     expect(pushedBack(perfect.duel)).toBeGreaterThan(pushedBack(full.duel));
   });
 
-  it("holds a full Charge for only a moment: it Backfires 0.25 s past full", () => {
+  it("holds a full Charge for only a moment: it Backfires 0.10 s past full", () => {
     const duel = fight();
 
     const safe = run(duel, secondsToTicks(backfireSeconds), {
       hero: chargeHeavy,
     });
 
-    expect(tuning.confringo.backfire.delaySeconds).toBe(0.25);
+    expect(tuning.confringo.backfire.delaySeconds).toBe(0.1);
     expect(ofType(safe, "backfire")).toStrictEqual([]);
     expect(duelist(duel, "hero").chargeSeconds).toBeCloseTo(backfireSeconds);
     expect(
