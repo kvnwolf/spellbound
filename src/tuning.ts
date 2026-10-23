@@ -906,7 +906,8 @@ export const tuning = {
        * higher still and the spine straightens `upright` radians (the run
        * clips crouch and stoop); the spine turns the chest back at most
        * `counterTwist` (all the way while the Wand is up) and the head looks
-       * the rest, at most `headTurn` off the chest. There is no backwards
+       * the rest, at most `headTurn` off the chest; Locked On it glances
+       * `glance` of the way to the Target. There is no backwards
        * gait: `maxTwist` of π lets the legs run any way, turning as an angle.
        */
       gait: {
@@ -921,6 +922,7 @@ export const tuning = {
           [5.6, 6.8],
         ],
         gaitSharpness: 8,
+        glance: 0.4,
         headTurn: 1.1,
         lift: 0.06,
         maxRaise: 0.12,
@@ -1083,10 +1085,11 @@ export const tuning = {
   },
 
   /**
-   * Which way a free-aiming Duelist faces (Locked On, they always face the
-   * Target). Walking turns them toward where they walk, at `moveTurnRate`
-   * radians per second, so running toward the camera shows their face;
-   * standing still keeps the facing, so the camera can orbit round them.
+   * Which way a Duelist faces, Locked On or not (the lock holds the camera
+   * and the aim, not the body). Walking turns them toward where they walk,
+   * at `moveTurnRate` radians per second, so running toward the camera shows
+   * their face; standing still keeps the facing, so the camera can orbit
+   * round them (Locked On, they turn to the Target at that rate instead).
    * Casting, Charging or raising the Shield turns them to the aim fast
    * enough to finish even a half turn within `aimTurnSeconds`; they keep
    * facing the aim while Charging or Shielding and for `aimHoldSeconds`

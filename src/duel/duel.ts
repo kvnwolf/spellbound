@@ -919,26 +919,30 @@ export const createDuel = (config: DuelConfig): Duel => {
   const aimHoldTicks = ticksOf(tuning.facing.aimHoldSeconds);
 
   /**
-   * Which way a free-aiming Duelist faces after this tick. `aiming` (casting,
+   * Which way a Duelist faces after this tick, Locked On or not (the lock
+   * holds the camera and the aim, not the body). `aiming` (casting,
    * Charging, Shielding, or just after a cast) turns them to the aim, fast;
-   * otherwise a walk along `heading` turns them toward it, and standing still
-   * (or Dodging) keeps the facing. Locked On, `settleAim` faces them to the
-   * Target instead.
+   * otherwise a walk along `heading` turns them toward it. Standing still
+   * (or Dodging) keeps the facing, except that Locked On they turn to the
+   * Target, standing at `target`.
    */
   const turnFacing = (
     self: DuelistState,
     aiming: boolean,
-    heading: GroundPoint | undefined
+    heading: GroundPoint | undefined,
+    target: GroundPoint | undefined
   ): GroundPoint => {
-    if (self.targetId !== null) {
-      return self.facing;
-    }
-
     if (aiming) {
       return turnToward(self.facing, forwardOf(self.aim.yaw), aimTurn);
     }
 
-    return heading ? turnToward(self.facing, heading, walkTurn) : self.facing;
+    if (heading) {
+      return turnToward(self.facing, heading, walkTurn);
+    }
+
+    return target
+      ? turnToward(self.facing, direction(self.position, target), walkTurn)
+      : self.facing;
   };
 
   /** Still facing the aim after a cast: a burst on the move never swings the Duelist about. */
@@ -997,12 +1001,12 @@ export const createDuel = (config: DuelConfig): Duel => {
 
   /**
    * Faces each Duelist and settles where their Spells go, once everyone has
-   * moved this tick. Locked On: they face the Target and aim at its chest
-   * (the framing nudge only turns the aim, i.e. the camera). Free-aiming:
-   * their Spells go to the point under the crosshair, the first thing their
-   * aim ray reaches, other standing Duelists included, and their facing is
-   * left as `act` turned it. A lock that breaks leaves the aim and the
-   * facing exactly where they were.
+   * moved this tick. Locked On: they aim at the Target's chest (the framing
+   * nudge only turns the aim, i.e. the camera). Free-aiming: their Spells go
+   * to the point under the crosshair, the first thing their aim ray
+   * reaches, other standing Duelists included. Either way the facing is
+   * left as `act` turned it. A lock that breaks leaves the aim exactly
+   * where it was.
    */
   const settleAim = (
     duelists: readonly DuelistState[],
@@ -1040,7 +1044,6 @@ export const createDuel = (config: DuelConfig): Duel => {
           ...self,
           aim: addAim(aimAt(self.position, chest, arena, eye), self.lockNudge),
           aimPoint: chest,
-          facing: direction(self.position, target.position),
           targetHiddenSeconds: books(self.id).hiddenTicks * tickSeconds,
         };
       }
@@ -3099,7 +3102,8 @@ export const createDuel = (config: DuelConfig): Duel => {
       facing: turnFacing(
         self,
         castRecently(book),
-        walkHeading(self.aim.yaw, move)
+        walkHeading(self.aim.yaw, move),
+        target?.position
       ),
       health,
       knockbackSeconds: 0,
@@ -3121,7 +3125,8 @@ export const createDuel = (config: DuelConfig): Duel => {
     book: Bookkeeping,
     guard: Guard,
     release: Release | undefined,
-    move: Vec2
+    move: Vec2,
+    target: GroundPoint | undefined
   ): GroundPoint =>
     turnFacing(
       self,
@@ -3129,7 +3134,8 @@ export const createDuel = (config: DuelConfig): Duel => {
         book.chargeTicks > 0 ||
         guard.state.shielding ||
         castRecently(book),
-      guard.dash ? undefined : walkHeading(self.aim.yaw, move)
+      guard.dash ? undefined : walkHeading(self.aim.yaw, move),
+      target
     );
 
   /**
@@ -3187,6 +3193,8 @@ export const createDuel = (config: DuelConfig): Duel => {
 
       const target =
         self.targetId === null ? undefined : byId.get(self.targetId);
+
+      const targetAt = target?.position;
 
       // Drinking a Potion, the hands are full: no Dodge, jump, sprint or Shield.
       const canDefend = canAct && book.drink === undefined;
@@ -3272,7 +3280,7 @@ export const createDuel = (config: DuelConfig): Duel => {
         : walk(
             self.position,
             self.aim.yaw,
-            target?.position,
+            targetAt,
             move.x * speed,
             move.y * speed
           );
@@ -3280,7 +3288,7 @@ export const createDuel = (config: DuelConfig): Duel => {
       return status({
         ...defended,
         chargeSeconds,
-        facing: faceAfterActing(self, book, guard, release, move),
+        facing: faceAfterActing(self, book, guard, release, move, targetAt),
         focus: self.focus - (special?.cost ?? 0),
         knockbackSeconds: 0,
         position: collide(wanted, bodyRadius, obstacles, arena),
@@ -3435,13 +3443,10 @@ export const createDuel = (config: DuelConfig): Duel => {
 
       book.ticksSinceCast = 0;
 
-      // A cast turns a free-aiming Duelist to the aim (see `turnFacing`): the
-      // Spell leaves the Wand where that turn puts it, and Depulso's cone
-      // opens along the aim, even while the body is still coming round.
-      const caster =
-        self.targetId === null
-          ? { ...self, facing: forwardOf(self.aim.yaw) }
-          : self;
+      // A cast turns the Duelist to the aim (see `turnFacing`): the Spell
+      // leaves the Wand where that turn puts it, and Depulso's cone opens
+      // along the aim, even while the body is still coming round.
+      const caster = { ...self, facing: forwardOf(self.aim.yaw) };
 
       const origin = wandTip(caster, tuning);
 

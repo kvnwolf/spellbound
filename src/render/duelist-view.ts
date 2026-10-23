@@ -1020,14 +1020,14 @@ export const createDuelistView = (
   };
 
   /**
-   * The yaw the raised Wand works in: free-aiming, the aim's, as the
-   * simulation casts (the body may still be coming round to it); Locked On
-   * or in a Clash, the body's, which already faces that way.
+   * The yaw the raised Wand works in: the aim's, as the simulation casts
+   * (the body may still be coming round to it); in a Clash, the body's,
+   * which already faces down the beam.
    */
   const wandYaw = (sample: DuelistSample) =>
-    sample.targetId === null && !sample.clashing
-      ? Math.atan2(Math.sin(sample.aim.yaw), -Math.cos(sample.aim.yaw))
-      : object.rotation.y;
+    sample.clashing
+      ? object.rotation.y
+      : Math.atan2(Math.sin(sample.aim.yaw), -Math.cos(sample.aim.yaw));
 
   /** Where the Wand tip should be and which way the Wand points (world), with the flick of a cast. */
   const wandAim = (sample: DuelistSample) => {
@@ -1169,9 +1169,10 @@ export const createDuelistView = (
   };
 
   /**
-   * The head looks where the Duelist means to: the facing (a Locked On
-   * Duelist's Target), or the aim while the Wand is up, whatever the clips
-   * and the spine left it at (a cast clip turns it toward the Wand hand).
+   * The head looks where the Duelist means to: the facing, glancing
+   * `glance` of the way toward a Locked On Target, or the aim while the
+   * Wand is up, whatever the clips and the spine left it at (a cast clip
+   * turns it toward the Wand hand).
    */
   const lookAhead = (sample: DuelistSample) => {
     if (
@@ -1182,9 +1183,13 @@ export const createDuelistView = (
       return;
     }
 
+    const toward = Math.max(
+      weight.lock,
+      sample.targetId === null ? 0 : gait.glance
+    );
+
     const wanted =
-      object.rotation.y +
-      wrap(wandYaw(sample) - object.rotation.y) * weight.lock;
+      object.rotation.y + wrap(wandYaw(sample) - object.rotation.y) * toward;
 
     joints.head.updateWorldMatrix(true, false);
     const e = joints.head.matrixWorld.elements;
