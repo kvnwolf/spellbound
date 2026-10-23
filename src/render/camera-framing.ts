@@ -141,10 +141,10 @@ export const liftWanted = (
 
 /**
  * The free camera: on the aim line behind the pivot, `reach` of the way out,
- * then lifted by `lift` (0 to 1): it rises until it is at least
- * `lift.nearest` from the Duelist's chest and tilts down toward them, never
- * turning in yaw, so the stick still moves the Duelist the way the screen
- * shows. At no lift the screen centre looks exactly down the aim ray. Without
+ * then lifted by `lift` (0 to 1): it slides off the shoulder to behind the
+ * Duelist, rises until it is at least `lift.nearest` from their chest and
+ * tilts down toward them, never turning in yaw, so the stick still moves
+ * the Duelist the way the screen shows. At no lift the screen centre looks exactly down the aim ray. Without
  * `eased`, the reach and lift the geometry wants are used directly.
  */
 export const freeCameraPose = (
@@ -166,8 +166,63 @@ export const freeCameraPose = (
 
   const { lift } = settings.free;
   const line = onAimLine(subject, reach, settings);
-  const { position } = subject;
-  const across = Math.hypot(line.x - position.x, line.z - position.z);
+  const { pivot, position } = subject;
+  const ahead = groundUnit(subject.look);
+
+  // Lifting also slides the camera off the shoulder to straight behind the
+  // Duelist (as far back as the pivot's camera, or as the Arena allows),
+  // so they are centred rather than off at the side of the screen.
+  const back = { x: line.x - pivot.x, z: line.z - pivot.z };
+  const backLength = Math.hypot(back.x, back.z);
+
+  const backward =
+    backLength > 1e-6
+      ? { x: back.x / backLength, z: back.z / backLength }
+      : { x: -ahead.x, z: -ahead.z };
+
+  const behind = Math.min(
+    backLength,
+    clearDistance(
+      position,
+      backward,
+      arena,
+      settings.clearance.margin,
+      settings.clearance.columnFeather
+    )
+  );
+
+  // Slide from the aim line toward there, stopping short of any column on
+  // the way.
+  const slide = {
+    x: position.x + backward.x * behind - line.x,
+    z: position.z + backward.z * behind - line.z,
+  };
+
+  const slideLength = Math.hypot(slide.x, slide.z);
+
+  const slid =
+    slideLength > 1e-6
+      ? Math.min(
+          slideLength * share,
+          clearDistance(
+            line,
+            { x: slide.x / slideLength, z: slide.z / slideLength },
+            arena,
+            settings.clearance.margin,
+            settings.clearance.columnFeather
+          )
+        )
+      : 0;
+
+  const ground =
+    slideLength > 1e-6
+      ? {
+          x: line.x + (slide.x / slideLength) * slid,
+          z: line.z + (slide.z / slideLength) * slid,
+        }
+      : { x: line.x, z: line.z };
+
+  const across = Math.hypot(ground.x - position.x, ground.z - position.z);
   const above = line.y - chestHeight;
 
   const needed = Math.max(
@@ -175,10 +230,9 @@ export const freeCameraPose = (
     Math.sqrt(Math.max(lift.nearest ** 2 - across ** 2, 0)) - above
   );
 
-  const eye = { x: line.x, y: line.y + needed * share, z: line.z };
+  const eye = { x: ground.x, y: line.y + needed * share, z: ground.z };
 
   // Tilt down toward the chest, in the aim's own vertical plane.
-  const ahead = groundUnit(subject.look);
 
   const forward = Math.max(
     (position.x - eye.x) * ahead.x + (position.z - eye.z) * ahead.z,

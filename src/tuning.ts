@@ -505,8 +505,8 @@ export const tuning = {
         forcedFull: 0.8,
         /** Starts tilting toward the Duelist this close, while they face the camera. */
         from: 2.8,
-        /** Steepest the lifted camera looks down (radians, about 72 degrees): never straight down. */
-        maxTilt: 1.25,
+        /** Steepest the lifted camera looks down (radians, about 77 degrees): never straight down. */
+        maxTilt: 1.35,
         /** The lifted camera rises until it is at least this far from the Duelist's chest. */
         nearest: 2,
         /** The reticle fades out once the lift is past this share. */

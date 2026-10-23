@@ -98,6 +98,15 @@ describe("the free camera near walls", () => {
     expect(seen.y).toBeLessThan(0.9);
   });
 
+  it("centres the wizard, not off at the shoulder side, once fully lifted against a wall", () => {
+    const position = { x: 0, z: bounds.halfDepth - bodyRadius };
+    const pose = settledFree(position, 0, { x: 0, z: 1 });
+    const seen = onScreen(pose.eye, pose.look, chestOf(position));
+
+    expect(seen.x).toBeLessThan(0.1);
+    expect(seen.y).toBeLessThan(0.5);
+  });
+
   it("stays on the aim line, crosshair true, while the wizard aims with their back to a wall", () => {
     // Same spot, but facing away from the camera: aiming into the Arena.
     const position = { x: 0, z: bounds.halfDepth - bodyRadius };
@@ -256,6 +265,16 @@ describe("the free camera near walls", () => {
 
           for (const pose of [aiming, facingCamera]) {
             expect(insideWalls(pose.eye)).toBeTruthy();
+            expect(
+              courtyard.cover.some(
+                (column) =>
+                  Math.hypot(
+                    pose.eye.x - column.center.x,
+                    pose.eye.z - column.center.z
+                  ) <
+                  column.radius + tuning.camera.clearance.margin - 1e-6
+              )
+            ).toBeFalsy();
             expect(distance3(pose.eye, chestOf(position))).toBeGreaterThan(
               tuning.camera.free.lift.forcedFull
             );
