@@ -3,7 +3,8 @@ import { bloom } from "three/addons/tsl/display/BloomNode.js";
  * The final image: one MSAA scene pass in scene-linear HDR, full-scene bloom
  * on top (so the moon, flames, embers and every Spell's emissive glow without
  * a selection pass), a soft vignette, then the renderer's single tone map and
- * sRGB output conversion. It also switches on the moon's shadow map.
+ * sRGB output conversion. It also switches on the moon's shadow map, and
+ * after the first frame compiles every effect that has not drawn yet.
  */
 import { pass, screenUV, smoothstep, vec4 } from "three/tsl";
 import {
@@ -14,6 +15,7 @@ import {
 import type { Camera, Scene, WebGPURenderer } from "three/webgpu";
 
 import type { Tuning } from "../tuning";
+import { prewarm } from "./prewarm";
 
 export interface FramePipeline {
   /** Renders one frame of `scene` through the camera given at creation. */
@@ -57,9 +59,18 @@ export const createFramePipeline = (
   // mapping and colour space once, after bloom.
   pipeline.outputNode = vec4(hdr.rgb.add(glare.rgb).mul(vignette), 1);
 
+  let warmed = false;
+
   return {
     render: () => {
       pipeline.render();
+
+      // After the first frame (which sets the scene pass up), compile
+      // everything that has not drawn yet, in the background.
+      if (!warmed) {
+        warmed = true;
+        void prewarm(renderer, scene, camera, scenePass.renderTarget);
+      }
     },
   };
 };

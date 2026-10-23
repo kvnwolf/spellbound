@@ -682,7 +682,12 @@ const sizeOf = (spell: SpellState) => {
 const createBoltPool = (kind: ProjectileKind, parent: Group) => {
   const look = looks[kind];
   const materials = createBoltMaterials(palettes[kind], look);
-  const bolts: Bolt[] = [];
+  // One bolt exists (hidden) from the start, so the load-time prewarm
+  // compiles this kind's shaders before its first cast.
+  const first = createBolt(materials, look);
+  first.group.visible = false;
+  parent.add(first.group);
+  const bolts: Bolt[] = [first];
   let used = 0;
 
   return {
@@ -733,7 +738,11 @@ const createTipGlows = (parent: Group) => {
   );
   material.opacityNode = smoothstep(1, 0, fromCentre).pow(2);
 
-  const sprites: Sprite[] = [];
+  // One glow exists (hidden) from the start, for the load-time prewarm.
+  const first = new Sprite(material);
+  first.visible = false;
+  parent.add(first);
+  const sprites: Sprite[] = [first];
 
   return {
     hideFrom: (index: number) => {
@@ -775,6 +784,10 @@ const createShockwaves = (parent: Group, blastRadius: number) => {
     const material = new MeshBasicNodeMaterial({
       blending: AdditiveBlending,
       depthWrite: false,
+      // Additive, so drawing the back faces then the front ones (three.js's
+      // default for double-sided transparency) adds up to the same as one
+      // pass; one pass also compiles ahead with the rest (see prewarm.ts).
+      forceSinglePass: true,
       side: DoubleSide,
       transparent: true,
     });

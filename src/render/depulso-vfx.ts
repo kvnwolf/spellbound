@@ -92,6 +92,10 @@ export const createDepulsoWaves = (
     const material = new MeshBasicNodeMaterial({
       blending: AdditiveBlending,
       depthWrite: false,
+      // Additive, so drawing the back faces then the front ones (three.js's
+      // default for double-sided transparency) adds up to the same as one
+      // pass; one pass also compiles ahead with the rest (see prewarm.ts).
+      forceSinglePass: true,
       side: DoubleSide,
       transparent: true,
     });

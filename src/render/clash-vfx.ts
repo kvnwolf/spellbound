@@ -217,12 +217,15 @@ interface Spark {
 
 export const createClashVfx = (): ClashVfx => {
   const object = new Group();
-  object.visible = false;
+  // What draws only during a Clash; the light stays outside it (see below).
+  const effect = new Group();
+  effect.visible = false;
+  object.add(effect);
   const clock = createClock();
   const random = seededRandom(23);
 
   const halves = [createHalf(clock), createHalf(clock)] as const;
-  object.add(halves[0].group, halves[1].group);
+  effect.add(halves[0].group, halves[1].group);
 
   const ballMaterial = new MeshBasicNodeMaterial();
   ballMaterial.colorNode = vec3(hot.r, hot.g, hot.b).mul(14);
@@ -230,10 +233,11 @@ export const createClashVfx = (): ClashVfx => {
 
   const glow = new Sprite(createGlowMaterial(3.4, 2));
   const corona = new Sprite(createGlowMaterial(0.9, 3));
-  object.add(ball, glow, corona);
+  effect.add(ball, glow, corona);
 
-  // Shines only during a Clash, but always exists, so the count of lights
-  // (and so the shaders) never changes.
+  // Shines only during a Clash, but is always in the scene and never hidden
+  // (a hidden light leaves the renderer's light list), so the count of lights
+  // never changes: a change would recompile every lit material mid-Duel.
   const light = new PointLight(main, 0, look.point.light.distance, 2);
   object.add(light);
 
@@ -242,7 +246,7 @@ export const createClashVfx = (): ClashVfx => {
   const sparks: Spark[] = Array.from({ length: look.sparks.count }, () => {
     const sprite = new Sprite(sparkMaterial);
     sprite.scale.setScalar(look.sparks.size);
-    object.add(sprite);
+    effect.add(sprite);
 
     // Born spent, so each one is thrown out afresh, staggered, once the Clash starts.
     return { age: random(), life: 0, sprite, velocity: new Vector3() };
@@ -294,13 +298,13 @@ export const createClashVfx = (): ClashVfx => {
       kick = Math.max(kick - look.point.kickFade * seconds, 0);
 
       if (!current) {
-        object.visible = false;
+        effect.visible = false;
         light.intensity = 0;
 
         return;
       }
 
-      object.visible = true;
+      effect.visible = true;
 
       const [first, second] = current.sides;
       const from = visibleTip(first.duelistId) ?? first.wand;
