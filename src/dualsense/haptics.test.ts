@@ -46,6 +46,14 @@ const haptics: Tuning["haptics"] = {
     castSeconds: 0.2,
     flashSeconds: 0.5,
     focusPulse: { color: { b: 40, g: 220, r: 240 }, periodSeconds: 2 },
+    spells: {
+      confringo: { b: 0, g: 128, r: 255 },
+      depulso: { b: 255, g: 224, r: 192 },
+      expelliarmus: { b: 128, g: 0, r: 255 },
+      incendio: { b: 0, g: 64, r: 255 },
+      petrificus: { b: 255, g: 128, r: 64 },
+      stupefy: { b: 0, g: 0, r: 255 },
+    },
   },
   parry: { left: 0.2, right: 1, seconds: 0.1 },
   petrified: { left: 0, right: 0.3 },
@@ -53,19 +61,11 @@ const haptics: Tuning["haptics"] = {
   strongHitTaken: { left: 1, right: 1, seconds: 0.6 },
 };
 
-/** One plain colour per Spell. */
-const spellPalette: Tuning["spellPalette"] = {
-  confringo: { hot: "#ffffff", main: "#ff8000" },
-  depulso: { hot: "#ffffff", main: "#c0e0ff" },
-  expelliarmus: { hot: "#ffffff", main: "#ff0040" },
-  incendio: { hot: "#ffffff", main: "#ff4000" },
-  petrificus: { hot: "#ffffff", main: "#4080ff" },
-  stupefy: { hot: "#ffffff", main: "#ff0000" },
-};
-
-const colours = {
+const colours: Record<SpellKind, Rgb> = {
   confringo: { b: 0, g: 128, r: 255 },
   depulso: { b: 255, g: 224, r: 192 },
+  expelliarmus: { b: 128, g: 0, r: 255 },
+  incendio: { b: 0, g: 64, r: 255 },
   petrificus: { b: 255, g: 128, r: 64 },
   stupefy: { b: 0, g: 0, r: 255 },
 };
@@ -79,7 +79,6 @@ const colours = {
 const settings: Tuning = {
   ...tuning,
   haptics,
-  spellPalette,
 };
 
 const local = "local";
@@ -320,6 +319,26 @@ describe(createHapticsDirector, () => {
     expect(
       direct()([hit(local, { kind: "petrificus" })]).lightbar
     ).toStrictEqual(colours.petrificus);
+  });
+
+  it("gives every Spell its own lightbar colour, from the lightbar palette and not the on-screen one", () => {
+    const kinds = [
+      "confringo",
+      "depulso",
+      "expelliarmus",
+      "incendio",
+      "petrificus",
+      "stupefy",
+    ] as const satisfies readonly SpellKind[];
+
+    for (const kind of kinds) {
+      expect(direct()([cast(local, kind)]).lightbar).toStrictEqual(
+        colours[kind]
+      );
+      expect(direct()([hit(local, { kind })]).lightbar).toStrictEqual(
+        colours[kind]
+      );
+    }
   });
 
   it("lights the lightbar briefly in the colour of the Spell the local Duelist casts", () => {

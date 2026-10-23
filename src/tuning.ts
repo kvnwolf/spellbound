@@ -1316,8 +1316,10 @@ export const tuning = {
    * the left motor is the heavy one, the right the light one) and fade out
    * over `seconds`; a `tremble` shakes a pulse `hz` times a second, dipping
    * by `depth` of its strength. Steady rumbles (`{ left, right }`) last as
-   * long as their state. Colours are 0-255 RGB for the lightbar; each Spell's
-   * lightbar colour is its `spellPalette` main colour, shared with the VFX.
+   * long as their state. Colours are 0-255 RGB for the lightbar; each Spell has
+   * its own lightbar colour (`lightbar.spells`), pushed apart in hue because
+   * the LED renders colours differently from the screen, so they are not the
+   * `spellPalette` the VFX draw in.
    * Trigger positions and forces run from 0 to 1.
    */
   haptics: {
@@ -1371,14 +1373,29 @@ export const tuning = {
     /** A heavy thump when the local Duelist is hit. */
     hitTaken: { left: 0.7, right: 0.5, seconds: 0.25 },
     lightbar: {
-      /** The local Duelist's crimson, as their robe. */
-      base: { b: 36, g: 28, r: 138 },
+      /** The local Duelist's crimson, as their robe: dim and bluish, nothing like Stupefy's bright red. */
+      base: { b: 22, g: 0, r: 110 },
       /** A cast lights the bar in the Spell's colour, fading back over this long. */
       castSeconds: 0.25,
       /** A hit taken flashes the colour of the Spell that landed, fading back over this long. */
       flashSeconds: 0.35,
       /** Full Focus breathes the bar toward the Wand aura's scarlet and back, once every `periodSeconds`. */
       focusPulse: { color: { b: 110, g: 90, r: 255 }, periodSeconds: 1.6 },
+      /** One hue per Spell, as far apart as an LED can show: red, pink, orange, amber, ice blue, pale white-blue. */
+      spells: {
+        /** Amber: more green than Incendio's orange, short of yellow-white. */
+        confringo: { b: 0, g: 170, r: 255 },
+        /** Pale white-blue: the only washed-out colour. */
+        depulso: { b: 255, g: 215, r: 170 },
+        /** Magenta-pink: the only one with blue and no green. */
+        expelliarmus: { b: 190, g: 0, r: 255 },
+        /** Orange: a touch of green on red. */
+        incendio: { b: 0, g: 60, r: 255 },
+        /** Ice blue. */
+        petrificus: { b: 255, g: 150, r: 20 },
+        /** Pure red. */
+        stupefy: { b: 0, g: 0, r: 255 },
+      },
     },
     /** A sharp, short pulse on a Parry. */
     parry: { left: 0.2, right: 1, seconds: 0.09 },
@@ -1792,7 +1809,7 @@ export const tuning = {
 
   /**
    * Each Spell's colours as hex: the main hue and its white-hot heart. The
-   * VFX draw Spells in them and the DualSense lightbar takes the main colour.
+   * VFX draw Spells in them (the DualSense lightbar has its own, in `haptics.lightbar`).
    */
   spellPalette: {
     /** Fire: a deep orange with a pale gold heart. */

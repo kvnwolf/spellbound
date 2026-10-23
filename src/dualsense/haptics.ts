@@ -4,8 +4,9 @@
  * stateful across frames (rumble pulses and lightbar flashes fade over
  * time); the caller feeds it one frame at a time and sends the result to the
  * controller, through WebHID or the Gamepad API's dual-rumble fallback.
- * Every strength, length and colour comes from `tuning.haptics`, and each
- * Spell's colour from `tuning.spellPalette`, the palette the VFX share.
+ * Every strength, length and colour comes from `tuning.haptics`, the
+ * lightbar's per-Spell colours included: the LED gets its own palette, not the
+ * on-screen one.
  */
 import { chargeLevel, chargeStage } from "../duel/charge";
 import type { ChargeStage } from "../duel/charge";
@@ -36,10 +37,7 @@ export interface RumblePulse extends Motors {
 }
 
 /** The tuning the director reads. */
-export type HapticsTuning = Pick<
-  Tuning,
-  "confringo" | "focus" | "haptics" | "spellPalette"
->;
+export type HapticsTuning = Pick<Tuning, "confringo" | "focus" | "haptics">;
 
 /** One frame of the game, as far as haptics care. */
 export interface HapticsFrame {
@@ -85,20 +83,6 @@ const mixMotors = (from: Motors, to: Motors, amount: number): Motors => ({
   left: from.left + (to.left - from.left) * amount,
   right: from.right + (to.right - from.right) * amount,
 });
-
-/** A `#rrggbb` colour as 0-255 channels. */
-const rgbOf = (hex: string): Rgb => {
-  const value = Number.parseInt(hex.slice(1), 16);
-
-  return {
-    // oxlint-disable-next-line no-bitwise -- unpacking the channels
-    b: value & 0xff,
-    // oxlint-disable-next-line no-bitwise -- unpacking the channels
-    g: (value >> 8) & 0xff,
-    // oxlint-disable-next-line no-bitwise -- unpacking the channels
-    r: (value >> 16) & 0xff,
-  };
-};
 
 /**
  * Where `event` blows something up, if it does: an Incendio explosion, a
@@ -160,7 +144,7 @@ export const createHapticsDirector = (
   tuning: HapticsTuning
 ): HapticsDirector => {
   const settings = tuning.haptics;
-  const spellColor = (kind: SpellKind) => rgbOf(tuning.spellPalette[kind].main);
+  const spellColor = (kind: SpellKind) => settings.lightbar.spells[kind];
 
   let pulses: ActivePulse[] = [];
   let castFlash = noFlash();
