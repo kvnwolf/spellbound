@@ -7,12 +7,10 @@ import { text } from "./text";
  * nothing else has to load first) until the game hands over to the menus.
  */
 export const createLoadingScreen = (element: HTMLElement) => {
-  const label = element.querySelector(".loading-label");
   const bar = element.querySelector<HTMLElement>(".loading-bar");
 
-  if (label) {
-    label.textContent = text.loading;
-  }
+  // No visible label (the user's call): the bar's name is for screen readers.
+  element.ariaLabel = text.loading;
 
   let shown = 0;
 
