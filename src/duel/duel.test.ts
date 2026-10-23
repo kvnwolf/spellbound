@@ -523,7 +523,7 @@ describe("Duel collision", () => {
       cover: [{ center: { x: 0.3, z: 0 }, radius: 1 }],
     });
 
-    hold(duel, intent({ move: { x: 0, y: 1 } }), 3);
+    hold(duel, intent({ move: { x: 0, y: 1 }, sprint: true }), 3);
 
     expect(duelist(duel, "hero").position.z).toBeLessThan(0);
   });
@@ -547,7 +547,7 @@ describe("Duel collision", () => {
       obstructions: [{ center: { x: 0.3, z: 0 }, radius: 1 }],
     });
 
-    hold(duel, intent({ move: { x: 0, y: 1 } }), 3);
+    hold(duel, intent({ move: { x: 0, y: 1 }, sprint: true }), 3);
 
     expect(duelist(duel, "hero").position.z).toBeLessThan(0);
   });
@@ -555,7 +555,7 @@ describe("Duel collision", () => {
   it("does not let a Duelist walk through another Duelist", () => {
     const duel = fightLookingDownTheArena();
 
-    hold(duel, intent({ move: { x: 0, y: 1 } }), 4);
+    hold(duel, intent({ move: { x: 0, y: 1 }, sprint: true }), 4);
 
     const hero = duelist(duel, "hero");
     const rival = duelist(duel, "rival");
@@ -897,6 +897,7 @@ const fightTwo = (settings: Tuning = tuning): Duel => {
 
 /** The rival side-stepping: to its own left, which is the hero's right (+x). */
 const rivalStrafes = intent({ move: { x: -1, y: 0 } });
+const rivalSprints = intent({ move: { x: -1, y: 0 }, sprint: true });
 
 describe("Lock-on", () => {
   it("locks on to the opponent with R3", () => {
@@ -1026,7 +1027,7 @@ describe("Lock-on", () => {
     const duel = fight();
     toggleLock(duel);
 
-    hold(duel, intent({ move: { x: 1, y: 0 } }), 1);
+    hold(duel, intent({ move: { x: 1, y: 0 }, sprint: true }), 1);
 
     const { facing, position } = duelist(duel, "hero");
     const toRival = { x: 0 - position.x, z: -5 - position.z };
@@ -1111,7 +1112,7 @@ describe("Lock-on", () => {
     toggleLock(duel);
 
     // The rival steps out of sight behind the column...
-    const stepping = run(duel, secondsToTicks(0.9), { rival: rivalStrafes });
+    const stepping = run(duel, secondsToTicks(0.9), { rival: rivalSprints });
     const hidden = duelist(duel, "hero");
     // ...and stays there.
     const waiting = run(duel, secondsToTicks(tuning.lockOn.sightGraceSeconds));
@@ -1179,7 +1180,7 @@ describe("Lock-on", () => {
     expect(Math.max(...turns)).toBeLessThanOrEqual(mostPerTick + 1e-9);
   });
 
-  it("is not escaped by jogging sideways at mid range", () => {
+  it("is not escaped by walking sideways at mid range", () => {
     const duel = fight();
     toggleLock(duel);
 
@@ -1195,11 +1196,10 @@ describe("Lock-on", () => {
   it("can be escaped by sprinting sideways at mid range", () => {
     const duel = fight();
     toggleLock(duel);
-    const sprints = intent({ move: { x: -1, y: 0 }, sprint: true });
 
     const events = [
-      ...run(duel, 1, { hero: castLight, rival: sprints }),
-      ...run(duel, secondsToTicks(1.5), { rival: sprints }),
+      ...run(duel, 1, { hero: castLight, rival: rivalSprints }),
+      ...run(duel, secondsToTicks(1.5), { rival: rivalSprints }),
     ];
 
     expect(ofType(events, "spell-cast")).toHaveLength(1);

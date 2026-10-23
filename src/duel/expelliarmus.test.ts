@@ -294,7 +294,7 @@ const walkTo = (duel: Duel, who: string, spot: GroundPoint) => {
       y: (way.x * ahead.x + way.z * ahead.z) * pace,
     };
 
-    events.push(...run(duel, 1, { [who]: intent({ move }) }));
+    events.push(...run(duel, 1, { [who]: intent({ move, sprint: true }) }));
   }
 
   return events;

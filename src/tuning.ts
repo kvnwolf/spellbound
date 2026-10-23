@@ -172,7 +172,7 @@ export const tuning = {
       lookSeconds: 0.4,
     },
     /** Sprints to close the distance when this many metres beyond its band (and Stamina is above half). */
-    sprintBeyond: 4,
+    sprintBeyond: 0.5,
     /** Never raises the Shield with less Stamina than this left, and never Dodges into less than this. */
     staminaReserve: 15,
     /** How long the AI keeps one strafing direction (or standing still) before picking again. */
@@ -749,7 +749,7 @@ export const tuning = {
       /** Stamina drained every second spent sprinting (only while moving). */
       drain: 20,
       /** Running speed, as a multiple of the walking speed. */
-      speedScale: 2,
+      speedScale: 2.5,
     },
     stamina: {
       max: 100,
@@ -919,8 +919,8 @@ export const tuning = {
         calm: 0.35,
         counterTwist: 0.45,
         crossovers: [
-          [1.4, 2.2],
-          [4.4, 5.6],
+          [2.6, 3.4],
+          [5.6, 6.8],
         ],
         gaitSharpness: 8,
         headTurn: 1.1,
@@ -999,7 +999,7 @@ export const tuning = {
         rim: "#ffb36b",
       },
     },
-    walkSpeed: 3.2,
+    walkSpeed: 1.9,
     /**
      * The visible Wand and the right arm that holds it. At rest, walking or
      * running the arm hangs with the clips, the Wand held low. It rises (by
