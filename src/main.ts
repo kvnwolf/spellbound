@@ -49,6 +49,7 @@ import { createFramePipeline } from "./render/pipeline";
 import { createWebGPURenderer } from "./render/renderer";
 import { createReticle } from "./render/reticle";
 import { createSpellVfx } from "./render/spell-vfx";
+import { loadWizardAssets } from "./render/wizard-assets";
 import { createWorldHud } from "./render/world-hud";
 import {
   initialScreenState,
@@ -274,14 +275,29 @@ const start = async () => {
     stone: tuning.petrifiedLook,
   };
 
+  // The rigged wizard both Duelists wear, loaded once.
+  const wizard = await loadWizardAssets(
+    `${import.meta.env.BASE_URL}${tuning.duelist.motion.url}`
+  );
+
   const views = new Map([
     [
       localId,
-      createDuelistView(localId, tuning.duelist.teamLooks.near, viewSettings),
+      createDuelistView(
+        localId,
+        tuning.duelist.teamLooks.near,
+        viewSettings,
+        wizard
+      ),
     ],
     [
       opponentId,
-      createDuelistView(opponentId, tuning.duelist.teamLooks.far, viewSettings),
+      createDuelistView(
+        opponentId,
+        tuning.duelist.teamLooks.far,
+        viewSettings,
+        wizard
+      ),
     ],
   ]);
 

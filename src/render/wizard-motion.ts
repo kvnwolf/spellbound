@@ -1,11 +1,9 @@
 /**
- * The motion maths behind the procedural wizard, free of meshes: easing
- * curves, the dt-correct exponential follow every pose weight eases with,
- * two-bone IK for arms and legs, a fixed-step spring for the cloth's lag,
- * and the gait that keeps planted feet still on the floor.
+ * The motion maths behind the wizard, free of meshes: easing curves, the
+ * dt-correct exponential follow every pose weight eases with, two-bone IK
+ * for the arms, and a fixed-step spring for the cloth's lag.
  *
- * Everything works in the Duelist's body frame: metres, +y up, +z the way
- * the Duelist faces and +x to their left (the right hand is at -x).
+ * Lengths are metres; the IK takes its points in any one frame.
  */
 import { Vector3 } from "three/webgpu";
 
@@ -23,13 +21,6 @@ export const smooth = (progress: number) => {
 
 /** Eases out: fast at first, settling. */
 export const easeOut = (progress: number) => 1 - (1 - unit(progress)) ** 3;
-
-/** Eases in: slow at first, accelerating (like a fall). */
-export const easeIn = (progress: number) => unit(progress) ** 2;
-
-/** Smoothstep between two edges. */
-export const ramp = (from: number, to: number, value: number) =>
-  smooth((value - from) / (to - from));
 
 /**
  * A pulse over a one-shot's progress: up to 1 by `peak` (eased out), back to
@@ -170,78 +161,4 @@ export const createSpring = (
   };
 
   return spring;
-};
-
-/** Where one foot is this frame in the gait, relative to its standing home. */
-export interface Stride {
-  /** Metres along the direction of travel, ahead of home. */
-  along: number;
-  /** Metres the foot is lifted off the floor. */
-  lift: number;
-  /** In the air (swinging forward) rather than planted. */
-  swinging: boolean;
-  /** How far through its swing, 0 to 1 (0 while planted). */
-  swing: number;
-}
-
-/**
- * The gait: a cycle that advances by the ground actually covered, so a
- * planted foot slides back under the body exactly as fast as the body moves
- * forward and stays put on the floor. Each foot is planted for `stance`
- * of the cycle (less when running, with both feet in the air between
- * steps), sweeping `sweep` metres; then it swings forward, lifted.
- */
-export const createGait = (settings: Tuning["duelist"]["gait"]) => {
-  let phase = 0;
-  let sweep = settings.sweepBase;
-  let stance = settings.walkStance;
-
-  const strideOf = (offset: number, out: Stride) => {
-    const cycle = (((phase + offset) % 1) + 1) % 1;
-
-    if (cycle < stance) {
-      out.along = sweep * (0.5 - cycle / stance);
-      out.lift = 0;
-      out.swinging = false;
-      out.swing = 0;
-
-      return out;
-    }
-
-    const swing = (cycle - stance) / (1 - stance);
-    out.along = sweep * (smooth(swing) - 0.5);
-    // Lifted highest a little before mid-swing: the heel kicks up first.
-    out.lift =
-      (settings.liftBase + settings.liftPerSweep * sweep) *
-      Math.sin(Math.PI * swing ** settings.liftSkew);
-    out.swinging = true;
-    out.swing = swing;
-
-    return out;
-  };
-
-  return {
-    /**
-     * Advances the cycle by `distance` metres covered at `speed` metres per
-     * second (the eased speed sets the stride's length and stance).
-     */
-    advance: (distance: number, speed: number) => {
-      sweep = Math.min(
-        settings.maxSweep,
-        settings.sweepBase + settings.sweepPerSpeed * speed
-      );
-      stance =
-        settings.walkStance +
-        (settings.runStance - settings.walkStance) *
-          ramp(settings.runFrom, settings.runAt, speed);
-      phase = (phase + (distance * stance) / sweep) % 1;
-    },
-    /** The cycle, 0 to 1: the left foot touches down at 0, the right at a half. */
-    phase: () => phase,
-    /** How much of each cycle a foot is planted, this stride. */
-    stance: () => stance,
-    stride: strideOf,
-    /** How far a planted foot travels back under the body, this stride (metres). */
-    sweep: () => sweep,
-  };
 };
