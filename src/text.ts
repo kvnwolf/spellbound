@@ -1,5 +1,11 @@
 /** Every player-facing string in Spellbound, in Spanish, so translation stays in one place. */
 export const text = {
+  /** On the connect prompt and the Difficulty select, naming what the first click still turns on: the sound, the DualSense's WebHID effects, or both. */
+  activationHint: {
+    both: "Haz clic en la página para activar el sonido y los efectos del DualSense",
+    effects: "Haz clic en la página para activar los efectos del DualSense",
+    sound: "Haz clic en la página para activar el sonido",
+  },
   connectDualSense: "Conecta tu DualSense y pulsa cualquier botón",
   difficulty: {
     duelista: "Duelista",
@@ -12,8 +18,6 @@ export const text = {
     reconnected: "Pulsa cualquier botón para continuar",
     waiting: "Conecta tu DualSense para continuar",
   },
-  /** On the connect prompt and the Difficulty select until the DualSense's WebHID effects are granted: the first click asks for them. */
-  effectsHint: "Haz clic en la página para activar los efectos del DualSense",
   hud: {
     defeat: "Derrota",
     draw: "Empate",
@@ -42,8 +46,6 @@ export const text = {
     changeDifficulty: "Cambiar dificultad",
     rematch: "Revancha",
   },
-  /** On the connect prompt and the Difficulty select until the sound is on: browsers start it on a click or keypress. */
-  soundHint: "Haz clic en la página para activar el sonido",
   /** The Special Spells, as the Spell Slots in the HUD (and over an opponent's Health bar) name them. */
   specials: {
     expelliarmus: "Expelliarmus",

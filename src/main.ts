@@ -5,6 +5,7 @@
  * camera, and renders interpolated snapshots at display rate.
  */
 import "./style.css";
+import { createActivationHint } from "./activation-hint";
 import { courtyard, courtyardSpawns } from "./arena/courtyard";
 import { createDuelAudio } from "./audio/audio";
 import { createAiController } from "./controllers/ai-controller";
@@ -104,7 +105,8 @@ const start = async () => {
 
   const menuInput = createMenuInput(tuning.menu);
   // Rumble, lightbar and player LEDs (ADR-0001): WebHID once granted, else dual-rumble.
-  const effects = createDualSenseEffects(element("#overlay", HTMLElement));
+  const activationHint = createActivationHint(element("#overlay", HTMLElement));
+  const effects = createDualSenseEffects(activationHint);
   const haptics = createHapticsDirector(localId, tuning.haptics);
   let lastPad: PadKind = "none";
 
@@ -265,8 +267,8 @@ const start = async () => {
   // Synthesised sound, heard from the camera; silent until the first click or keypress.
   const audio = createDuelAudio({
     camera: rig.camera,
+    hint: activationHint,
     localId,
-    overlay: element("#overlay", HTMLElement),
     settings: tuning,
   });
 

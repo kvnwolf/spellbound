@@ -1,3 +1,4 @@
+import type { ActivationHint } from "./activation-hint";
 /**
  * Sends the haptics director's output to the DualSense (ADR-0001): through
  * WebHID output reports once the player has granted the device, otherwise
@@ -20,7 +21,6 @@ import type {
   OutputReport,
   Transport,
 } from "./dualsense/output";
-import { text } from "./text";
 import { tuning } from "./tuning";
 
 /** Sony's vendor id with the DualSense and DualSense Edge product ids. */
@@ -181,17 +181,11 @@ const createFallbackRumble = () => {
 };
 
 /**
- * Drives the DualSense's effects for the page. `overlay` is the connect
- * prompt's and the Difficulty select's panel, where a hint says a click turns the effects on until they are
- * granted.
+ * Drives the DualSense's effects for the page. `hint` is told whether a click
+ * is still needed to turn the effects on, until they are granted.
  */
-export const createDualSenseEffects = (overlay: HTMLElement) => {
+export const createDualSenseEffects = (hint: ActivationHint) => {
   const { hid } = navigator;
-  const hint = document.createElement("p");
-  hint.className = "overlay-effects";
-  hint.textContent = text.effectsHint;
-  hint.hidden = true;
-  overlay.append(hint);
 
   let sink: WebHidSink | undefined;
   /** `getDevices()` has answered, so a click knows whether a DualSense is already granted. */
@@ -201,7 +195,7 @@ export const createDualSenseEffects = (overlay: HTMLElement) => {
   let prompted = false;
 
   const updateHint = () => {
-    hint.hidden = !hid || !checked || granted || prompted;
+    hint.report("effects", !!hid && checked && !granted && !prompted);
   };
 
   const attach = async (device: HIDDevice) => {

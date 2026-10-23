@@ -18,9 +18,9 @@
 import { Vector3 } from "three/webgpu";
 import type { Object3D } from "three/webgpu";
 
+import type { ActivationHint } from "../activation-hint";
 import type { DuelEvent, DuelistId, DuelSnapshot } from "../duel/duel";
 import type { Screen, ScreenEvent } from "../screens/screens";
-import { text } from "../text";
 import type { Tuning } from "../tuning";
 import { cuesFor, loopsFor, menuSoundFor } from "./cues";
 import type { Cue, Loop, Sound } from "./cues";
@@ -273,35 +273,31 @@ export interface DuelAudioOptions {
   /** The ears: sounds are placed relative to it. */
   readonly camera: Object3D;
   readonly localId: DuelistId;
-  /** The menus' panel, where a hint says a click turns the sound on until it is. */
-  readonly overlay: HTMLElement;
+  /** Told whether a click is still needed to turn the sound on. */
+  readonly hint: ActivationHint;
   readonly settings: Tuning;
 }
 
 export const createDuelAudio = ({
   camera,
+  hint,
   localId,
-  overlay,
   settings,
 }: DuelAudioOptions): DuelAudio => {
   let engine: Engine | undefined;
   /** The snapshot the last live frame ended on; null while the Duel is not being played. */
   let before: DuelSnapshot | null = null;
 
-  // Same look and place as the DualSense effects' hint: only on the menus.
-  const hint = document.createElement("p");
-  hint.className = "overlay-effects";
-  hint.textContent = text.soundHint;
-  overlay.append(hint);
-
   const running = () => engine?.ctx.state === "running";
+
+  hint.report("sound", true);
 
   const unlock = () => {
     if (!engine) {
       const ctx = new AudioContext({ latencyHint: "interactive" });
       engine = createEngine(ctx, settings.audio);
       ctx.addEventListener("statechange", () => {
-        hint.hidden = running();
+        hint.report("sound", !running());
       });
     }
 
