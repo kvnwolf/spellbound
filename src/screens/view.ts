@@ -45,6 +45,7 @@ const menu = <T extends string>(
   });
 
 const padBodies = {
+  dualsense: text.connectDualSense,
   none: text.connectDualSense,
   unsupported: text.requiresDualSense,
 };

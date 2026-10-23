@@ -107,16 +107,39 @@ const start = async () => {
     screens = reduceScreens(screens, event, tuning.screens);
   };
 
-  overlay.onAction(() => {
-    send({ type: "start" });
-  });
-
   const menuInput = createMenuInput(tuning.menu);
   // Rumble, lightbar and player LEDs (ADR-0001): WebHID once granted, else dual-rumble.
   const activationHint = createActivationHint(element("#overlay", HTMLElement));
   const effects = createDualSenseEffects(activationHint);
-  const haptics = createHapticsDirector(localId, tuning);
+  /** What the Gamepad API saw this frame: it shows a pad only once a button goes down. */
+  let scanned: PadKind = "none";
   let lastPad: PadKind = "none";
+
+  /** What is plugged in, as the screens see it: a DualSense open over WebHID counts unpressed. */
+  const padNow = (): PadKind => (effects.connected() ? "dualsense" : scanned);
+
+  const syncPad = () => {
+    const padKind = padNow();
+
+    if (padKind !== lastPad) {
+      lastPad = padKind;
+      send({ pad: padKind, type: "pad" });
+    }
+  };
+
+  // Comenzar: the same click turns the sound on and asks for the DualSense
+  // over WebHID (dualsense-effects); once that has answered, a granted pad
+  // goes straight to the main menu, else the connect prompt asks for ✕.
+  const startOnceLooked = async () => {
+    await effects.settled();
+    syncPad();
+    send({ type: "start" });
+  };
+
+  overlay.onAction(() => {
+    void startOnceLooked();
+  });
+  const haptics = createHapticsDirector(localId, tuning);
   // This frame's menu sounds, felt on the DualSense as well.
   let menuSounds: MenuSound[] = [];
 
@@ -470,11 +493,8 @@ const start = async () => {
    * new simulation, and the connect prompt and the menus show a fresh one
    * waiting at its start.
    */
-  const syncScreens = (padKind: PadKind, seconds: number) => {
-    if (padKind !== lastPad) {
-      lastPad = padKind;
-      send({ pad: padKind, type: "pad" });
-    }
+  const syncScreens = (seconds: number) => {
+    syncPad();
 
     for (const event of menuInput.read(pad, seconds)) {
       const before = screens.screen;
@@ -691,7 +711,8 @@ const start = async () => {
 
     // The screens act first, so everything below sees the screen this frame ends on.
     menuSounds = [];
-    const screen = syncScreens(scan.kind, seconds);
+    scanned = scan.kind;
+    const screen = syncScreens(seconds);
 
     // The Duel only advances on its own screen: never behind a menu, the
     // pause or the "Reconecta tu mando" prompt. A Knockout plays in slow

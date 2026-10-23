@@ -193,6 +193,8 @@ export const createDualSenseEffects = (hint: ActivationHint) => {
   let granted = false;
   /** The chooser was shown this page load; it is never shown twice. */
   let prompted = false;
+  /** The last look for a DualSense (the visit's reattach, or the chooser), once it has answered. */
+  let looked: Promise<void> = Promise.resolve();
 
   const updateHint = () => {
     hint.report("effects", !!hid && checked && !granted && !prompted);
@@ -246,19 +248,24 @@ export const createDualSenseEffects = (hint: ActivationHint) => {
     }
   };
 
-  const ask = async () => {
+  const choose = async (webHid: HID) => {
+    try {
+      await attachFirst(
+        await webHid.requestDevice({ filters: dualSenseFilters })
+      );
+    } catch {
+      // The chooser failed to open: no more asking until the next visit.
+    }
+  };
+
+  const ask = () => {
     if (!hid || !checked || granted || prompted) {
       return;
     }
 
     prompted = true;
     updateHint();
-
-    try {
-      await attachFirst(await hid.requestDevice({ filters: dualSenseFilters }));
-    } catch {
-      // The chooser failed to open: no more asking until the next visit.
-    }
+    looked = choose(hid);
   };
 
   const reattach = async (webHid: HID) => {
@@ -273,7 +280,7 @@ export const createDualSenseEffects = (hint: ActivationHint) => {
   };
 
   if (hid) {
-    void reattach(hid);
+    looked = reattach(hid);
 
     // A granted DualSense plugged back in, over USB or Bluetooth.
     hid.addEventListener("connect", (event) => {
@@ -286,7 +293,7 @@ export const createDualSenseEffects = (hint: ActivationHint) => {
     });
 
     const onGesture = () => {
-      void ask();
+      ask();
     };
 
     window.addEventListener("pointerdown", onGesture);
@@ -298,6 +305,8 @@ export const createDualSenseEffects = (hint: ActivationHint) => {
   const fallback = createFallbackRumble();
 
   return {
+    /** Whether a DualSense is open over WebHID: the game sees it without a button press. */
+    connected: () => sink !== undefined,
     /** Sends this frame's desired output: over WebHID when attached, else as dual-rumble on `gamepad`. */
     send: (output: DualSenseOutput, gamepad: Gamepad | undefined) => {
       if (sink) {
@@ -305,6 +314,10 @@ export const createDualSenseEffects = (hint: ActivationHint) => {
       } else {
         fallback(output, gamepad);
       }
+    },
+    /** Settles once the last look for a DualSense (reattach or chooser) has answered. */
+    settled: async () => {
+      await looked;
     },
   };
 };

@@ -26,7 +26,7 @@ const start = { type: "start" } as const;
 
 const onTitle = () => initialScreenState(true);
 const onConnect = () => play(onTitle(), start);
-const onMain = () => play(onConnect(), padFound);
+const onMain = () => play(onTitle(), padFound, start);
 
 /** Duelo, from the main menu. */
 const onSelect = () => play(onMain(), press("confirm"));
@@ -110,20 +110,28 @@ describe("connect prompt", () => {
     ).toBe("connect");
   });
 
-  it("goes straight to the main menu once a DualSense is detected", () => {
-    expect(onMain().screen.kind).toBe("main");
+  it("waits for ✕ on the DualSense, not any button", () => {
+    expect(play(onConnect(), padFound).screen).toStrictEqual({
+      kind: "connect",
+      pad: "dualsense",
+    });
 
     expect(
-      play(onConnect(), { pad: "unsupported", type: "pad" }, padFound).screen
-        .kind
-    ).toBe("main");
+      play(onConnect(), padFound, anyButton, press("back"), press("down"))
+        .screen.kind
+    ).toBe("connect");
   });
 
-  it("does not pick an entry with the press that woke the pad", () => {
-    expect(play(onConnect(), padFound, anyButton).screen).toStrictEqual({
-      kind: "main",
-      selected: "duel",
-    });
+  it("goes to the main menu on ✕, the press that woke the pad picking nothing there", () => {
+    expect(
+      play(
+        onConnect(),
+        { pad: "unsupported", type: "pad" },
+        padFound,
+        press("confirm"),
+        anyButton
+      ).screen
+    ).toStrictEqual({ kind: "main", selected: "duel" });
   });
 
   it("reports an unsupported browser and nothing else", () => {
@@ -179,7 +187,9 @@ describe("main menu", () => {
     const unplugged = play(onMain(), press("down"), padLost);
 
     expect(unplugged.screen).toStrictEqual({ kind: "connect", pad: "none" });
-    expect(play(unplugged, padFound).screen.kind).toBe("main");
+    expect(play(unplugged, padFound, press("confirm")).screen.kind).toBe(
+      "main"
+    );
   });
 });
 
@@ -223,7 +233,9 @@ describe("Difficulty select", () => {
       "connect"
     );
 
-    expect(play(unplugged, padFound, anyButton).screen.kind).toBe("main");
+    expect(play(unplugged, padFound, press("confirm")).screen.kind).toBe(
+      "main"
+    );
   });
 
   it("asks for a DualSense if what is left is another pad", () => {
@@ -621,7 +633,9 @@ describe("result", () => {
     const unplugged = play(afterDuel(true), padLost);
 
     expect(unplugged.screen).toStrictEqual({ kind: "connect", pad: "none" });
-    expect(play(unplugged, padFound, anyButton).screen.kind).toBe("main");
+    expect(play(unplugged, padFound, press("confirm")).screen.kind).toBe(
+      "main"
+    );
   });
 });
 
@@ -630,6 +644,7 @@ describe("a whole session", () => {
     const state = play(
       onConnect(),
       padFound,
+      press("confirm"),
       press("confirm"),
       press("down"),
       press("confirm"),
@@ -652,6 +667,7 @@ describe("a whole session", () => {
     const state = play(
       onConnect(),
       padFound,
+      press("confirm"),
       press("down"),
       press("confirm"),
       press("down"),

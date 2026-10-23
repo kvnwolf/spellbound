@@ -195,14 +195,22 @@ describe("a controller coming and going", () => {
     expect(menu.read(undefined, frame)).toStrictEqual([]);
   });
 
-  it("does not count buttons already held when the pad shows up", () => {
+  it("counts the press that wakes the pad, once", () => {
     const menu = createMenuInput(settings);
 
-    expect(menu.read(pad(["cross"]), frame)).toStrictEqual([]);
-    expect(menu.read(pad(["cross"]), frame)).toStrictEqual([]);
-    expect(menu.read(pad(), frame)).toStrictEqual([]);
     expect(menu.read(pad(["cross"]), frame)).toStrictEqual([
       input("confirm"),
+      press,
+    ]);
+    expect(menu.read(pad(["cross"]), frame)).toStrictEqual([]);
+    expect(menu.read(pad(), frame)).toStrictEqual([]);
+  });
+
+  it("steps for a D-pad press that wakes the pad", () => {
+    const menu = createMenuInput(settings);
+
+    expect(menu.read(pad(["down"]), frame)).toStrictEqual([
+      input("down"),
       press,
     ]);
   });
@@ -222,6 +230,9 @@ describe("a controller coming and going", () => {
     menu.read(pad(["cross"]), frame);
     menu.read(undefined, frame);
 
-    expect(menu.read(pad(["cross"]), frame)).toStrictEqual([]);
+    expect(menu.read(pad(["cross"]), frame)).toStrictEqual([
+      input("confirm"),
+      press,
+    ]);
   });
 });

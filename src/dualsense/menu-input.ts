@@ -23,8 +23,9 @@ export type MenuEvent = Extract<ScreenEvent, { type: "input" | "press" }>;
 export interface MenuInputReader {
   /**
    * This frame's menu events: inputs first, then one `press` if any button
-   * went down. A DualSense that was absent or has just appeared reports
-   * nothing for what it is already holding.
+   * went down. A DualSense that has just appeared counts the press that woke
+   * it (the browser only shows a pad once a button goes down), but not a
+   * stick it finds already tilted.
    */
   readonly read: (
     pad: DualSenseSnapshot | undefined,
@@ -116,12 +117,13 @@ export const createMenuInput = (settings: MenuSettings): MenuInputReader => {
       const heading = directionOf(held);
 
       if (!before) {
-        // Just appeared: whatever is held now was held before we looked.
-        before = held;
-        direction = heading;
-        untilRepeat = Number.POSITIVE_INFINITY;
+        before = new Set();
 
-        return [];
+        // A stick already tilted was tilted before we looked: no step.
+        if (!held.has("up") && !held.has("down")) {
+          direction = heading;
+          untilRepeat = Number.POSITIVE_INFINITY;
+        }
       }
 
       const last = before;

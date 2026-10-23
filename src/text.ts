@@ -15,7 +15,7 @@ export const text = {
     /** The button glyph. */
     trigger: "△",
   },
-  connectDualSense: "Conecta tu DualSense y pulsa cualquier botón",
+  connectDualSense: "Conecta tu DualSense y pulsa ✕",
   difficulty: {
     duelista: "Duelista",
     heading: "Elige tu dificultad",

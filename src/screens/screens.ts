@@ -81,8 +81,12 @@ export type Screen =
    * meanwhile.
    */
   | { readonly kind: "title"; readonly pad: PadKind }
-  /** Started, but no DualSense yet: asks for one. `pad` says whether nothing or some other pad is plugged in. */
-  | { readonly kind: "connect"; readonly pad: Exclude<PadKind, "dualsense"> }
+  /**
+   * Started without a DualSense the game can see (no WebHID grant): asks for
+   * one and for ✕ on it. `pad` is what is plugged in: nothing, some other
+   * pad, or a DualSense still waiting for its ✕.
+   */
+  | { readonly kind: "connect"; readonly pad: PadKind }
   /** The root: Duelo, Práctica, Entrenamiento and Controles. */
   | { readonly kind: "main"; readonly selected: MainMenuOption }
   /** The Difficulty select, for a Duel or for a Practice against Rival real. */
@@ -230,13 +234,9 @@ const onPad = (state: ScreenState, pad: PadKind): ScreenState => {
     return { ...state, screen: { ...screen, pad } };
   }
 
-  // A DualSense showing up is all it takes to reach the main menu: the press
-  // that woke it is not read as a menu input (the menu input reader skips
-  // whatever a pad that has just appeared is holding).
+  // Only ✕ on the DualSense leaves the connect prompt (onInput).
   if (screen.kind === "connect") {
-    return connected
-      ? toMain(state, "duel")
-      : { ...state, screen: { ...screen, pad } };
+    return { ...state, screen: { ...screen, pad } };
   }
 
   if (screen.kind === "duel" || screen.kind === "pause") {
@@ -379,6 +379,12 @@ const onResultInput = (
 
 const onInput = (state: ScreenState, input: MenuInput): ScreenState => {
   const { screen } = state;
+
+  if (screen.kind === "connect") {
+    return input === "confirm" && screen.pad === "dualsense"
+      ? toMain(state, "duel")
+      : state;
+  }
 
   if (screen.kind === "main") {
     return onMainInput(state, screen, input);
