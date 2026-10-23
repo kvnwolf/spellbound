@@ -185,6 +185,8 @@ export const createDuelistView = (
   // which turns on its own for the Dodge roll.
   const object = new Group();
   const turn = new Group();
+  // Yaw first (the Dodge's turn), then the lean in the turned frame.
+  turn.rotation.order = "YXZ";
   turn.add(rig.model);
   object.add(turn);
 
@@ -280,6 +282,15 @@ export const createDuelistView = (
   let stride = 1;
   /** How fast the feet rise (+) or fall (-), m/s. */
   let climb = 0;
+  /** The ground velocity, smoothed (m/s, world), and how it changes (m/s²). */
+  const flow = { ax: 0, az: 0, vx: 0, vz: 0 };
+  /** The body's tilt into that change: forward (+) and to its left (+), radians. */
+  const lean = { forward: 0, left: 0 };
+  /** How fast the facing turns (radians a second, left +), smoothed. */
+  let turnRate = 0;
+  let lastYaw: number | null = null;
+  /** The legs stepping round as the body turns on the spot, 0 to 1. */
+  let pivot = 0;
 
   // Eased state weights.
   const weight = {
@@ -457,6 +468,81 @@ export const createDuelistView = (
     return Math.min(Math.max(wanted, gait.stride[0]), gait.stride[1]);
   };
 
+  /**
+   * How the body feels its motion: velocity and its change, smoothed so
+   * frame jitter does not shake it, tilt into that change (speeding up
+   * leans forward, braking back, turning into the turn: `gait.lean`), and
+   * how fast the facing turns; turning on the spot steps the legs round.
+   */
+  const feelMotion = (dx: number, dz: number, yaw: number, seconds: number) => {
+    if (seconds <= 0) {
+      return;
+    }
+
+    const { lean: tilt } = gait;
+    const follow = 1 - Math.exp(-tilt.velocitySharpness * seconds);
+    const vx = flow.vx + (dx / seconds - flow.vx) * follow;
+    const vz = flow.vz + (dz / seconds - flow.vz) * follow;
+    const settle = 1 - Math.exp(-tilt.accelerationSharpness * seconds);
+    flow.ax += ((vx - flow.vx) / seconds - flow.ax) * settle;
+    flow.az += ((vz - flow.vz) / seconds - flow.az) * settle;
+    flow.vx = vx;
+    flow.vz = vz;
+
+    // In the body's frame: +z ahead, +x to its left.
+    const ahead = flow.ax * Math.sin(yaw) + flow.az * Math.cos(yaw);
+    const left = flow.ax * Math.cos(yaw) - flow.az * Math.sin(yaw);
+
+    const angle = (acceleration: number, most: number) =>
+      Math.max(
+        -most,
+        Math.min(most, Math.atan(acceleration / 9.81) * tilt.share)
+      );
+
+    lean.forward = approach(
+      lean.forward,
+      angle(ahead, tilt.maxForward),
+      tilt.sharpness,
+      seconds
+    );
+
+    lean.left = approach(
+      lean.left,
+      angle(left, tilt.maxSide),
+      tilt.sharpness,
+      seconds
+    );
+
+    const turned = lastYaw === null ? 0 : wrap(yaw - lastYaw);
+    lastYaw = yaw;
+    turnRate = approach(
+      turnRate,
+      turned / seconds,
+      tilt.velocitySharpness,
+      seconds
+    );
+
+    // Turning on the spot: the legs step round, a stride for every
+    // `pivot.radiansPerStride` turned.
+    const spin = Math.abs(turnRate);
+    pivot = approach(
+      pivot,
+      walking
+        ? 0
+        : Math.min(Math.max((spin - gait.pivot.from) / gait.pivot.full, 0), 1) *
+            gait.pivot.weight,
+      gait.pivot.sharpness,
+      seconds
+    );
+
+    if (pivot > 1e-3 && !walking) {
+      phase = loopTime(
+        phase + Math.abs(turned) / gait.pivot.radiansPerStride / 2,
+        1
+      );
+    }
+  };
+
   /** Measures the body's motion from the samples and advances the gait by the ground covered. */
   const measure = (sample: DuelistSample, seconds: number) => {
     const { position, elevation } = sample;
@@ -480,6 +566,8 @@ export const createDuelistView = (
       dx = 0;
       dz = 0;
     }
+
+    feelMotion(dx, dz, yaw, seconds);
 
     const cos = Math.cos(yaw);
     const sin = Math.sin(yaw);
@@ -624,11 +712,23 @@ export const createDuelistView = (
     for (const layer of [upper, lower]) {
       const calm = layer === upper ? gait.calm * gaitWeight : 0;
 
+      const stepping = layer === lower ? pivot * (1 - gaitWeight) : 0;
+
       lay(
         layer,
         "Idle_Loop",
         loopTime(clock, durationOf("Idle_Loop")),
-        1 - gaitWeight + calm
+        1 - gaitWeight + calm - stepping
+      );
+
+      lay(
+        layer,
+        "Walk_Loop",
+        loopTime(
+          (phase + assets.strides.Walk_Loop.offset) * durationOf("Walk_Loop"),
+          durationOf("Walk_Loop")
+        ),
+        stepping
       );
 
       for (const [index, clip] of locomotionClips.entries()) {
@@ -806,13 +906,11 @@ export const createDuelistView = (
   const directionToWorld = (local: Vector3, out: Vector3) =>
     out.copy(local).transformDirection(object.matrixWorld);
 
-  /** The share of the lower body the locomotion clips hold this frame. */
-  const locomotionShare = () =>
+  /** The share of the lower body the running clips (jog, sprint) hold this frame. */
+  const runningShare = () =>
     Math.min(
-      locomotionClips.reduce(
-        (sum, clip) => sum + (lower.weights.get(clip) ?? 0),
-        0
-      ),
+      (lower.weights.get("Jog_Fwd_Loop") ?? 0) +
+        (lower.weights.get("Sprint_Loop") ?? 0),
       1
     );
 
@@ -1087,6 +1185,34 @@ export const createDuelistView = (
     }
   };
 
+  /**
+   * Lowered, the Wand hangs relaxed in the hand, pointing `wand.low` (down
+   * and ahead, in the body's frame) however the arm swings: the clips'
+   * swing would wave it up and down like a sabre at every step.
+   */
+  const holdWandLow = (sample: DuelistSample) => {
+    const share = (1 - weight.lock) * (1 - weight.disarmed);
+
+    if (share < 1e-3 || sample.knockedOut) {
+      return;
+    }
+
+    const [, hand] = joints.hands;
+    hand.updateWorldMatrix(true, true);
+    rig.wand.getWorldQuaternion(handRotation);
+    const pointingNow = up.clone().applyQuaternion(handRotation);
+    const wanted = directionToWorld(vector(wand.low).normalize(), scratch);
+    const axis = pointingNow.clone().cross(wanted);
+    const length = axis.length();
+
+    if (length < 1e-5) {
+      return;
+    }
+
+    const angle = Math.atan2(length, pointingNow.dot(wanted));
+    turnAbout(hand, axis.divideScalar(length), angle * share);
+  };
+
   /** The right arm holds the Wand tip on its mark, or reaches for the loose Wand. */
   const poseWandArm = (sample: DuelistSample) => {
     const [, hand] = joints.hands;
@@ -1108,6 +1234,8 @@ export const createDuelistView = (
         .addScaledVector(wandDirection, -wand.length);
       reach(1, handTarget, worldHand, weight.lock);
     }
+
+    holdWandLow(sample);
 
     if (sample.looseWand && weight.disarmed > 1e-3) {
       // Disarmed: the empty hand reaches toward the loose Wand, grasping.
@@ -1186,9 +1314,16 @@ export const createDuelistView = (
       return;
     }
 
+    // The head leads a turn, looking into it before the body comes round.
+    const lead = Math.max(
+      -gait.headLead.max,
+      Math.min(gait.headLead.max, turnRate * gait.headLead.seconds)
+    );
+
     const wanted =
       object.rotation.y +
-      wrap(wandYaw(sample) - object.rotation.y) * weight.lock;
+      wrap(wandYaw(sample) - object.rotation.y) * weight.lock +
+      lead * (1 - weight.lock);
 
     joints.head.updateWorldMatrix(true, false);
     const e = joints.head.matrixWorld.elements;
@@ -1223,9 +1358,9 @@ export const createDuelistView = (
       }
     }
 
-    // The run clips stoop: the spine straightens up by `upright` about the
-    // hips' own side-to-side axis.
-    const upright = gait.upright * locomotionShare();
+    // The run clips stoop (the walk does not): the spine straightens up by
+    // `upright` about the hips' own side-to-side axis.
+    const upright = gait.upright * runningShare();
 
     if (upright > 1e-4) {
       directionToWorld(leftAxis.set(1, 0, 0), leftAxis).applyAxisAngle(
@@ -1252,6 +1387,13 @@ export const createDuelistView = (
     }
 
     lookAhead(sample);
+
+    // The head stays level as the body leans: the eyes keep the horizon.
+    const level = gait.lean.headLevel;
+    directionToWorld(leftAxis.set(1, 0, 0), leftAxis);
+    turnAbout(joints.head, leftAxis, -lean.forward * level);
+    directionToWorld(leftAxis.set(0, 0, 1), leftAxis);
+    turnAbout(joints.head, leftAxis, lean.left * level);
 
     directionToWorld(leftAxis.set(1, 0, 0), leftAxis);
     const pitch = Math.max(-1, Math.min(1, sample.aim.pitch));
@@ -1282,9 +1424,13 @@ export const createDuelistView = (
     const rolling = stack(sample);
     play();
 
-    // The body turns toward where the Dodge goes while it rolls.
+    // The body turns toward where the Dodge goes while it rolls, and leans
+    // into how its motion changes (from the feet, on the ground only).
     const facingYaw = Math.atan2(sample.facing.x, sample.facing.z);
+    const grounded = (1 - rolling) * (1 - weight.air) * (1 - weight.knockback);
     turn.rotation.y = wrap(rollYaw - facingYaw) * rolling;
+    turn.rotation.x = lean.forward * grounded;
+    turn.rotation.z = -lean.left * grounded;
     object.updateMatrixWorld(true);
 
     turnBody(sample);

@@ -265,12 +265,12 @@ const walkBack = intent({ move: { x: 0, y: -1 } });
  * The hero walks toward the camera until they face it, their back to the
  * rival, and stops; the camera still looks down the Arena at the rival.
  */
-const faceTheCamera = (duel: Duel) => hold(duel, walkBack, 0.5);
+const faceTheCamera = (duel: Duel) => hold(duel, walkBack, 0.8);
 
 const { facing: facingTuning } = tuning;
 
 describe("Facing while free-aiming", () => {
-  it("turns toward where it walks at the tuned turn rate, the camera staying put", () => {
+  it("eases round toward where it walks, the camera staying put", () => {
     const duel = fightLookingDownTheArena();
     const before = duelist(duel, "hero");
 
@@ -279,9 +279,13 @@ describe("Facing while free-aiming", () => {
     faceTheCamera(duel);
     const turned = duelist(duel, "hero");
 
-    expect(
-      Math.abs(wrapAngle(yawOf(firstTick.facing) - yawOf(before.facing)))
-    ).toBeCloseTo(facingTuning.moveTurnRate / tuning.tickRate);
+    // The first tick starts the turn gently rather than at full speed.
+    const firstTurn = Math.abs(
+      wrapAngle(yawOf(firstTick.facing) - yawOf(before.facing))
+    );
+
+    expect(firstTurn).toBeGreaterThan(0);
+    expect(firstTurn).toBeLessThan(0.1);
     // Walking toward the camera: facing it, which shows the face.
     expect(angleOff(turned.facing, { x: 0, z: 1 })).toBeCloseTo(0);
     expect(turned.aim.yaw).toBeCloseTo(before.aim.yaw);
@@ -291,7 +295,7 @@ describe("Facing while free-aiming", () => {
   it("turns toward a sideways walk, facing where it goes", () => {
     const duel = fightLookingDownTheArena();
 
-    hold(duel, intent({ move: { x: 1, y: 0 } }), 0.5);
+    hold(duel, intent({ move: { x: 1, y: 0 } }), 0.8);
 
     expect(
       angleOff(duelist(duel, "hero").facing, rightOf(aimForward(duel)))
@@ -366,7 +370,7 @@ describe("Facing while free-aiming", () => {
       angleOff(duelist(duel, "hero").facing, aimForward(duel))
     ).toBeCloseTo(0);
 
-    hold(duel, strafe, 0.1 + Math.PI / 2 / facingTuning.moveTurnRate + 0.1);
+    hold(duel, strafe, 0.1 + 8 * tuning.movement.turnHalflife);
     expect(
       angleOff(duelist(duel, "hero").facing, rightOf(aimForward(duel)))
     ).toBeCloseTo(0);

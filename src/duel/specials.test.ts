@@ -499,7 +499,9 @@ describe("Petrificus Totalus", () => {
     run(duel, secondsToTicks(petrificus.petrifiedSeconds) + 1);
 
     const thawed = duelist(duel, "rival");
-    run(duel, secondsToTicks(0.3), { rival: intent({ move: { x: 1, y: 0 } }) });
+    run(duel, secondsToTicks(0.45), {
+      rival: intent({ move: { x: 1, y: 0 } }),
+    });
 
     const { position } = duelist(duel, "rival");
 

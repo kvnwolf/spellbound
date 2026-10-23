@@ -907,7 +907,16 @@ export const tuning = {
        * higher still and the spine straightens `upright` radians (the run
        * clips crouch and stoop); the spine turns the chest back at most
        * `counterTwist` (all the way while the Wand is up) and the head looks
-       * the rest, at most `headTurn` off the chest. There is no backwards
+       * the rest, at most `headTurn` off the chest, leading a turn by
+       * `headLead.seconds` of it (at most `headLead.max`). The body leans
+       * into how its motion changes, `lean.share` of the physical angle
+       * (atan of acceleration over g, at most `lean.maxForward` speeding up or
+       * braking and `lean.maxSide` into a turn), the head keeping
+       * `lean.headLevel` of it level, from velocity and
+       * acceleration smoothed at their sharpnesses; turning on the spot past
+       * `pivot.from` rad/s, the legs step round (fully at `from + full`, up
+       * to `pivot.weight` of the walk, a stride per `radiansPerStride`).
+       * There is no backwards
        * gait: `maxTwist` of π lets the legs run any way, turning as an angle.
        */
       gait: {
@@ -923,11 +932,28 @@ export const tuning = {
           [5.6, 6.8],
         ],
         gaitSharpness: 8,
+        headLead: { max: 0.45, seconds: 0.18 },
         headTurn: 1.1,
+        lean: {
+          accelerationSharpness: 10,
+          headLevel: 0.7,
+          maxForward: 0.14,
+          maxSide: 0.21,
+          share: 0.4,
+          sharpness: 9,
+          velocitySharpness: 14,
+        },
         lift: 0.06,
         maxRaise: 0.12,
         maxTwist: Math.PI,
         minSpeed: 0.3,
+        pivot: {
+          from: 0.8,
+          full: 3,
+          radiansPerStride: 1.2,
+          sharpness: 12,
+          weight: 0.7,
+        },
         raisedTwist: 1.1,
         speedSharpness: 10,
         stride: [0.4, 1.3],
@@ -1039,6 +1065,8 @@ export const tuning = {
       /** How long the Wand is, from the grip to the tip. */
       length: 0.4,
       lockSharpness: 14,
+      /** Lowered, the way the Wand points in the body's frame (+z ahead, +x left, +y up): relaxed, down and ahead. */
+      low: [-0.1, -0.5, 0.85],
       lowerSharpness: 12,
       rest: [0.2, 0.08, 1],
       shield: [0.1, 0.42, 0.9],
@@ -1086,16 +1114,16 @@ export const tuning = {
 
   /**
    * Which way a Duelist faces, Locked On or not (the lock holds the camera
-   * and the aim, not the body). Walking turns them toward where they walk,
-   * at `moveTurnRate` radians per second, so running toward the camera shows
-   * their face; standing still keeps the facing, so the camera can orbit
-   * round them, Locked On or not.
+   * and the aim, not the body). Walking turns them toward where they walk
+   * (on a spring: `movement.turnHalflife`), so running toward the camera
+   * shows their face; standing still keeps the facing, so the camera can
+   * orbit round them.
    * Casting, Charging or raising the Shield turns them to the aim fast
    * enough to finish even a half turn within `aimTurnSeconds`; they keep
    * facing the aim while Charging or Shielding and for `aimHoldSeconds`
    * after a cast, so a burst of casts on the move never swings them about.
    */
-  facing: { aimHoldSeconds: 0.5, aimTurnSeconds: 0.1, moveTurnRate: 12 },
+  facing: { aimHoldSeconds: 0.5, aimTurnSeconds: 0.1 },
 
   /**
    * Focus: the three-segment meter a Duelist builds through skilful play and
@@ -1477,13 +1505,14 @@ export const tuning = {
   },
 
   /**
-   * How a walking Duelist's velocity follows the stick: it closes
-   * `acceleration` of the gap to the stick's velocity per second (an
-   * exponential ease: about 95% in 3/acceleration seconds), `deceleration`
-   * when slowing or turning back, so a body never starts, stops or reverses
-   * in an instant.
+   * How a walking Duelist's velocity follows the stick: a critically damped
+   * spring closes half the gap every `speedUpHalflife` seconds (90% in
+   * about 3.3 halflives), `slowDownHalflife` when slowing or turning back,
+   * so a body never starts, stops or reverses in an instant, nor jolts as
+   * it begins to. A walk turns the facing on the same kind of spring,
+   * `turnHalflife` (casting still turns to the aim at once: see `facing`).
    */
-  movement: { acceleration: 9, deceleration: 12 },
+  movement: { slowDownHalflife: 0.07, speedUpHalflife: 0.1, turnHalflife: 0.1 },
 
   /**
    * Petrificus Totalus, a Special Spell: the Duelist it hits is Petrified,

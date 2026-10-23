@@ -626,6 +626,57 @@ const walkHeading = (yaw: number, move: Vec2): GroundPoint | undefined => {
   );
 };
 
+/**
+ * One step of a critically damped spring (Holden's, exact for any `step`)
+ * drawing `value`, moving at `rate`, toward `goal` with half its gap closed
+ * every `halflife` seconds: no overshoot, and no jolt in `rate` when the
+ * goal jumps. Returns the new value and rate, and how far it travelled.
+ */
+const springStep = (
+  value: number,
+  rate: number,
+  goal: number,
+  halflife: number,
+  step: number
+) => {
+  const damping = (2 * Math.LN2) / halflife;
+  const gap = value - goal;
+  const drift = rate + gap * damping;
+  const decay = Math.exp(-damping * step);
+
+  return {
+    rate: decay * (rate - drift * damping * step),
+    value: decay * (gap + drift * step) + goal,
+  };
+};
+
+/**
+ * The same spring on a rate itself (a velocity drawn toward `goal`, which
+ * changes at `change`): the new rate, its change, and the distance covered.
+ */
+const rateSpring = (
+  rate: number,
+  change: number,
+  goal: number,
+  halflife: number,
+  step: number
+) => {
+  const damping = (2 * Math.LN2) / halflife;
+  const gap = rate - goal;
+  const drift = change + gap * damping;
+  const decay = Math.exp(-damping * step);
+
+  return {
+    change: decay * (change - drift * damping * step),
+    covered:
+      decay * (-drift / (damping * damping) + (-gap - drift * step) / damping) +
+      drift / (damping * damping) +
+      gap / damping +
+      goal * step,
+    rate: decay * (gap + drift * step) + goal,
+  };
+};
+
 /** How much of `vector` lies along the unit ground vector `axis`. */
 const alongAxis = (vector: GroundPoint, axis: GroundPoint) =>
   vector.x * axis.x + vector.z * axis.z;
@@ -687,6 +738,16 @@ const chestOf = (duelist: DuelistState, tuning: Tuning): Point3 => ({
  * whole ticks so cadences are exact instead of drifting with float sums.
  */
 interface Bookkeeping {
+  /** How the walking velocity is changing, m/s² (world): the velocity spring's other half. */
+  acceleration: GroundPoint;
+  /**
+   * Where last tick's walk meant to end, and the spring's velocity there
+   * (the tick's own average lags it): when the Duelist did end there,
+   * nothing having stopped or pushed them, the spring carries on from it.
+   */
+  walk: { readonly to: GroundPoint; readonly rate: GroundPoint } | undefined;
+  /** How fast a walk is turning the facing, radians a second: the facing spring's other half. */
+  turnSpeed: number;
   /** The Light Spell button was down last tick: casting happens on the press. */
   held: boolean;
   /** A press made during the previous cast's recovery, cast as soon as it ends. */
@@ -771,6 +832,7 @@ type Release =
   | { readonly kind: SpecialSpellKind };
 
 const freshBookkeeping = (): Bookkeeping => ({
+  acceleration: { x: 0, z: 0 },
   burnTicks: 0,
   buttons: { dodge: false, jump: false, shield: false, sprint: false },
   chain: 0,
@@ -795,7 +857,9 @@ const freshBookkeeping = (): Bookkeeping => ({
   sprintHeld: false,
   staggerTicks: 0,
   ticksSinceCast: Number.POSITIVE_INFINITY,
+  turnSpeed: 0,
   verticalSpeed: 0,
+  walk: undefined,
   wand: undefined,
 });
 
@@ -922,10 +986,9 @@ export const createDuel = (config: DuelConfig): Duel => {
 
   const { eye } = tuning.aim;
 
-  // Facing turns per tick: fast enough to the aim to finish a half turn in
-  // `aimTurnSeconds`, at `moveTurnRate` toward a walk.
+  // Facing turns to the aim fast enough to finish a half turn in
+  // `aimTurnSeconds` (a walk turns it on a spring: see `turnFacing`).
   const aimTurn = (Math.PI / tuning.facing.aimTurnSeconds) * tickSeconds;
-  const walkTurn = tuning.facing.moveTurnRate * tickSeconds;
   const aimHoldTicks = ticksOf(tuning.facing.aimHoldSeconds);
 
   /**
@@ -937,23 +1000,48 @@ export const createDuel = (config: DuelConfig): Duel => {
    */
   const turnFacing = (
     self: DuelistState,
+    book: Bookkeeping,
     aiming: boolean,
     heading: GroundPoint | undefined
   ): GroundPoint => {
     if (aiming) {
+      book.turnSpeed = 0;
+
       return turnToward(self.facing, forwardOf(self.aim.yaw), aimTurn);
     }
 
-    return heading ? turnToward(self.facing, heading, walkTurn) : self.facing;
+    if (!heading) {
+      book.turnSpeed = 0;
+
+      return self.facing;
+    }
+
+    // A walk turns the body on a spring: it eases into the turn and out of
+    // it, however far round it goes.
+    const from = yawOf(self.facing);
+
+    const turned = springStep(
+      0,
+      book.turnSpeed,
+      wrapAngle(yawOf(heading) - from),
+      tuning.movement.turnHalflife,
+      tickSeconds
+    );
+
+    book.turnSpeed = turned.rate;
+
+    return forwardOf(from + turned.value);
   };
 
   /**
-   * `velocity` (m/s) turned by how far round `target` the Duelist moved
-   * with it last tick, so it keeps its bearing to the Target.
+   * `vector` (a velocity or its change) turned by how far round `target`
+   * the Duelist moved with `velocity` last tick, so it keeps its bearing
+   * to the Target.
    */
   const orbitTurned = (
-    velocity: GroundPoint,
+    vector: GroundPoint,
     position: GroundPoint,
+    velocity: GroundPoint,
     target: GroundPoint
   ): GroundPoint => {
     const before = {
@@ -970,21 +1058,35 @@ export const createDuel = (config: DuelConfig): Duel => {
 
     // Turned the way `forwardOf` turns as the yaw grows.
     return {
-      x: velocity.x * cos - velocity.z * sin,
-      z: velocity.z * cos + velocity.x * sin,
+      x: vector.x * cos - vector.z * sin,
+      z: vector.z * cos + vector.x * sin,
     };
+  };
+
+  /** Notes where a walk means to end and the spring's velocity there, and returns the spot. */
+  const walkTo = (
+    book: Bookkeeping,
+    to: GroundPoint,
+    rate: GroundPoint
+  ): GroundPoint => {
+    book.walk = { rate, to };
+
+    return to;
   };
 
   /**
    * Where a walk toward `wanted` (this tick's step at the stick's full
-   * pace) actually takes the Duelist: their velocity eases toward that
-   * step's at `tuning.movement.acceleration` per second, or at
-   * `deceleration` when slowing, from what they last moved (no faster
-   * than a run). Locked On, the eased step is taken round the Target, so
-   * strafing keeps orbiting at a constant distance.
+   * pace) actually takes the Duelist: their velocity is drawn toward that
+   * step's by a critically damped spring (`tuning.movement`: half the gap
+   * closed every `speedUpHalflife` seconds, `slowDownHalflife` when
+   * slowing or turning back), from what they last moved (no faster than a
+   * run), so it never jolts. Locked On, the spring works in the Target's
+   * frame, closing and circling, so strafing keeps orbiting at a constant
+   * distance.
    */
   const easeStep = (
     self: DuelistState,
+    book: Bookkeeping,
     wanted: GroundPoint,
     swift: number,
     target: GroundPoint | undefined
@@ -992,11 +1094,21 @@ export const createDuel = (config: DuelConfig): Duel => {
     const top =
       tuning.duelist.walkSpeed * tuning.defence.sprint.speedScale * swift;
 
-    // Locked On, last tick's velocity turns with the Duelist round the
-    // Target (an orbit carries no outward drift).
+    // The spring's own velocity if last tick's walk went as meant, else
+    // what the Duelist actually moved. Locked On, it (and its change) turn
+    // with the Duelist round the Target.
+    const meant =
+      book.walk && distanceBetween(book.walk.to, self.position) < 1e-9
+        ? book.walk.rate
+        : self.velocity;
+
     const carried = target
-      ? orbitTurned(self.velocity, self.position, target)
-      : self.velocity;
+      ? orbitTurned(meant, self.position, self.velocity, target)
+      : meant;
+
+    const changing = target
+      ? orbitTurned(book.acceleration, self.position, self.velocity, target)
+      : book.acceleration;
 
     // As a stick-style vector: x across, y along z.
     const capped = clampLength({ x: carried.x, y: carried.z }, top);
@@ -1007,24 +1119,26 @@ export const createDuel = (config: DuelConfig): Duel => {
       z: (wanted.z - self.position.z) / tickSeconds,
     };
 
-    const speeding = Math.hypot(asked.x, asked.z) >= Math.hypot(now.x, now.z);
+    const halflife =
+      Math.hypot(asked.x, asked.z) >= Math.hypot(now.x, now.z)
+        ? tuning.movement.speedUpHalflife
+        : tuning.movement.slowDownHalflife;
 
-    const share =
-      1 -
-      Math.exp(
-        -(speeding
-          ? tuning.movement.acceleration
-          : tuning.movement.deceleration) * tickSeconds
-      );
+    const spring = (rate: number, change: number, goal: number) =>
+      rateSpring(rate, change, goal, halflife, tickSeconds);
 
-    const ease = (from: number, to: number) => from + (to - from) * share;
     const distance = target ? distanceBetween(self.position, target) : 0;
 
     if (!target || distance < 1e-6) {
-      return {
-        x: self.position.x + ease(now.x, asked.x) * tickSeconds,
-        z: self.position.z + ease(now.z, asked.z) * tickSeconds,
-      };
+      const x = spring(now.x, changing.x, asked.x);
+      const z = spring(now.z, changing.z, asked.z);
+      book.acceleration = { x: x.change, z: z.change };
+
+      return walkTo(
+        book,
+        { x: self.position.x + x.covered, z: self.position.z + z.covered },
+        { x: x.rate, z: z.rate }
+      );
     }
 
     // Round the Target, in its frame: toward it shortens the distance (by
@@ -1047,24 +1161,39 @@ export const createDuel = (config: DuelConfig): Duel => {
       top
     );
 
-    const closer =
-      ease(
-        closing,
-        (distance - distanceBetween(wanted, target)) / tickSeconds
-      ) * tickSeconds;
+    const closer = spring(
+      closing,
+      alongAxis(changing, toward),
+      (distance - distanceBetween(wanted, target)) / tickSeconds
+    );
 
-    const sideways =
-      ease(alongAxis(now, across), alongAxis(asked, across)) * tickSeconds;
+    const circling = spring(
+      alongAxis(now, across),
+      alongAxis(changing, across),
+      alongAxis(asked, across)
+    );
 
-    const reach = Math.max(distance - closer, 0);
-    const offsetX = self.position.x + across.x * sideways - target.x;
-    const offsetZ = self.position.z + across.z * sideways - target.z;
+    book.acceleration = {
+      x: toward.x * closer.change + across.x * circling.change,
+      z: toward.z * closer.change + across.z * circling.change,
+    };
+
+    const reach = Math.max(distance - closer.covered, 0);
+    const offsetX = self.position.x + across.x * circling.covered - target.x;
+    const offsetZ = self.position.z + across.z * circling.covered - target.z;
     const offset = Math.hypot(offsetX, offsetZ);
 
-    return {
-      x: target.x + (offsetX / offset) * reach,
-      z: target.z + (offsetZ / offset) * reach,
-    };
+    return walkTo(
+      book,
+      {
+        x: target.x + (offsetX / offset) * reach,
+        z: target.z + (offsetZ / offset) * reach,
+      },
+      {
+        x: toward.x * closer.rate + across.x * circling.rate,
+        z: toward.z * closer.rate + across.z * circling.rate,
+      }
+    );
   };
 
   /** Still facing the aim after a cast: a burst on the move never swings the Duelist about. */
@@ -3219,13 +3348,20 @@ export const createDuel = (config: DuelConfig): Duel => {
       move.y * speed
     );
 
-    const wanted = easeStep(self, stepTo, swiftScale(book), target?.position);
+    const wanted = easeStep(
+      self,
+      book,
+      stepTo,
+      swiftScale(book),
+      target?.position
+    );
 
     return {
       ...defended,
       chargeSeconds: 0,
       facing: turnFacing(
         self,
+        book,
         castRecently(book),
         walkHeading(self.aim.yaw, move)
       ),
@@ -3253,6 +3389,7 @@ export const createDuel = (config: DuelConfig): Duel => {
   ): GroundPoint =>
     turnFacing(
       self,
+      book,
       release !== undefined ||
         book.chargeTicks > 0 ||
         guard.state.shielding ||
@@ -3402,6 +3539,7 @@ export const createDuel = (config: DuelConfig): Duel => {
           }
         : easeStep(
             self,
+            book,
             walk(
               self.position,
               self.aim.yaw,
@@ -3434,6 +3572,10 @@ export const createDuel = (config: DuelConfig): Duel => {
         before.dodgeSeconds > 0 ||
         each.knockbackSeconds > 0 ||
         before.knockbackSeconds > 0;
+
+      if (thrown) {
+        books(each.id).acceleration = { x: 0, z: 0 };
+      }
 
       return {
         ...each,
