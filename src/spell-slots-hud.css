@@ -1,32 +1,33 @@
 /*
- * The Spell Slots, bottom-right: a diamond laid out like the face buttons,
- * with the three Focus orbs beside it. Same restrained style as the rest of
- * the HUD: gold on translucent ink.
+ * The Spell Slots, bottom-right: the compact diamond (slot-diamond.css)
+ * with the three Focus orbs beside it. Each Special Spell's glyph is a thin
+ * line in that Spell's colour.
  */
 .ss-panel {
   position: absolute;
   inset: auto clamp(1rem, 3vw, 1.5rem) clamp(1rem, 4vh, 2rem) auto;
   display: flex;
-  gap: 0.9rem;
+  gap: 0.75rem;
   align-items: center;
+  /* Room for the right slot's name while R2 spreads the diamond. */
+  padding-right: 1rem;
 }
 
 /* Focus: three orbs stacked bottom to top, filling in turn. */
 .ss-focus {
   display: flex;
   flex-direction: column-reverse;
-  gap: 0.45rem;
+  gap: 0.35rem;
 }
 
 .ss-orb {
   position: relative;
-  width: 1.05rem;
-  height: 1.05rem;
+  width: 0.7rem;
+  height: 0.7rem;
   overflow: hidden;
-  border: 1px solid rgb(216 180 106 / 65%);
+  border: 1px solid rgb(216 180 106 / 55%);
   border-radius: 50%;
   background: var(--ink);
-  box-shadow: 0 0 6px rgb(0 0 0 / 50%);
 }
 
 /* The orb fills from the bottom up. */
@@ -34,7 +35,7 @@
   content: "";
   position: absolute;
   inset: 0;
-  background: radial-gradient(circle at 40% 35%, #f1e9ff, #8d6fe0 70%);
+  background: radial-gradient(circle at 40% 35%, #f6efff, #9a80e6 72%);
   transform: scaleY(var(--fill, 0));
   transform-origin: bottom;
   transition: transform 120ms ease-out;
@@ -43,81 +44,19 @@
 .ss-orb[data-full="true"] {
   border-color: #e9c983;
   box-shadow:
-    0 0 10px rgb(201 184 255 / 80%),
-    0 0 4px rgb(233 201 131 / 80%);
+    0 0 8px rgb(201 184 255 / 70%),
+    0 0 3px rgb(233 201 131 / 70%);
 }
 
-/* The diamond: △ top, □ left, ○ right, ✕ bottom. */
-.ss-diamond {
-  display: grid;
-  grid-template-areas:
-    ". triangle ."
-    "square . circle"
-    ". cross .";
-  grid-template-columns: repeat(3, 3.4rem);
-  grid-template-rows: repeat(3, 3.4rem);
-  place-items: center;
-  /* Room for the side slots' names, and growing from the corner it sits in. */
-  padding: 0 1.2rem 1.4rem;
-  transform-origin: right bottom;
-  opacity: 0.72;
-  transition:
-    opacity 120ms ease-out,
-    scale 120ms ease-out;
-}
-
-/* R2 held: the diamond comes forward, ready for a face button. */
-.ss-diamond[data-held="true"] {
-  opacity: 1;
-  scale: 1.08;
-}
-
-.ss-slot {
-  position: relative;
-  display: grid;
-  justify-items: center;
-}
-
-.ss-slot-triangle {
-  grid-area: triangle;
-}
-
-.ss-slot-square {
-  grid-area: square;
-}
-
-.ss-slot-circle {
-  grid-area: circle;
-}
-
-.ss-slot-cross {
-  grid-area: cross;
-}
-
-.ss-badge {
-  position: relative;
-  display: grid;
-  place-items: center;
-  width: 2.9rem;
-  height: 2.9rem;
-  border: 1px solid var(--gold);
-  border-radius: 50%;
-  background: var(--ink);
-  box-shadow: 0 0 10px rgb(216 180 106 / 40%);
-  transition:
-    border-color 120ms ease-out,
-    box-shadow 120ms ease-out;
-}
-
-.ss-diamond[data-held="true"] .ss-slot[data-state="ready"] .ss-badge {
+.ss-diamond[data-held="true"] .sd-slot[data-state="ready"] .sd-badge {
   border-color: #f3d796;
   box-shadow:
-    0 0 14px rgb(216 180 106 / 85%),
-    inset 0 0 10px rgb(216 180 106 / 35%);
+    0 0 10px rgb(216 180 106 / 60%),
+    inset 0 0 8px rgb(216 180 106 / 25%);
 }
 
 /* The Cooldown: a dark sweep over the badge that uncovers clockwise as it recovers. */
-.ss-badge::after {
+.ss-diamond .sd-badge::after {
   content: "";
   position: absolute;
   inset: 0;
@@ -132,91 +71,51 @@
   position: absolute;
   z-index: 1;
   color: var(--parchment);
-  font-size: 1.05rem;
-}
-
-/* The face button, tucked against the badge's lower edge. */
-.ss-face {
-  position: absolute;
-  top: 2.25rem;
-  display: grid;
-  place-items: center;
-  width: 1.1rem;
-  height: 1.1rem;
-  border: 1px solid rgb(216 180 106 / 70%);
-  border-radius: 50%;
-  background: rgb(10 12 24 / 92%);
-  color: var(--parchment);
-  font-family: system-ui, sans-serif;
-  font-size: 0.62rem;
-  line-height: 1;
-}
-
-.ss-name {
-  position: absolute;
-  top: 3.4rem;
-  width: max-content;
-  max-width: 5.5rem;
-  color: var(--parchment);
-  font-size: 0.6rem;
-  letter-spacing: 0.08em;
-  line-height: 1.1;
-  text-align: center;
-  text-transform: uppercase;
-  opacity: 0;
-  transition: opacity 120ms ease-out;
-}
-
-/* The names show while R2 is held, when the player is choosing. */
-.ss-diamond[data-held="true"] .ss-name {
-  opacity: 0.9;
+  font-size: 0.7rem;
+  font-variant-numeric: lining-nums tabular-nums;
 }
 
 .ss-glyph {
-  width: 1.4rem;
-  height: 1.4rem;
+  width: 58%;
+  height: 58%;
   fill: none;
   stroke: var(--gold);
-  stroke-width: 1.6;
+  stroke-width: 1.2;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
 
-/* Short of Focus or cooling down: greyed out. */
-.ss-slot[data-state="focus"] .ss-badge,
-.ss-slot[data-state="cooldown"] .ss-badge {
-  border-color: rgb(216 180 106 / 35%);
+.sd-slot[data-spell="incendio"] .ss-glyph {
+  stroke: var(--incendio);
+}
+
+.sd-slot[data-spell="petrificus"] .ss-glyph {
+  stroke: var(--petrificus);
+}
+
+/* Short of Focus or cooling down: dimmed. */
+.sd-slot[data-state="focus"] .sd-badge,
+.sd-slot[data-state="cooldown"] .sd-badge {
+  border-color: rgb(216 180 106 / 30%);
   box-shadow: none;
 }
 
 /* Cooling down, the part already recovered shows warm against the dark sweep. */
-.ss-slot[data-state="cooldown"] .ss-badge {
-  background: rgb(216 180 106 / 28%);
+.sd-slot[data-state="cooldown"] .sd-badge {
+  background: rgb(216 180 106 / 22%);
 }
 
-.ss-slot[data-state="focus"] .ss-glyph,
-.ss-slot[data-state="cooldown"] .ss-glyph {
-  opacity: 0.45;
-}
-
-/* ○, kept for Expelliarmus: locked. */
-.ss-slot[data-state="locked"] {
+.sd-slot[data-state="focus"] .ss-glyph,
+.sd-slot[data-state="cooldown"] .ss-glyph {
   opacity: 0.4;
 }
 
-.ss-slot[data-state="locked"] .ss-badge {
-  border-color: rgb(216 180 106 / 40%);
-  box-shadow: none;
+/* ○, kept for Expelliarmus: locked. */
+.sd-slot[data-state="locked"] {
+  opacity: 0.4;
 }
 
-/* An empty slot: a dashed ring. */
-.ss-slot[data-state="empty"] .ss-badge {
-  border-style: dashed;
+.sd-slot[data-state="locked"] .sd-badge {
   border-color: rgb(216 180 106 / 35%);
-  background: rgb(10 12 24 / 35%);
   box-shadow: none;
-}
-
-.ss-slot[data-state="empty"] .ss-face {
-  opacity: 0.5;
 }

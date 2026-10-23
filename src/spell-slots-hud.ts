@@ -1,17 +1,20 @@
 /**
  * The Special Spells' part of the Duel HUD, bottom-right: the four Spell
- * Slots as a diamond laid out like the face buttons (△ top, □ left, ○ right,
- * ✕ bottom), each with its Special Spell and a dark radial Cooldown that
- * uncovers as it recovers, and beside it the three Focus orbs. The diamond
- * lights up while R2 is held. A slot greys out while its Special Spell cannot
- * be cast (short of Focus, or cooling down); ○ is shown locked, kept for
- * Expelliarmus, and an empty slot is a dashed ring. Reads the local
- * Duelist's snapshot and only touches the DOM when what it shows changes.
+ * Slots as a compact diamond laid out like the face buttons (see
+ * `slot-diamond.ts`), each with its Special Spell's glyph in the Spell's
+ * colour and a dark radial Cooldown that uncovers as it recovers, and beside
+ * it the three Focus orbs. While R2 is held the diamond spreads apart and
+ * shows the names. A slot dims while its Special Spell cannot be cast (short
+ * of Focus, or cooling down); ○ is shown locked, kept for Expelliarmus, and
+ * an empty slot is a dashed ring. Reads the local Duelist's snapshot and only
+ * touches the DOM when what it shows changes.
  */
 import "./spell-slots-hud.css";
 import type { DuelistId, DuelistState, DuelSnapshot } from "./duel/duel";
 import { boundTo, readiness, spellSlots } from "./duel/spell-slots";
 import type { SpecialSpellKind, SpellSlot } from "./duel/spell-slots";
+import { create, createSlotDiamond, setData } from "./slot-diamond";
+import type { DiamondSlot } from "./slot-diamond";
 import { text } from "./text";
 import type { Tuning } from "./tuning";
 
@@ -26,14 +29,6 @@ export interface SpellSlotsHud {
 
 const svgNs = "http://www.w3.org/2000/svg";
 
-/** The face button each slot sits on, as drawn on the DualSense. */
-const faceSymbols: Record<SpellSlot, string> = {
-  circle: "○",
-  cross: "✕",
-  square: "□",
-  triangle: "△",
-};
-
 /** ○ is kept for Expelliarmus, which is not in the game yet: shown locked. */
 const reservedSlot: SpellSlot = "circle";
 
@@ -45,14 +40,6 @@ const glyphs: Record<SpecialSpellKind | "locked", string> = {
   petrificus: "M12 2 20 7v10l-8 5-8-5V7l8-5Zm0 0v20M4 7l16 10M20 7 4 17",
 };
 
-const create = (tag: string, className: string, parent?: Element) => {
-  const element = document.createElement(tag);
-  element.className = className;
-  parent?.append(element);
-
-  return element;
-};
-
 const glyph = (kind: SpecialSpellKind | "locked", parent: Element) => {
   const svg = document.createElementNS(svgNs, "svg");
   svg.setAttribute("viewBox", "0 0 24 24");
@@ -61,13 +48,6 @@ const glyph = (kind: SpecialSpellKind | "locked", parent: Element) => {
   path.setAttribute("d", glyphs[kind]);
   svg.append(path);
   parent.append(svg);
-};
-
-/** Writes a data attribute or a CSS variable only when it changes: the HUD runs every frame. */
-const setData = (element: HTMLElement, key: string, value: string) => {
-  if (element.dataset[key] !== value) {
-    element.dataset[key] = value;
-  }
 };
 
 const setVar = (element: HTMLElement, name: string, value: string) => {
@@ -105,34 +85,26 @@ const createFocusOrbs = (
   };
 };
 
-/** One Spell Slot: its Special Spell (or none), its face button and its Cooldown sweep. */
+/** One Spell Slot: its Special Spell (or none) and its Cooldown sweep. */
 const createSlot = (
-  parent: HTMLElement,
+  { badge, item, name }: DiamondSlot,
   slot: SpellSlot,
   settings: SpellSlotsHudSettings
 ) => {
   const kind = boundTo(slot, settings);
   const reserved = kind === null && slot === reservedSlot;
-  const item = create("div", `ss-slot ss-slot-${slot}`, parent);
-  const badge = create("div", "ss-badge", item);
 
   if (kind) {
     glyph(kind, badge);
-  } else if (reserved) {
-    glyph("locked", badge);
-  }
-
-  const timer = create("span", "ss-timer", badge);
-  create("span", "ss-face", item).textContent = faceSymbols[slot];
-  const name = create("span", "ss-name", item);
-
-  if (kind) {
+    item.dataset.spell = kind;
     name.textContent = text.specials[kind];
   } else if (reserved) {
+    glyph("locked", badge);
     name.textContent = text.specials.expelliarmus;
     item.title = text.specials.locked;
   }
 
+  const timer = create("span", "ss-timer", badge);
   const empty = reserved ? "locked" : "empty";
 
   return {
@@ -159,8 +131,11 @@ export const createSpellSlotsHud = (
 ): SpellSlotsHud => {
   const panel = create("div", "ss-panel", root);
   const focus = createFocusOrbs(panel, settings);
-  const diamond = create("div", "ss-diamond", panel);
-  const slots = spellSlots.map((slot) => createSlot(diamond, slot, settings));
+  const diamond = createSlotDiamond(panel, "ss-diamond");
+
+  const slots = spellSlots.map((slot) =>
+    createSlot(diamond.slots[slot], slot, settings)
+  );
 
   return {
     show: (snapshot) => {
@@ -170,7 +145,7 @@ export const createSpellSlotsHud = (
         return;
       }
 
-      setData(diamond, "held", String(self.spellSlotsHeld));
+      diamond.held(self.spellSlotsHeld);
       focus.show(self.focus);
 
       for (const slot of slots) {

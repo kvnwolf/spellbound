@@ -37,6 +37,7 @@ import { createFramePipeline } from "./render/pipeline";
 import { createWebGPURenderer } from "./render/renderer";
 import { createReticle } from "./render/reticle";
 import { createSpellVfx } from "./render/spell-vfx";
+import { createWorldHud } from "./render/world-hud";
 import {
   initialScreenState,
   reduceScreens,
@@ -295,6 +296,13 @@ const start = async () => {
   // Focus and the Spell Slots with their Cooldowns.
   const specialsHud = createSpellSlotsHud(hudElement, localId, tuning);
 
+  // Opponents' floating Health bars and the damage numbers on them.
+  const worldHud = createWorldHud(hudElement, localId, {
+    ...tuning.hud,
+    duelistHeight: tuning.duelist.height,
+    maxHealth: tuning.duelist.health,
+  });
+
   let clock = createFixedStepClock(tuning.tickRate);
 
   const resize = () => {
@@ -454,6 +462,8 @@ const start = async () => {
         seconds
       );
     }
+
+    return samples;
   };
 
   void renderer.setAnimationLoop((now: number) => {
@@ -536,7 +546,8 @@ const start = async () => {
       }
     }
 
-    showDuelists(alpha, seconds);
+    const samples = showDuelists(alpha, seconds);
+    worldHud.show(current, events, samples, rig.camera, seconds);
 
     if (!inDuel) {
       reticleElement.hidden = true;

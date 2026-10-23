@@ -1,0 +1,90 @@
+/*
+ * The HUD in the world (world-hud.ts): opponents' floating Health bars and
+ * damage numbers. Each element's anchor is moved to its screen point every
+ * frame with `transform`; `translate` then centres the element on it.
+ */
+.world-hud {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.wh-opponent,
+.wh-number {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+.wh-opponent[hidden],
+.wh-number[hidden] {
+  display: none;
+}
+
+/* The bar sits just above the anchor (over the head), the Spell's name above it. */
+.wh-opponent {
+  display: grid;
+  justify-items: center;
+  gap: 0.2rem;
+  width: 5.5rem;
+  translate: -50% -100%;
+}
+
+.wh-bar {
+  width: 100%;
+  height: 0.28rem;
+  border-color: rgb(239 228 200 / 30%);
+}
+
+.wh-bar .health-bar-fill {
+  background: linear-gradient(180deg, #d9675a, #9c2e27);
+}
+
+/* The local Duelist's Lock-on Target: gold. */
+.wh-opponent[data-locked="true"] .wh-bar {
+  border-color: rgb(233 201 131 / 80%);
+  box-shadow: 0 0 6px rgb(216 180 106 / 55%);
+}
+
+.wh-opponent[data-locked="true"] .wh-bar .health-bar-fill {
+  background: linear-gradient(180deg, #f3d796, #b98f45);
+}
+
+/* An opponent's Special Spell, named small over their bar. */
+.wh-spell {
+  min-height: 1em;
+  color: var(--parchment);
+  font-size: 0.8rem;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+  opacity: 0;
+}
+
+.wh-spell[data-spell="incendio"] {
+  color: var(--incendio);
+}
+
+.wh-spell[data-spell="petrificus"] {
+  color: var(--petrificus);
+}
+
+/* A damage number: white, gold and larger for a strong hit. */
+.wh-number {
+  color: #f6f1e4;
+  font-size: 1.05rem;
+  font-variant-numeric: lining-nums tabular-nums;
+  line-height: 1;
+  text-shadow:
+    0 1px 3px rgb(0 0 0 / 85%),
+    0 0 1px rgb(0 0 0 / 90%);
+  translate: -50% -50%;
+  will-change: transform, opacity;
+}
+
+.wh-number-strong {
+  color: #f3cf74;
+  font-size: calc(1.05rem * var(--strong-scale, 1.4));
+  text-shadow:
+    0 0 10px rgb(216 180 106 / 55%),
+    0 1px 3px rgb(0 0 0 / 85%);
+}

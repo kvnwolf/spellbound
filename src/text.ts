@@ -20,15 +20,12 @@ export const text = {
     /** Shown as control is given, after the countdown. */
     duel: "¡Duelo!",
     knockout: "K.O.",
-    local: "Tú",
     /** Called out when the local Duelist Parries a Spell. */
     parry: "¡Parry!",
-    rival: "Rival",
+    /** Over the Round-start countdown only: the HUD keeps no permanent Round label. */
     round: (number: number) => `Ronda ${number}`,
     roundLost: "Ronda para el rival",
     roundWon: "Ronda para ti",
-    /** Label of the Stamina bar. */
-    stamina: "Aguante",
     victory: "¡Victoria!",
   },
   menu: { hint: "✕ Confirmar     ○ Atrás" },
@@ -38,12 +35,14 @@ export const text = {
     quit: "Salir",
     restart: "Reiniciar",
   },
+  /** Accessible label of the Potion Slots, bottom-left. */
+  potions: "Pociones",
   requiresDualSense: "Spellbound requiere un mando DualSense",
   result: {
     changeDifficulty: "Cambiar dificultad",
     rematch: "Revancha",
   },
-  /** The Special Spells, as the Spell Slots in the HUD name them. */
+  /** The Special Spells, as the Spell Slots in the HUD (and over an opponent's Health bar) name them. */
   specials: {
     expelliarmus: "Expelliarmus",
     /** Accessible label of the Focus orbs. */
@@ -52,6 +51,15 @@ export const text = {
     /** On a Spell Slot kept for a Special Spell that is not in the game yet. */
     locked: "Próximamente",
     petrificus: "Petrificus Totalus",
+  },
+  /**
+   * Punched onto the screen under the reticle when the local Duelist casts a
+   * Special Spell, or lands a Perfect Release with Confringo.
+   */
+  spellCallouts: {
+    confringo: "¡Confringo!",
+    incendio: "¡Incendio!",
+    petrificus: "¡Petrificus Totalus!",
   },
   title: "Spellbound",
   unsupportedBrowser: {

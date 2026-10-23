@@ -460,14 +460,47 @@ export const tuning = {
       /** Pulses per second of the red flash between the full Charge and its Backfire. */
       warnPulse: 14,
     },
+    /**
+     * A floating number at the impact point of every hit on an opponent (never
+     * on the local Duelist): it rises `risePixels` over `seconds` and fades
+     * over the last `fadeShare` of that time. Strong hits (the third Stupefy,
+     * an empowered Confringo) are gold and `strongScale` times larger. Hits
+     * landing on the same spot step `spreadPixels` sideways in turn, so rapid
+     * hits stay readable. `enabled: false` turns them all off.
+     */
+    damageNumbers: {
+      enabled: true,
+      fadeShare: 0.45,
+      risePixels: 44,
+      seconds: 0.8,
+      spreadPixels: 14,
+      strongScale: 1.4,
+    },
     /** How long "¡Duelo!" stays up once control is given. */
     duelCalloutSeconds: 0.9,
+    /**
+     * Each opponent's small Health bar floats this many metres above the top
+     * of their head; the name of a Special Spell they cast shows above it for
+     * `spellSeconds`.
+     */
+    floatingBar: { headroom: 0.35, spellSeconds: 1.1 },
     /** The pale "damage taken" part of a Health bar lingers this long... */
     healthLagDelay: 0.35,
     /** ...then drains at this many Health points per second. */
     healthLagRate: 60,
     /** How long "¡Parry!" stays up after the local Duelist Parries. */
     parryCalloutSeconds: 0.8,
+    /**
+     * The Spell Slot and Potion Slot diamonds spread apart (and grow a
+     * little) while their trigger is held, and tighten back on release, over
+     * this long.
+     */
+    slotsSpreadSeconds: 0.12,
+    /**
+     * A Special Spell's name (or "¡Confringo!" on a Perfect Release) punches
+     * in under the reticle when the local Duelist casts it, gone after this long.
+     */
+    spellCalloutSeconds: 0.7,
     /** The Stamina bar flashes this long when a defence is refused for want of Stamina. */
     staminaShortSeconds: 0.35,
   },

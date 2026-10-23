@@ -1,12 +1,18 @@
 /**
- * The Duel HUD: a DOM overlay that reads the simulation snapshot. Along the
- * top, both Duelists' Health bars with the Round and score between them;
- * bottom-left, the local Duelist's Stamina; in the middle, the call-outs (the
- * "3, 2, 1, ¡Duelo!" countdown, "¡Parry!", the Knockout and each Round's
- * result). It only writes to the DOM when what it shows
- * changes, since it runs every frame.
+ * The Duel HUD: a DOM overlay that reads the simulation snapshot and events,
+ * keeping the centre clear. Bottom-left, the local Duelist's bars with no
+ * labels (a thick Health bar over a thin Stamina bar) beside the Potion
+ * Slots; top-centre, only small diamonds for the Rounds each side has won; in
+ * the middle, the call-outs (the "3, 2, 1, ¡Duelo!" countdown, "¡Parry!", the
+ * Knockout and each Round's result); and just under the reticle, the name of
+ * a Special Spell the local Duelist casts, or "¡Confringo!" on a Perfect
+ * Release. It only writes to the DOM when what it shows changes, since it
+ * runs every frame. Opponents' bars and damage numbers float in the world
+ * (see `render/world-hud.ts`).
  */
 import type { DuelEvent, DuelistId, DuelSnapshot, TeamId } from "./duel/duel";
+import { createHealthBar } from "./health-bar";
+import { createPotionSlotsHud } from "./potion-slots-hud";
 import { text } from "./text";
 
 export interface HudSettings {
@@ -23,6 +29,10 @@ export interface HudSettings {
   readonly parryCalloutSeconds: number;
   /** How long the Stamina bar flashes when a defence is refused for want of Stamina. */
   readonly staminaShortSeconds: number;
+  /** How long the Spell Slot and Potion Slot diamonds take to spread or tighten. */
+  readonly slotsSpreadSeconds: number;
+  /** How long a Spell's name stays up under the reticle. */
+  readonly spellCalloutSeconds: number;
 }
 
 export interface Hud {
@@ -41,63 +51,14 @@ const create = (tag: string, className: string, parent?: HTMLElement) => {
   return element;
 };
 
-/** One Duelist's name and Health bar, with a pale trailing segment for damage just taken. */
-const createHealthBar = (
-  parent: HTMLElement,
-  side: "local" | "rival",
-  name: string,
-  settings: HudSettings
-) => {
-  const root = create("div", `hud-duelist hud-${side}`, parent);
-  create("span", "hud-name", root).textContent = name;
-  const bar = create("div", "hud-bar", root);
-  const lag = create("div", "hud-bar-lag", bar);
-  const fill = create("div", "hud-bar-fill", bar);
-  let shown = settings.maxHealth;
-  let lagging = settings.maxHealth;
-  let holdLag = 0;
-
-  return {
-    show: (health: number, seconds: number) => {
-      if (health < shown) {
-        holdLag = settings.healthLagDelay;
-        bar.animate(
-          [
-            { filter: "brightness(2.2)", transform: "translateX(-3px)" },
-            { filter: "brightness(1)", transform: "translateX(0)" },
-          ],
-          { duration: 220, easing: "ease-out" }
-        );
-      }
-
-      if (health > lagging) {
-        // Health refilled (a new Round): no trailing damage to show.
-        lagging = health;
-      } else if (holdLag > 0) {
-        holdLag -= seconds;
-      } else {
-        lagging = Math.max(lagging - settings.healthLagRate * seconds, health);
-      }
-
-      if (health !== shown) {
-        shown = health;
-        fill.style.width = `${(health / settings.maxHealth) * 100}%`;
-      }
-
-      lag.style.width = `${(lagging / settings.maxHealth) * 100}%`;
-    },
-  };
-};
-
 /**
- * The local Duelist's Stamina, bottom-left: a slim bar of the pool, which
- * flashes red when a defence is refused for want of Stamina.
+ * The local Duelist's Stamina, under their Health: a thin bar of the pool,
+ * dimmed while full, which flashes red when an action is refused for want
+ * of Stamina.
  */
 const createStaminaBar = (parent: HTMLElement, settings: HudSettings) => {
   const root = create("div", "hud-stamina", parent);
-  create("span", "hud-stamina-label", root).textContent = text.hud.stamina;
-  const bar = create("div", "hud-stamina-bar", root);
-  const fill = create("div", "hud-stamina-fill", bar);
+  const fill = create("div", "hud-stamina-fill", root);
   let shown = -1;
   let shortFor = 0;
 
@@ -120,7 +81,7 @@ const createStaminaBar = (parent: HTMLElement, settings: HudSettings) => {
   };
 };
 
-/** Round pips for one Team: lit for every Round won. */
+/** Round pips for one Team: small diamonds, lit for every Round won. */
 const createPips = (parent: HTMLElement, settings: HudSettings) => {
   const root = create("div", "hud-pips", parent);
 
@@ -176,21 +137,90 @@ const createCallout = (parent: HTMLElement) => {
   };
 };
 
+/** The Spells whose names punch in under the reticle. */
+type CalledSpell = keyof typeof text.spellCallouts;
+
+const isCalledSpell = (kind: string): kind is CalledSpell =>
+  kind in text.spellCallouts;
+
+/**
+ * The name of the Spell the local Duelist just cast, just under the
+ * reticle: big serif in the Spell's colour, a quick punch-in and fade.
+ */
+const createSpellCallout = (parent: HTMLElement, settings: HudSettings) => {
+  const root = create("div", "hud-spell-callout", parent);
+
+  return {
+    show: (spell: CalledSpell) => {
+      for (const animation of root.getAnimations()) {
+        animation.cancel();
+      }
+
+      root.dataset.spell = spell;
+      root.textContent = text.spellCallouts[spell];
+      root.animate(
+        [
+          { opacity: 0, transform: "scale(1.45)" },
+          { offset: 0.18, opacity: 1, transform: "scale(1)" },
+          { offset: 0.7, opacity: 1, transform: "scale(1)" },
+          { opacity: 0, transform: "scale(1.04)" },
+        ],
+        {
+          duration: settings.spellCalloutSeconds * 1000,
+          easing: "cubic-bezier(0.2, 0.8, 0.2, 1)",
+        }
+      );
+    },
+  };
+};
+
+/**
+ * What the local Duelist cast this frame that earns a call-out: a Special
+ * Spell, or Confringo released in the Perfect Release window (a plain
+ * Confringo or a Stupefy earns none).
+ */
+const calledOut = (
+  events: readonly DuelEvent[],
+  localId: DuelistId
+): CalledSpell | undefined => {
+  let called: CalledSpell | undefined;
+
+  for (const event of events) {
+    if (event.type === "perfect-release" && event.duelistId === localId) {
+      called = "confringo";
+    } else if (
+      event.type === "spell-cast" &&
+      event.spell.casterId === localId &&
+      event.spell.kind !== "confringo" &&
+      isCalledSpell(event.spell.kind)
+    ) {
+      called = event.spell.kind;
+    }
+  }
+
+  return called;
+};
+
 export const createHud = (
   root: HTMLElement,
   localId: DuelistId,
   settings: HudSettings
 ): Hud => {
-  const top = create("header", "hud-top", root);
-  const local = createHealthBar(top, "local", text.hud.local, settings);
-  const centre = create("div", "hud-round", top);
-  const roundLabel = create("span", "hud-round-label", centre);
-  const score = create("div", "hud-score", centre);
+  root.style.setProperty(
+    "--slots-spread-seconds",
+    `${settings.slotsSpreadSeconds}s`
+  );
+
+  const score = create("header", "hud-score", root);
   const localPips = createPips(score, settings);
   const rivalPips = createPips(score, settings);
-  const rival = createHealthBar(top, "rival", text.hud.rival, settings);
-  const stamina = createStaminaBar(root, settings);
+  const vitals = create("div", "hud-vitals", root);
+  createPotionSlotsHud(vitals);
+  const bars = create("div", "hud-bars", vitals);
+  const health = createHealthBar(bars, "hud-health", settings);
+  const stamina = createStaminaBar(bars, settings);
   const callout = createCallout(root);
+  const spellCallout = createSpellCallout(root, settings);
   let duelCallout = 0;
   let parryCallout = 0;
 
@@ -262,20 +292,18 @@ export const createHud = (
         : Math.max(parryCallout - seconds, 0);
 
       stamina.show(self?.stamina ?? 0, mine("stamina-short"), seconds);
-
-      local.show(self?.health ?? 0, seconds);
-      rival.show(opponent?.health ?? 0, seconds);
+      health.show(self?.health ?? 0, seconds);
       localPips.show(self ? (snapshot.score[self.team] ?? 0) : 0);
       rivalPips.show(opponent ? (snapshot.score[opponent.team] ?? 0) : 0);
 
-      const label = text.hud.round(snapshot.round.number);
-
-      if (roundLabel.textContent !== label) {
-        roundLabel.textContent = label;
-      }
-
       const { heading, detail } = message(snapshot, self?.team);
       callout.show(heading, detail);
+
+      const called = calledOut(events, localId);
+
+      if (called) {
+        spellCallout.show(called);
+      }
     },
   };
 };
