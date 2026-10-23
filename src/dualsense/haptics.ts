@@ -1,36 +1,45 @@
 /**
  * The haptics director: turns what happens in the Duel, and the local
  * Duelist's state, into the desired DualSense output state. Pure and
- * stateful across frames (rumble pulses and the lightbar flash fade over
+ * stateful across frames (rumble pulses and lightbar flashes fade over
  * time); the caller feeds it one frame at a time and sends the result to the
  * controller, through WebHID or the Gamepad API's dual-rumble fallback.
+ * Every strength, length and colour comes from `tuning.haptics`, and each
+ * Spell's colour from `tuning.spellPalette`, the palette the VFX share.
  */
-import type { DuelEvent, DuelistId, DuelSnapshot } from "../duel/duel";
-import type { DualSenseOutput, Rgb } from "./output";
+import { chargeLevel, chargeStage } from "../duel/charge";
+import type { ChargeStage } from "../duel/charge";
+import type {
+  DuelEvent,
+  DuelistId,
+  DuelistState,
+  DuelSnapshot,
+  SpellKind,
+} from "../duel/duel";
+import type { Point3 } from "../duel/geometry";
+import type { Tuning } from "../tuning";
+import type { DualSenseOutput, Rgb, TriggerEffect } from "./output";
 
-/** A rumble that starts at these motor strengths (0 to 1) and fades to nothing over `seconds`. */
-export interface RumblePulse {
+/** Two motor strengths, 0 to 1: the left motor is the heavy one, the right the light one. */
+export interface Motors {
   readonly left: number;
   readonly right: number;
-  readonly seconds: number;
 }
 
-export interface HapticsSettings {
-  /** The local Duelist casts a Spell. */
-  readonly cast: RumblePulse;
-  /** The local Duelist is hit. */
-  readonly hitTaken: RumblePulse;
-  /** The local Duelist is hit by a strong Spell (the Stupefy that Staggers). */
-  readonly strongHitTaken: RumblePulse;
-  readonly lightbar: {
-    /** The lightbar's colour when nothing is happening. */
-    readonly base: Rgb;
-    /** The colour it flashes when the local Duelist is hit... */
-    readonly flash: Rgb;
-    /** ...fading back to `base` over this long. */
-    readonly flashSeconds: number;
-  };
+/**
+ * A rumble that starts at these motor strengths and fades to nothing over
+ * `seconds`; a `tremble` shakes it `hz` times a second, dipping by `depth`.
+ */
+export interface RumblePulse extends Motors {
+  readonly seconds: number;
+  readonly tremble?: { readonly hz: number; readonly depth: number };
 }
+
+/** The tuning the director reads. */
+export type HapticsTuning = Pick<
+  Tuning,
+  "confringo" | "focus" | "haptics" | "input" | "spellPalette"
+>;
 
 /** One frame of the game, as far as haptics care. */
 export interface HapticsFrame {
@@ -64,47 +73,334 @@ const mix = (from: Rgb, to: Rgb, amount: number): Rgb => ({
   r: from.r + (to.r - from.r) * amount,
 });
 
+const dark: Rgb = { b: 0, g: 0, r: 0 };
+
+/** Both triggers free: behind menus, the pause and the title. */
+const free = {
+  l2: { kind: "off" },
+  r2: { kind: "off" },
+} as const satisfies DualSenseOutput["triggers"];
+
+const mixMotors = (from: Motors, to: Motors, amount: number): Motors => ({
+  left: from.left + (to.left - from.left) * amount,
+  right: from.right + (to.right - from.right) * amount,
+});
+
+/** A `#rrggbb` colour as 0-255 channels. */
+const rgbOf = (hex: string): Rgb => {
+  const value = Number.parseInt(hex.slice(1), 16);
+
+  return {
+    // oxlint-disable-next-line no-bitwise -- unpacking the channels
+    b: value & 0xff,
+    // oxlint-disable-next-line no-bitwise -- unpacking the channels
+    g: (value >> 8) & 0xff,
+    // oxlint-disable-next-line no-bitwise -- unpacking the channels
+    r: (value >> 16) & 0xff,
+  };
+};
+
+/**
+ * Where `event` blows something up, if it does: an Incendio explosion, a
+ * Confringo bursting however it ends (on a Duelist, a Shield, Cover, the
+ * floor or another Spell) and a Clash nobody won.
+ */
+const blastOf = (event: DuelEvent): Point3 | undefined => {
+  if (event.type === "explosion") {
+    return event.position;
+  }
+
+  if (
+    (event.type === "spell-hit" ||
+      event.type === "spell-stopped" ||
+      event.type === "spell-blocked") &&
+    event.spell.kind === "confringo"
+  ) {
+    return event.position;
+  }
+
+  if (
+    event.type === "spells-cancelled" &&
+    event.spells.some((each) => each.kind === "confringo")
+  ) {
+    return event.position;
+  }
+
+  return event.type === "clash-end" && event.outcome === "exploded"
+    ? event.position
+    : undefined;
+};
+
 interface ActivePulse {
   readonly pulse: RumblePulse;
   age: number;
 }
 
+/** A lightbar flash: a colour that fades back to what is under it. */
+interface Flash {
+  readonly color: Rgb;
+  readonly seconds: number;
+  age: number;
+}
+
+const noFlash = (): Flash => ({
+  age: Number.POSITIVE_INFINITY,
+  color: { b: 0, g: 0, r: 0 },
+  seconds: 1,
+});
+
+const flashOver = (under: Rgb, flash: Flash) => {
+  const left = 1 - flash.age / flash.seconds;
+
+  return left > 0 ? mix(under, flash.color, left) : under;
+};
+
 export const createHapticsDirector = (
   localId: DuelistId,
-  settings: HapticsSettings
+  tuning: HapticsTuning
 ): HapticsDirector => {
+  const settings = tuning.haptics;
+  const spellColor = (kind: SpellKind) => rgbOf(tuning.spellPalette[kind].main);
+
   let pulses: ActivePulse[] = [];
-  /** Seconds since the last hit taken; it starts long ago, so nothing flashes. */
-  let sinceHit = Number.POSITIVE_INFINITY;
+  let castFlash = noFlash();
+  let hitFlash = noFlash();
+  /** Where the local Duelist's Charge stood last frame. */
+  let chargeWas: ChargeStage = "none";
+  /** Seconds the local Duelist's Focus has been full; undefined while it is not. */
+  let focusFullFor: number | undefined;
 
   const pulsesFor = (event: DuelEvent): RumblePulse[] => {
     if (event.type === "spell-cast" && event.spell.casterId === localId) {
-      return [settings.cast];
+      return [
+        event.spell.kind === "depulso" ? settings.depulsoCast : settings.cast,
+      ];
     }
 
     if (event.type === "spell-hit" && event.targetId === localId) {
       return [event.spell.strong ? settings.strongHitTaken : settings.hitTaken];
     }
 
-    // A Backfire hurts its caster like any hit.
+    if (event.type === "parry" && event.duelistId === localId) {
+      return [settings.parry];
+    }
+
+    if (event.type === "disarm" && event.duelistId === localId) {
+      return [settings.disarmed];
+    }
+
+    if (event.type === "potion-drunk" && event.duelistId === localId) {
+      return [settings.potionDrunk];
+    }
+
     if (event.type === "backfire" && event.duelistId === localId) {
-      return [settings.hitTaken];
+      return [settings.charge.backfire];
+    }
+
+    if (event.type === "clash-pump" && event.duelistId === localId) {
+      return [settings.clash.pump];
+    }
+
+    if (
+      event.type === "clash-end" &&
+      event.clash.sides.some((side) => side.duelistId === localId)
+    ) {
+      return [settings.clash.end];
     }
 
     return [];
   };
 
-  const rumble = () => {
+  /** The explosion's thump, scaled down by its distance from the local Duelist's feet. */
+  const thumpFor = (
+    event: DuelEvent,
+    self: DuelistState | undefined
+  ): RumblePulse[] => {
+    const at = blastOf(event);
+
+    if (!at || !self) {
+      return [];
+    }
+
+    const { pulse, range } = settings.explosion;
+    const metres = Math.hypot(at.x - self.position.x, at.z - self.position.z);
+    const strength = 1 - metres / range;
+
+    return strength > 0
+      ? [
+          {
+            left: pulse.left * strength,
+            right: pulse.right * strength,
+            seconds: pulse.seconds,
+          },
+        ]
+      : [];
+  };
+
+  /** The steady rumble of the local Duelist's state, held for as long as it lasts. */
+  const steadyFor = (self: DuelistState, snapshot: DuelSnapshot): Motors[] => {
+    const { charge, clash } = settings;
+
+    const side = snapshot.clash?.sides.findIndex(
+      (each) => each.duelistId === localId
+    );
+
+    if (snapshot.clash && side !== undefined && side >= 0) {
+      // The meeting point runs from the first side's Wand (0) to the second's (1).
+      const { along } = snapshot.clash;
+
+      return [mixMotors(clash.far, clash.near, side === 0 ? 1 - along : along)];
+    }
+
+    if (self.petrifiedSeconds > 0) {
+      return [settings.petrified];
+    }
+
+    const stage = chargeStage(self.chargeSeconds, tuning.confringo);
+
+    if (stage === "full") {
+      return [charge.overcharge];
+    }
+
+    if (stage === "building" || stage === "perfect") {
+      return [
+        mixMotors(
+          charge.rumble.from,
+          charge.rumble.to,
+          chargeLevel(self.chargeSeconds, tuning.confringo)
+        ),
+      ];
+    }
+
+    return [];
+  };
+
+  const flashesFor = (event: DuelEvent) => {
+    if (event.type === "spell-cast" && event.spell.casterId === localId) {
+      castFlash = {
+        age: 0,
+        color: spellColor(event.spell.kind),
+        seconds: settings.lightbar.castSeconds,
+      };
+    }
+
+    if (event.type === "spell-hit" && event.targetId === localId) {
+      hitFlash = {
+        age: 0,
+        color: spellColor(event.spell.kind),
+        seconds: settings.lightbar.flashSeconds,
+      };
+    }
+
+    // A Backfire is the Confringo going off in the hand.
+    if (event.type === "backfire" && event.duelistId === localId) {
+      hitFlash = {
+        age: 0,
+        color: spellColor("confringo"),
+        seconds: settings.lightbar.flashSeconds,
+      };
+    }
+  };
+
+  /** The stronger of every pulse and steady rumble, on each motor. */
+  const rumble = (steady: readonly Motors[]): Motors => {
     let left = 0;
     let right = 0;
 
     for (const { age, pulse } of pulses) {
-      const strength = 1 - age / pulse.seconds;
+      const tremble = pulse.tremble
+        ? 1 -
+          pulse.tremble.depth *
+            (0.5 - 0.5 * Math.cos(2 * Math.PI * pulse.tremble.hz * age))
+        : 1;
+
+      const strength = (1 - age / pulse.seconds) * tremble;
       left = Math.max(left, pulse.left * strength);
       right = Math.max(right, pulse.right * strength);
     }
 
+    for (const motors of steady) {
+      left = Math.max(left, motors.left);
+      right = Math.max(right, motors.right);
+    }
+
     return { left, right };
+  };
+
+  /**
+   * A trigger's effect around its Slots' hold line: a click just under the
+   * line, then, once the Slots are held, light resistance from the line on.
+   */
+  const slotTrigger = (hold: number, held: boolean): TriggerEffect => {
+    const { click } = settings.triggers;
+
+    if (held) {
+      return {
+        force: settings.triggers.held.force,
+        kind: "resistance",
+        start: hold,
+      };
+    }
+
+    return {
+      end: hold,
+      force: click.force,
+      kind: "section",
+      start: hold - click.width,
+    };
+  };
+
+  const slotTriggers = (self: DuelistState | undefined) => ({
+    l2: slotTrigger(
+      tuning.input.potionSlots.hold,
+      self?.potionSlotsHeld === true
+    ),
+    r2: slotTrigger(
+      tuning.input.spellSlots.hold,
+      self?.spellSlotsHeld === true
+    ),
+  });
+
+  /** The Perfect Release window opening: a tick, once per Charge. */
+  const tickOnPerfect = (self: DuelistState | undefined) => {
+    const stage = self
+      ? chargeStage(self.chargeSeconds, tuning.confringo)
+      : "none";
+
+    if (stage === "perfect" && chargeWas !== "perfect") {
+      pulses.push({ age: 0, pulse: settings.charge.perfect });
+    }
+
+    chargeWas = stage;
+  };
+
+  /**
+   * The base colour, breathing toward the Focus colour while Focus is full,
+   * under the cast and hit flashes; dark while Disarmed: no Wand, no light.
+   */
+  const lightbarFor = (self: DuelistState | undefined, seconds: number) => {
+    const { base, focusPulse } = settings.lightbar;
+
+    focusFullFor =
+      self && self.focus >= tuning.focus.max
+        ? (focusFullFor ?? -seconds) + seconds
+        : undefined;
+
+    if (self?.looseWand) {
+      return dark;
+    }
+
+    const breath =
+      focusFullFor === undefined
+        ? 0
+        : 0.5 -
+          0.5 *
+            Math.cos((2 * Math.PI * focusFullFor) / focusPulse.periodSeconds);
+
+    return flashOver(
+      flashOver(mix(base, focusPulse.color, breath), castFlash),
+      hitFlash
+    );
   };
 
   return {
@@ -113,35 +409,31 @@ export const createHapticsDirector = (
         pulse.age += seconds;
       }
 
-      sinceHit += seconds;
+      castFlash.age += seconds;
+      hitFlash.age += seconds;
       pulses = pulses.filter(({ age, pulse }) => age < pulse.seconds);
 
-      for (const event of events) {
-        pulses.push(...pulsesFor(event).map((pulse) => ({ age: 0, pulse })));
+      const self = snapshot.duelists.find((each) => each.id === localId);
 
-        if (
-          (event.type === "spell-hit" && event.targetId === localId) ||
-          (event.type === "backfire" && event.duelistId === localId)
-        ) {
-          sinceHit = 0;
+      for (const event of events) {
+        for (const pulse of [...pulsesFor(event), ...thumpFor(event, self)]) {
+          pulses.push({ age: 0, pulse });
         }
+
+        flashesFor(event);
       }
+
+      tickOnPerfect(self);
 
       if (!live) {
         pulses = [];
       }
 
-      const { base, flash, flashSeconds } = settings.lightbar;
-      const flashLeft = Math.max(1 - sinceHit / flashSeconds, 0);
-      const team = snapshot.duelists.find((each) => each.id === localId)?.team;
-
       return {
-        lightbar: flashLeft > 0 ? mix(base, flash, flashLeft) : base,
-        playerLeds: ledsFor(
-          team === undefined ? 0 : (snapshot.score[team] ?? 0)
-        ),
-        rumble: rumble(),
-        triggers: { l2: { kind: "off" }, r2: { kind: "off" } },
+        lightbar: lightbarFor(self, seconds),
+        playerLeds: ledsFor(self ? (snapshot.score[self.team] ?? 0) : 0),
+        rumble: rumble(live && self ? steadyFor(self, snapshot) : []),
+        triggers: live ? slotTriggers(self) : free,
       };
     },
   };

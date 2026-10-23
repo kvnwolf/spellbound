@@ -864,11 +864,55 @@ export const tuning = {
   /**
    * DualSense haptics. Rumble pulses start at these motor strengths (0 to 1;
    * the left motor is the heavy one, the right the light one) and fade out
-   * over `seconds`. Colours are 0-255 RGB for the lightbar.
+   * over `seconds`; a `tremble` shakes a pulse `hz` times a second, dipping
+   * by `depth` of its strength. Steady rumbles (`{ left, right }`) last as
+   * long as their state. Colours are 0-255 RGB for the lightbar; each Spell's
+   * lightbar colour is its `spellPalette` main colour, shared with the VFX.
+   * Trigger positions and forces run from 0 to 1.
    */
   haptics: {
     /** A short, light tick on every cast. */
     cast: { left: 0.08, right: 0.45, seconds: 0.08 },
+    /** The Heavy Spell's Charge. */
+    charge: {
+      /** A sharp jolt when an Overcharge Backfires in the hand. */
+      backfire: { left: 1, right: 0.9, seconds: 0.3 },
+      /** The steady buzz once the Charge is full and past the Perfect Release window: a Backfire is a moment away. */
+      overcharge: { left: 0.55, right: 0.9 },
+      /** A crisp tick as the Charge enters the Perfect Release window. */
+      perfect: { left: 0.15, right: 1, seconds: 0.05 },
+      /** The steady rumble ramps from `from` at the press to `to` at a full Charge. */
+      rumble: {
+        from: { left: 0, right: 0.06 },
+        to: { left: 0.3, right: 0.5 },
+      },
+    },
+    /** The local Duelist's Clash. */
+    clash: {
+      /** A big thump as it ends, won, lost or exploded. */
+      end: { left: 1, right: 1, seconds: 0.6 },
+      /** The steady rumble while it lasts grows from `far` (the meeting point at the opponent's Wand)... */
+      far: { left: 0.08, right: 0.12 },
+      /** ...to `near` (the meeting point at the local Duelist's Wand). */
+      near: { left: 0.85, right: 0.6 },
+      /** A sharp tick on every △ pump of the local Duelist. */
+      pump: { left: 0, right: 0.85, seconds: 0.05 },
+    },
+    /** A short push on casting Depulso. */
+    depulsoCast: { left: 0.75, right: 0.3, seconds: 0.18 },
+    /** A long trembling rumble on being Disarmed. */
+    disarmed: {
+      left: 0.6,
+      right: 0.35,
+      seconds: 1.1,
+      tremble: { depth: 0.75, hz: 9 },
+    },
+    /**
+     * A low thump for each Incendio or Confringo explosion (a Clash blowing
+     * up included) near the local Duelist: `pulse` at their feet, fading to
+     * nothing `range` metres away.
+     */
+    explosion: { pulse: { left: 0.9, right: 0.15, seconds: 0.35 }, range: 14 },
     /**
      * Gamepad API dual-rumble, used only without WebHID: it is replayed this
      * often while the rumble changes, each play lasting `effectSeconds`.
@@ -879,13 +923,29 @@ export const tuning = {
     lightbar: {
       /** The local Duelist's crimson, as their robe. */
       base: { b: 36, g: 28, r: 138 },
-      /** A hit taken flashes a hot white-gold... */
-      flash: { b: 180, g: 230, r: 255 },
-      /** ...fading back to the base over this long. */
+      /** A cast lights the bar in the Spell's colour, fading back over this long. */
+      castSeconds: 0.25,
+      /** A hit taken flashes the colour of the Spell that landed, fading back over this long. */
       flashSeconds: 0.35,
+      /** Full Focus breathes the bar toward the Wand aura's scarlet and back, once every `periodSeconds`. */
+      focusPulse: { color: { b: 110, g: 90, r: 255 }, periodSeconds: 1.6 },
     },
+    /** A sharp, short pulse on a Parry. */
+    parry: { left: 0.2, right: 1, seconds: 0.09 },
+    /** A cold, light buzz for as long as the local Duelist is Petrified. */
+    petrified: { left: 0, right: 0.22 },
+    /** A soft pulse as a Potion goes down. */
+    potionDrunk: { left: 0.18, right: 0.22, seconds: 0.3 },
     /** Harder and longer for the strong Stupefy that Staggers. */
     strongHitTaken: { left: 1, right: 0.8, seconds: 0.45 },
+    /**
+     * R2 and L2 while the Duel is played, at their Slots' hold line
+     * (`input.spellSlots.hold`, `input.potionSlots.hold`): a short break
+     * just under the line (`click.width` of travel at `click.force`) clicks
+     * as the trigger crosses it; once held, a light resistance
+     * (`held.force`) from the line on. Free whenever the Duel is not played.
+     */
+    triggers: { click: { force: 0.45, width: 0.12 }, held: { force: 0.18 } },
   },
 
   hud: {
@@ -1286,6 +1346,25 @@ export const tuning = {
   screens: {
     /** The Duel's victory or defeat call-out plays this long before the result screen. */
     resultDelaySeconds: 3,
+  },
+
+  /**
+   * Each Spell's colours as hex: the main hue and its white-hot heart. The
+   * VFX draw Spells in them and the DualSense lightbar takes the main colour.
+   */
+  spellPalette: {
+    /** Fire: a deep orange with a pale gold heart. */
+    confringo: { hot: "#ffe2a0", main: "#ff6a12" },
+    /** Depulso's wind: a pale, cool white. */
+    depulso: { hot: "#ffffff", main: "#cfe6f5" },
+    /** A scarlet disarming bolt round a white heart. */
+    expelliarmus: { hot: "#fff4f6", main: "#ff1a3c" },
+    /** A fireball: blood-orange flame round a pale yellow heart. */
+    incendio: { hot: "#fff1b8", main: "#ff3d0a" },
+    /** A cold, pale-blue binding light. */
+    petrificus: { hot: "#eef4ff", main: "#5f8fff" },
+    /** A red bolt with a white-hot heart. */
+    stupefy: { hot: "#ffd2c4", main: "#ff2a1f" },
   },
 
   /**

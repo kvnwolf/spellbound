@@ -113,7 +113,7 @@ const start = async () => {
   // Rumble, lightbar and player LEDs (ADR-0001): WebHID once granted, else dual-rumble.
   const activationHint = createActivationHint(element("#overlay", HTMLElement));
   const effects = createDualSenseEffects(activationHint);
-  const haptics = createHapticsDirector(localId, tuning.haptics);
+  const haptics = createHapticsDirector(localId, tuning);
   let lastPad: PadKind = "none";
 
   // The DualSense is read once per frame; the human Controller reads that

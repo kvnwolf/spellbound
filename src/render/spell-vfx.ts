@@ -68,6 +68,7 @@ import type {
   SpellState,
 } from "../duel/duel";
 import type { Point3 } from "../duel/geometry";
+import { tuning } from "../tuning";
 import type { Tuning } from "../tuning";
 import { createDepulsoWaves } from "./depulso-vfx";
 import { sampleSpell } from "./interpolate";
@@ -108,19 +109,22 @@ interface Palette {
   readonly hot: Color;
 }
 
+/**
+ * Every Spell in its colours from `tuning.spellPalette`, the palette the
+ * DualSense lightbar shares. Depulso never flies; its wave is `depulso-vfx.ts`.
+ */
+const paletteOf = (kind: SpellKind): Palette => ({
+  hot: new Color(tuning.spellPalette[kind].hot),
+  main: new Color(tuning.spellPalette[kind].main),
+});
+
 const palettes: Record<SpellKind, Palette> = {
-  /** Fire: a deep orange with a pale gold heart. */
-  confringo: { hot: new Color("#ffe2a0"), main: new Color("#ff6a12") },
-  /** Depulso's wind: a pale, cool white. It never flies; its wave is `depulso-vfx.ts`. */
-  depulso: { hot: new Color("#ffffff"), main: new Color("#cfe6f5") },
-  /** A scarlet disarming bolt round a white heart. */
-  expelliarmus: { hot: new Color("#fff4f6"), main: new Color("#ff1a3c") },
-  /** A fireball: blood-orange flame round a pale yellow heart. */
-  incendio: { hot: new Color("#fff1b8"), main: new Color("#ff3d0a") },
-  /** A cold, pale-blue binding light. */
-  petrificus: { hot: new Color("#eef4ff"), main: new Color("#5f8fff") },
-  /** A red bolt with a white-hot heart. */
-  stupefy: { hot: new Color("#ffd2c4"), main: new Color("#ff2a1f") },
+  confringo: paletteOf("confringo"),
+  depulso: paletteOf("depulso"),
+  expelliarmus: paletteOf("expelliarmus"),
+  incendio: paletteOf("incendio"),
+  petrificus: paletteOf("petrificus"),
+  stupefy: paletteOf("stupefy"),
 };
 
 /** A Backfire is the same fire gone wrong: smoky red embers. */
