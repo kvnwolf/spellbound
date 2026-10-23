@@ -1376,14 +1376,6 @@ export const tuning = {
     potionDrunk: { left: 0.18, right: 0.22, seconds: 0.3 },
     /** Harder and longer for the strong Stupefy that Staggers. */
     strongHitTaken: { left: 1, right: 0.8, seconds: 0.45 },
-    /**
-     * R2 and L2 while the Duel is played, at their Slots' hold line
-     * (`input.spellSlots.hold`, `input.potionSlots.hold`): a short break
-     * just under the line (`click.width` of travel at `click.force`) clicks
-     * as the trigger crosses it; once held, a light resistance
-     * (`held.force`) from the line on. Free whenever the Duel is not played.
-     */
-    triggers: { click: { force: 0.45, width: 0.12 }, held: { force: 0.18 } },
   },
 
   hud: {

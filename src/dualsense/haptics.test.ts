@@ -14,7 +14,6 @@ import type { Point3 } from "../duel/geometry";
 import { tuning } from "../tuning";
 import type { Tuning } from "../tuning";
 import { createHapticsDirector } from "./haptics";
-import { encodeOutputReport } from "./output";
 import type { Rgb } from "./output";
 
 /** Round numbers, so expected outputs can be worked out by hand. */
@@ -52,7 +51,6 @@ const haptics: Tuning["haptics"] = {
   petrified: { left: 0, right: 0.3 },
   potionDrunk: { left: 0.3, right: 0.2, seconds: 0.5 },
   strongHitTaken: { left: 1, right: 1, seconds: 0.6 },
-  triggers: { click: { force: 0.4, width: 0.25 }, held: { force: 0.2 } },
 };
 
 /** One plain colour per Spell. */
@@ -81,11 +79,6 @@ const colours = {
 const settings: Tuning = {
   ...tuning,
   haptics,
-  input: {
-    ...tuning.input,
-    potionSlots: { hold: 0.5, release: 0.2 },
-    spellSlots: { hold: 0.5, release: 0.2 },
-  },
   spellPalette,
 };
 
@@ -184,11 +177,8 @@ const direct = () => {
     });
 };
 
-/** The triggers while the Duel is played and neither Slot is held: a click just under each hold line. */
-const armed = {
-  l2: { end: 0.5, force: 0.4, kind: "section", start: 0.25 },
-  r2: { end: 0.5, force: 0.4, kind: "section", start: 0.25 },
-};
+/** Both triggers free: the director never sets an adaptive trigger effect. */
+const free = { l2: { kind: "off" }, r2: { kind: "off" } };
 
 const silence = { left: 0, right: 0 };
 
@@ -277,7 +267,7 @@ describe(createHapticsDirector, () => {
       lightbar: haptics.lightbar.base,
       playerLeds: 0,
       rumble: silence,
-      triggers: armed,
+      triggers: free,
     });
   });
 
@@ -363,13 +353,13 @@ describe(createHapticsDirector, () => {
     expect(frame([], 0, scored(2)).playerLeds).toBe(0b0_1010);
   });
 
-  it("stops rumbling and frees the triggers when the Duel is not being played, and does not pick up again after", () => {
+  it("stops rumbling when the Duel is not being played, and does not pick up again after", () => {
     const frame = direct();
     frame([hit(local)]);
 
     expect(frame([], 0, { live: false })).toMatchObject({
       rumble: silence,
-      triggers: { l2: { kind: "off" }, r2: { kind: "off" } },
+      triggers: free,
     });
     expect(frame([cast(local)], 0, { live: false }).rumble).toStrictEqual(
       silence
@@ -657,43 +647,27 @@ describe("the lightbar's states", () => {
 });
 
 describe("adaptive triggers", () => {
-  it("resists lightly from the hold line on while R2 holds the Spell Slots, the L2 click still armed", () => {
-    expect(
-      direct()([], 0, { snapshot: withLocal({ spellSlotsHeld: true }) })
-        .triggers
-    ).toStrictEqual({
-      l2: armed.l2,
-      r2: { force: 0.2, kind: "resistance", start: 0.5 },
-    });
+  it("leaves L2 and R2 off in a live Duel", () => {
+    expect(direct()().triggers).toStrictEqual(free);
   });
 
-  it("resists lightly from the hold line on while L2 holds the Potion Slots", () => {
-    expect(
-      direct()([], 0, { snapshot: withLocal({ potionSlotsHeld: true }) })
-        .triggers
-    ).toStrictEqual({
-      l2: { force: 0.2, kind: "resistance", start: 0.5 },
-      r2: armed.r2,
-    });
-  });
-
-  it("goes back to the click once the Slots are let go", () => {
+  it("leaves L2 and R2 off while the Slots are held", () => {
     const frame = direct();
-    frame([], 0, { snapshot: withLocal({ spellSlotsHeld: true }) });
 
-    expect(frame().triggers).toStrictEqual(armed);
+    expect(
+      frame([], 0, { snapshot: withLocal({ spellSlotsHeld: true }) }).triggers
+    ).toStrictEqual(free);
+    expect(
+      frame([], 0, { snapshot: withLocal({ potionSlotsHeld: true }) }).triggers
+    ).toStrictEqual(free);
   });
 
-  it("encodes as the DualSense's section and continuous-resistance trigger blocks", () => {
-    const output = direct()([], 0, {
-      snapshot: withLocal({ spellSlotsHeld: true }),
-    });
-
-    const { data } = encodeOutputReport(output, "usb", 0);
-
-    // R2 at byte 10: continuous resistance from 0.5 (128) at force 0.2 (51).
-    expect([...data.subarray(10, 13)]).toStrictEqual([0x01, 128, 51]);
-    // L2 at byte 21: a section from 0.25 (64) to 0.5 (128) at force 0.4 (102).
-    expect([...data.subarray(21, 25)]).toStrictEqual([0x02, 64, 128, 102]);
+  it("leaves L2 and R2 off behind menus, the pause and the title", () => {
+    expect(
+      direct()([], 0, {
+        live: false,
+        snapshot: withLocal({ spellSlotsHeld: true }),
+      }).triggers
+    ).toStrictEqual(free);
   });
 });

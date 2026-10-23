@@ -18,7 +18,7 @@ import type {
 } from "../duel/duel";
 import type { Point3 } from "../duel/geometry";
 import type { Tuning } from "../tuning";
-import type { DualSenseOutput, Rgb, TriggerEffect } from "./output";
+import type { DualSenseOutput, Rgb } from "./output";
 
 /** Two motor strengths, 0 to 1: the left motor is the heavy one, the right the light one. */
 export interface Motors {
@@ -38,7 +38,7 @@ export interface RumblePulse extends Motors {
 /** The tuning the director reads. */
 export type HapticsTuning = Pick<
   Tuning,
-  "confringo" | "focus" | "haptics" | "input" | "spellPalette"
+  "confringo" | "focus" | "haptics" | "spellPalette"
 >;
 
 /** One frame of the game, as far as haptics care. */
@@ -75,7 +75,7 @@ const mix = (from: Rgb, to: Rgb, amount: number): Rgb => ({
 
 const dark: Rgb = { b: 0, g: 0, r: 0 };
 
-/** Both triggers free: behind menus, the pause and the title. */
+/** Both triggers free: the director sets no adaptive trigger effect, in any state. */
 const free = {
   l2: { kind: "off" },
   r2: { kind: "off" },
@@ -327,40 +327,6 @@ export const createHapticsDirector = (
     return { left, right };
   };
 
-  /**
-   * A trigger's effect around its Slots' hold line: a click just under the
-   * line, then, once the Slots are held, light resistance from the line on.
-   */
-  const slotTrigger = (hold: number, held: boolean): TriggerEffect => {
-    const { click } = settings.triggers;
-
-    if (held) {
-      return {
-        force: settings.triggers.held.force,
-        kind: "resistance",
-        start: hold,
-      };
-    }
-
-    return {
-      end: hold,
-      force: click.force,
-      kind: "section",
-      start: hold - click.width,
-    };
-  };
-
-  const slotTriggers = (self: DuelistState | undefined) => ({
-    l2: slotTrigger(
-      tuning.input.potionSlots.hold,
-      self?.potionSlotsHeld === true
-    ),
-    r2: slotTrigger(
-      tuning.input.spellSlots.hold,
-      self?.spellSlotsHeld === true
-    ),
-  });
-
   /** The Perfect Release window opening: a tick, once per Charge. */
   const tickOnPerfect = (self: DuelistState | undefined) => {
     const stage = self
@@ -433,7 +399,7 @@ export const createHapticsDirector = (
         lightbar: lightbarFor(self, seconds),
         playerLeds: ledsFor(self ? (snapshot.score[self.team] ?? 0) : 0),
         rumble: rumble(live && self ? steadyFor(self, snapshot) : []),
-        triggers: live ? slotTriggers(self) : free,
+        triggers: free,
       };
     },
   };
