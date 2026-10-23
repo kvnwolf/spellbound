@@ -344,6 +344,20 @@ export const tuning = {
     health: 100,
     /** Spells hit a Duelist anywhere from the floor up to this height. */
     height: 2,
+    /**
+     * The Dodge shown as a roll: the Duelist tucks down to `scale` of its
+     * size (and the arm folds `armTuck` radians down against the robe) over
+     * the first and last `tuckShare` of the Dodge, and somersaults `turns`
+     * times toward where it goes about `pivotHeight` (metres up the standing
+     * body), never sinking through the floor.
+     */
+    roll: {
+      armTuck: 1.3,
+      pivotHeight: 1,
+      scale: 0.55,
+      tuckShare: 0.25,
+      turns: 1,
+    },
     walkSpeed: 4.5,
     /**
      * The visible Wand. Idle, a right hand holds it out level, its tip on

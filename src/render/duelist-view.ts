@@ -3,8 +3,9 @@
  * out in front, tinted by Team. The Wand tip is the simulation's own
  * (`tuning.duelist.wandTip`), where Spells leave it. The arm acts out each
  * Spell: Stupefy flicks it up, Charging a Confringo raises it overhead and
- * the cast swings it down at the aim, a Backfire drops it. It only reads presentation samples; the
- * procedural wizard and its poses come later. While it is the local
+ * the cast swings it down at the aim, a Backfire drops it. A Dodge is a
+ * roll: tucked, tumbling toward where it goes. It only reads presentation
+ * samples; the procedural wizard and its poses come later. While it is the local
  * Duelist's Lock-on Target, a fresnel rim glow traces its silhouette.
  * Petrified, it turns to grey stone with a cold, pale rim of light.
  */
@@ -22,12 +23,13 @@ import {
   Mesh,
   MeshStandardNodeMaterial,
   Object3D,
+  Quaternion,
   SphereGeometry,
   Vector3,
 } from "three/webgpu";
 
 import type { SpellKind } from "../duel/duel";
-import type { Point3 } from "../duel/geometry";
+import type { GroundPoint, Point3 } from "../duel/geometry";
 import type { Tuning } from "../tuning";
 import type { DuelistSample } from "./interpolate";
 
@@ -39,6 +41,8 @@ export interface DuelistView {
   readonly cast: (kind: SpellKind) => void;
   /** The Duelist's Charge Backfired: the arm drops back to rest. */
   readonly backfire: () => void;
+  /** The Duelist started a Dodge along `direction` (a unit vector on the floor): it rolls that way. */
+  readonly dodge: (direction: GroundPoint) => void;
   /**
    * Draws `sample`, easing poses over the `seconds` since the last frame.
    * `glow` is the rim glow it eases toward: 0 off, 1 the full lock mark of
@@ -81,6 +85,33 @@ interface Drop {
 const dropSeconds = (drop: Drop, wand: Tuning["duelist"]["wand"]) =>
   drop.kind === "swing" ? wand.swingSeconds : wand.recoilSeconds;
 
+/**
+ * The standing body's extremities, as points (metres from the feet) with a
+ * radius: what must stay above the floor while it tumbles.
+ */
+const bodyExtent = (() => {
+  const points: { at: Vector3; radius: number }[] = [
+    { at: new Vector3(0, 1.62, 0), radius: 0.2 },
+    { at: new Vector3(0, 1.5, 0), radius: 0 },
+    { at: new Vector3(0, 2.255, 0), radius: 0 },
+  ];
+
+  for (let step = 0; step < 8; step += 1) {
+    const turn = (step / 8) * Math.PI * 2;
+    const [sin, cos] = [Math.sin(turn), Math.cos(turn)];
+    points.push(
+      { at: new Vector3(0.45 * sin, 0, 0.45 * cos), radius: 0 },
+      { at: new Vector3(0.24 * sin, 1.705, 0.24 * cos), radius: 0 }
+    );
+  }
+
+  for (const side of [-1, 1]) {
+    points.push({ at: new Vector3(0.38 * side, 1.4, 0), radius: 0 });
+  }
+
+  return points;
+})();
+
 const wood = new MeshStandardNodeMaterial({ color: "#8a6038", roughness: 0.5 });
 
 /** Fresnel: 1 where the surface turns away from the camera (the silhouette), sharper with `power`. */
@@ -91,7 +122,8 @@ export const createDuelistView = (
   robeColor: string,
   glow: Tuning["lockOnGlow"],
   stone: Tuning["petrifiedLook"],
-  duelist: Tuning["duelist"]
+  duelist: Tuning["duelist"],
+  dodgeSeconds: number
 ): DuelistView => {
   // The rim glow: brightest where the surface turns away from the camera
   // (the silhouette), scaled by a per-Duelist strength the view eases.
@@ -165,7 +197,10 @@ export const createDuelistView = (
   const tipWorld = new Vector3();
   arm.add(sleeve, hand, stick, tip);
 
-  object.add(robe, head, hat, shoulders, arm);
+  // Everything that moves with the body, so a roll can turn it as one.
+  const body = new Group();
+  body.add(robe, head, hat, shoulders, arm);
+  object.add(body);
   // Heading first, then the tilt in the Duelist's own frame, so leaning and
   // falling are always backward whatever way they face.
   object.rotation.order = "YXZ";
@@ -177,14 +212,30 @@ export const createDuelistView = (
   let drop: Drop | null = null;
   // The arm's pitch last frame, radians up: where a swing or recoil starts.
   let armPitch = 0;
+  // A Dodge's roll: which way (a unit vector on the floor) and how long ago
+  // it began. Petrified Duelists do not roll.
+  let rollAge = Number.POSITIVE_INFINITY;
+  const rollWorld = { x: 0, z: 1 };
+  let petrified = false;
+  const rollTurn = new Quaternion();
+  const rollAxis = new Vector3();
+  const rollPoint = new Vector3();
 
   return {
     backfire: () => {
+      if (petrified) {
+        return;
+      }
+
       drop = { age: 0, from: armPitch, kind: "recoil" };
       flickAge = Number.POSITIVE_INFINITY;
       chargeRaise = 0;
     },
     cast: (kind) => {
+      if (petrified) {
+        return;
+      }
+
       flickAge = Number.POSITIVE_INFINITY;
 
       if (kind === "confringo") {
@@ -194,8 +245,26 @@ export const createDuelistView = (
         flickAge = 0;
       }
     },
+    dodge: (direction) => {
+      if (petrified) {
+        return;
+      }
+
+      rollAge = 0;
+      rollWorld.x = direction.x;
+      rollWorld.z = direction.z;
+    },
     object,
     show: (sample, seconds, wantedGlow) => {
+      ({ petrified } = sample);
+
+      if (petrified) {
+        // Stone does not swing, flick or roll: any motion in progress ends.
+        drop = null;
+        flickAge = Number.POSITIVE_INFINITY;
+        rollAge = Number.POSITIVE_INFINITY;
+      }
+
       object.position.set(
         sample.position.x,
         sample.elevation,
@@ -272,8 +341,63 @@ export const createDuelistView = (
       // Pitching up is a negative turn about the model's x axis; the inward
       // yaw swings the tip from the right hand toward the aim.
       armPitch = pitch;
-      arm.rotation.x = -pitch;
-      arm.rotation.y = yaw;
+
+      // A Dodge rolls the whole body: tucked in, it somersaults about a
+      // point inside it, lowered so its extremities clear the floor.
+      const { roll } = duelist;
+      const rolling = rollAge < dodgeSeconds;
+      let tuck = 0;
+
+      if (rolling) {
+        const progress = rollAge / dodgeSeconds;
+        const edge = roll.tuckShare;
+
+        tuck =
+          smooth(Math.min(progress / edge, 1)) *
+          smooth(Math.min((1 - progress) / edge, 1));
+
+        const angle = roll.turns * Math.PI * 2 * smooth(progress);
+        const size = 1 + (roll.scale - 1) * tuck;
+        const heading = object.rotation.y;
+
+        // The Dodge's direction in the Duelist's own frame; the roll's axis
+        // lies across it, so the head leads the way.
+        const sin = Math.sin(heading);
+        const cos = Math.cos(heading);
+        const across = rollWorld.x * cos - rollWorld.z * sin;
+        const along = rollWorld.x * sin + rollWorld.z * cos;
+
+        rollAxis.set(along, 0, -across);
+        rollTurn.setFromAxisAngle(rollAxis, angle);
+
+        // The lowest an extremity falls below the pivot once tucked and
+        // turned is how high the pivot must ride.
+        let reach = roll.pivotHeight * size;
+
+        for (const { at, radius } of bodyExtent) {
+          rollPoint
+            .set(at.x, at.y - roll.pivotHeight, at.z)
+            .multiplyScalar(size)
+            .applyQuaternion(rollTurn);
+
+          reach = Math.max(reach, -rollPoint.y + radius * size);
+        }
+
+        body.scale.setScalar(size);
+        body.quaternion.copy(rollTurn);
+        rollPoint.set(0, roll.pivotHeight * size, 0).applyQuaternion(rollTurn);
+        body.position.set(-rollPoint.x, reach - rollPoint.y, -rollPoint.z);
+
+        rollAge += seconds;
+      } else {
+        rollAge = Number.POSITIVE_INFINITY;
+        body.scale.setScalar(1);
+        body.quaternion.identity();
+        body.position.set(0, 0, 0);
+      }
+
+      arm.rotation.x = -pitch * (1 - tuck) + roll.armTuck * tuck;
+      arm.rotation.y = yaw * (1 - tuck);
 
       const fade = 1 - Math.exp(-glow.fadeSharpness * seconds);
       glowStrength.value += (wantedGlow - glowStrength.value) * fade;

@@ -193,7 +193,8 @@ const start = async () => {
         "#8a1c24",
         tuning.lockOnGlow,
         tuning.petrifiedLook,
-        tuning.duelist
+        tuning.duelist,
+        tuning.defence.dodge.seconds
       ),
     ],
     [
@@ -202,7 +203,8 @@ const start = async () => {
         "#1f5a3a",
         tuning.lockOnGlow,
         tuning.petrifiedLook,
-        tuning.duelist
+        tuning.duelist,
+        tuning.defence.dodge.seconds
       ),
     ],
   ]);
@@ -523,12 +525,14 @@ const start = async () => {
     showCharge(current, events, seconds, inDuel);
 
     // A cast moves the caster's Wand arm the way its Spell calls for; a
-    // Backfire drops it.
+    // Backfire drops it; a Dodge rolls the whole Duelist.
     for (const event of events) {
       if (event.type === "spell-cast") {
         views.get(event.spell.casterId)?.cast(event.spell.kind);
       } else if (event.type === "backfire") {
         views.get(event.duelistId)?.backfire();
+      } else if (event.type === "dodge") {
+        views.get(event.duelistId)?.dodge(event.direction);
       }
     }
 
