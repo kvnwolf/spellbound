@@ -93,6 +93,8 @@ export interface DuelistViewSettings {
   readonly potion: PotionLookSettings;
   /** How long a Dodge lasts: the roll's length. */
   readonly dodgeSeconds: number;
+  /** Full Stamina, against which the Duelist's breathing is measured. */
+  readonly staminaMax: number;
 }
 
 type Triple = readonly [number, number, number];
@@ -200,7 +202,9 @@ export const createDuelistView = (
   settings: DuelistViewSettings,
   assets: WizardAssets
 ): DuelistView => {
-  const { aura, dodgeSeconds, duelist, glow, potion, stone } = settings;
+  const { aura, dodgeSeconds, duelist, glow, potion, staminaMax, stone } =
+    settings;
+
   const { motion, wand } = duelist;
   const { gait, shots } = motion;
   const rig = createWizardRig(assets, team, settings);
@@ -336,6 +340,11 @@ export const createDuelistView = (
   let lastYaw: number | null = null;
   /** The legs stepping round as the body turns on the spot, 0 to 1. */
   let pivot = 0;
+  /** How winded the Duelist is (0 to 1), and where their breath is in its cycle. */
+  let winded = 0;
+  let breathPhase = 0;
+  // Each Duelist breathes and shifts their weight to their own rhythm.
+  const rhythm = id.length * 0.37;
 
   // Eased state weights.
   const weight = {
@@ -1383,6 +1392,61 @@ export const createDuelistView = (
   };
 
   /**
+   * Breathing and a standing weight shift laid over the clips: the chest
+   * rises and falls (slow and shallow at rest, quick and deep when winded:
+   * Stamina spent, easing back over `breath.recoverSeconds`), and standing,
+   * the hips drift side to side as the weight moves between the feet.
+   */
+  const breatheAndSway = () => {
+    const { breath } = motion;
+
+    const air =
+      breath.restAmplitude +
+      (breath.windedAmplitude - breath.restAmplitude) * winded;
+
+    const chest = air * Math.sin(breathPhase * Math.PI * 2);
+
+    directionToWorld(leftAxis.set(1, 0, 0), leftAxis);
+
+    for (const spine of joints.spine.slice(1)) {
+      turnAbout(spine, leftAxis, -chest / 2);
+    }
+
+    // The head keeps still while the chest breathes.
+    turnAbout(joints.head, leftAxis, chest);
+
+    const standing = 1 - gaitWeight;
+
+    const sway =
+      breath.sway *
+      standing *
+      Math.sin(clock * breath.swayRate * Math.PI * 2 + rhythm);
+
+    directionToWorld(leftAxis.set(0, 0, 1), leftAxis);
+    turnAbout(joints.pelvis, leftAxis, sway);
+    turnAbout(joints.spine[0] ?? joints.pelvis, leftAxis, -sway);
+  };
+
+  /** How winded the Duelist is (from the Stamina spent) and the breath's cycle, for `seconds`. */
+  const catchBreath = (sample: DuelistSample, seconds: number) => {
+    const { breath } = motion;
+    const spent = 1 - Math.min(Math.max(sample.stamina / staminaMax, 0), 1);
+
+    // Winded at once, recovering slowly.
+    winded =
+      spent > winded
+        ? approach(winded, spent, breath.windSharpness, seconds)
+        : approach(winded, spent, 1 / breath.recoverSeconds, seconds);
+
+    breathPhase = loopTime(
+      breathPhase +
+        seconds *
+          (breath.restRate + (breath.windedRate - breath.restRate) * winded),
+      1
+    );
+  };
+
+  /**
    * Turns the legs toward the motion; the chest turns back to the facing
    * only as far as a spine can (`counterTwist`), all the way while the Wand
    * is up, and the head looks the rest of the way (`headTurn` at most).
@@ -1432,6 +1496,8 @@ export const createDuelistView = (
     }
 
     lookAhead(sample);
+
+    breatheAndSway();
 
     // The head stays level as the body leans: the eyes keep the horizon.
     const level = gait.lean.headLevel;
@@ -1570,6 +1636,7 @@ export const createDuelistView = (
     }
 
     measure(sample, seconds);
+    catchBreath(sample, seconds);
     easeWeights(sample, seconds);
     const rolling = stack(sample);
     play();

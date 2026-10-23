@@ -48,6 +48,8 @@ export interface DuelistSample {
   readonly looseWand: Point3 | null;
   /** Focus points, for the full-Focus aura on the Wand. */
   readonly focus: number;
+  /** Stamina points, for how hard the Duelist breathes. */
+  readonly stamina: number;
   /** The Potion being drunk and how long until it is down, for the vial at the lips. */
   readonly drinking: Drinking | null;
   /** Seconds left of each lasting Potion's effect, for its aura. */
@@ -107,6 +109,7 @@ export const sampleDuelist = (
   shielding: current.shielding,
   sprinting: current.sprinting,
   staggered: current.staggerSeconds > 0,
+  stamina: lerp(previous.stamina, current.stamina, alpha),
   targetId: current.targetId,
 });
 

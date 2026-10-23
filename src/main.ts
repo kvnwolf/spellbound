@@ -237,6 +237,7 @@ const start = async () => {
     duelist: tuning.duelist,
     glow: tuning.lockOnGlow,
     potion: potionLook,
+    staminaMax: tuning.defence.stamina.max,
     stone: tuning.petrifiedLook,
   };
 
@@ -785,6 +786,7 @@ const start = async () => {
     // reallocate the frame's targets.
     if (hasArea && (view === undefined || resized)) {
       frame.render();
+
       resized = false;
     }
 

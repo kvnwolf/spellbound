@@ -189,6 +189,19 @@ const createStartGuard = () => {
   };
 };
 
+/** The left stick's direction, its length raised to `exponent` (a response curve). */
+const curvedWalk = (stick: Vec2, exponent: number): Vec2 => {
+  const length = Math.hypot(stick.x, stick.y);
+
+  if (length === 0) {
+    return stick;
+  }
+
+  const scale = length ** exponent / length;
+
+  return { x: stick.x * scale, y: stick.y * scale };
+};
+
 /**
  * A human holding a DualSense. `readPad` returns this frame's DualSense
  * snapshot, or nothing while no DualSense is connected (the Duelist then idles).
@@ -219,7 +232,9 @@ export const createHumanController = (
   readPad: () => DualSenseSnapshot | undefined,
   settings: Pick<Tuning, "input" | "tickRate"> = tuning
 ): Controller => {
-  const { flick, lockOnSettleSeconds, look } = settings.input;
+  const { flick, lockOnSettleSeconds, look, moveCurveExponent } =
+    settings.input;
+
   const tickSeconds = 1 / settings.tickRate;
   const aimResponse = createAimResponse(look);
   const flicks = createFlickDetector(flick, tickSeconds);
@@ -292,7 +307,7 @@ export const createHumanController = (
           pitch: turn.y * look.maxPitchSpeed,
           yaw: turn.x * look.maxYawSpeed,
         },
-        move: pad.leftStick,
+        move: curvedWalk(pad.leftStick, moveCurveExponent),
         potionSlots: spokenFor(potionSlots),
         shield: pad.buttons.l1,
         spellSlots: spokenFor(castSlots),

@@ -165,6 +165,19 @@ describe(createHumanController, () => {
     expect(intent.lightSpell).toBeTruthy();
   });
 
+  it("walks slower than linearly with a light touch of the left stick (the response curve)", () => {
+    const { tick } = holding([0.5, 0, 0, 0]);
+    tick();
+
+    const { x } = tick().move;
+
+    const deflection =
+      (0.5 - tuning.input.stickDeadZone) / (1 - tuning.input.stickDeadZone);
+
+    expect(x).toBeCloseTo(deflection ** tuning.input.moveCurveExponent);
+    expect(x).toBeLessThan(deflection);
+  });
+
   it("holds the Heavy Spell for as long as △ is down", () => {
     const { press, tick } = holding([0, 0, 0, 0]);
 

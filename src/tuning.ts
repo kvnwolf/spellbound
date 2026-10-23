@@ -881,6 +881,23 @@ export const tuning = {
      * +z the way it faces, +x to its left, so the Wand hand is at -x).
      */
     motion: {
+      /**
+       * Breathing laid over the clips: the chest rises `restAmplitude`
+       * radians `restRate` times a second at rest, up to `windedAmplitude`
+       * at `windedRate` when winded (all the Stamina spent; winded at
+       * `windSharpness`, recovering over `recoverSeconds`). Standing, the
+       * hips sway `sway` radians `swayRate` times a second.
+       */
+      breath: {
+        recoverSeconds: 3,
+        restAmplitude: 0.012,
+        restRate: 0.25,
+        sway: 0.02,
+        swayRate: 0.12,
+        windSharpness: 6,
+        windedAmplitude: 0.05,
+        windedRate: 0.7,
+      },
       /** Charging: `OverhandThrow` held at `chargeAt` seconds (the wind-up). A Clash: `Push_Loop` held at `clashAt`, the Wand trembling `tremble` metres `trembleRate` times a second. */
       chargeAt: 0.12,
       clashAt: 0,
@@ -1383,6 +1400,12 @@ export const tuning = {
        */
       springFrequency: 30,
     },
+    /**
+     * The left stick's response: its deflection (0 to 1, past the dead
+     * zone) is raised to this power, so a light touch gives a slow, careful
+     * walk and full tilt the full pace.
+     */
+    moveCurveExponent: 1.5,
     /**
      * How the right stick turns the camera. The deflection is shaped by a
      * response curve, eased by a critically damped spring (light smoothing and
