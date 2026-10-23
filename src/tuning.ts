@@ -953,6 +953,8 @@ export const tuning = {
         gaitSharpness: 8,
         headLead: { max: 0.45, seconds: 0.18 },
         headTurn: 1.1,
+        /** How much of the clips' bowed head lifts back toward the horizon. */
+        horizon: 0.75,
         lean: {
           accelerationSharpness: 10,
           headLevel: 0.7,

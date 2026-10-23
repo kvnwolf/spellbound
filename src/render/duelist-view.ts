@@ -1396,6 +1396,23 @@ export const createDuelistView = (
 
     turnAbout(joints.neck, up, off * 0.4);
     turnAbout(joints.head, up, off * 0.6);
+
+    // The eyes find the horizon: the clips hang the head, looking at the
+    // floor; it lifts back `gait.horizon` of that.
+    joints.head.updateWorldMatrix(true, false);
+    const forward = joints.head.matrixWorld.elements;
+
+    const length = Math.hypot(
+      forward[8] ?? 0,
+      forward[9] ?? 0,
+      forward[10] ?? 0
+    );
+
+    const bowed = length > 0 ? Math.asin(-(forward[9] ?? 0) / length) : 0;
+
+    directionToWorld(leftAxis.set(1, 0, 0), leftAxis);
+    turnAbout(joints.neck, leftAxis, -bowed * gait.horizon * 0.4);
+    turnAbout(joints.head, leftAxis, -bowed * gait.horizon * 0.6);
   };
 
   /**
