@@ -28,6 +28,7 @@ import { practiceRulesFor } from "./duel/practice";
 import type { PracticeRival } from "./duel/practice";
 import { createFixedStepClock } from "./game-loop";
 import { createHud } from "./hud";
+import { createLoadingScreen } from "./loading-screen";
 import { createOverlay } from "./overlay";
 import { knockoutSide, knockoutViewpoint } from "./render/camera-framing";
 import { clashViewpoint, createCameraRig } from "./render/camera-rig";
@@ -77,11 +78,18 @@ const element = <T extends HTMLElement>(
 };
 
 const start = async () => {
+  // Loading, from the first paint: the renderer, the wizard (most of the
+  // bytes) and the shaders, then the menus.
+  const loading = createLoadingScreen(element("#loading", HTMLElement));
   const canvas = element("#scene", HTMLCanvasElement);
   const overlay = createOverlay(element("#overlay", HTMLElement));
   const renderer = await createWebGPURenderer(canvas);
+  const { stages } = tuning.loading;
+  loading.progress(stages.renderer);
 
   if (!renderer) {
+    loading.done();
+
     const view = viewOf(initialScreenState(false).screen);
 
     if (view) {
@@ -231,7 +239,12 @@ const start = async () => {
 
   // The rigged wizard both Duelists wear, loaded once.
   const wizard = await loadWizardAssets(
-    `${import.meta.env.BASE_URL}${tuning.duelist.motion.url}`
+    `${import.meta.env.BASE_URL}${tuning.duelist.motion.url}`,
+    (share) => {
+      loading.progress(
+        stages.renderer + (stages.wizard - stages.renderer) * share
+      );
+    }
   );
 
   const views = new Map([
@@ -628,6 +641,11 @@ const start = async () => {
 
     return samples;
   };
+
+  // Every shader the courtyard and the wizards need, before the first frame.
+  await renderer.compileAsync(scene, rig.camera);
+  loading.progress(1);
+  loading.done();
 
   // `?perf`: frame, CPU and per-pass GPU timings in the corner.
   const probe = perfRequested()

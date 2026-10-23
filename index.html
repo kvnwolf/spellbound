@@ -4,6 +4,70 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Spellbound</title>
+    <!-- The loading screen's own look, inline so it shows from the first paint. -->
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #0b1020;
+      }
+
+      #loading {
+        position: fixed;
+        inset: 0;
+        z-index: 10;
+        display: grid;
+        place-content: center;
+        gap: 1.4rem;
+        padding: 2rem;
+        color: #efe4c8;
+        font-family:
+          "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+        text-align: center;
+        background: radial-gradient(ellipse at center, #141b33, #0b1020 70%);
+      }
+
+      #loading[hidden] {
+        display: none;
+      }
+
+      #loading h1 {
+        margin: 0;
+        color: #d8b46a;
+        font-size: clamp(2.5rem, 7vw, 5rem);
+        font-weight: 400;
+        letter-spacing: 0.08em;
+      }
+
+      #loading .loading-label {
+        min-height: 1.5em;
+        margin: 0;
+        font-size: clamp(1rem, 2.4vw, 1.4rem);
+        letter-spacing: 0.03em;
+      }
+
+      #loading .loading-bar {
+        --progress: 0;
+
+        position: relative;
+        width: min(22rem, 70vw);
+        height: 3px;
+        margin: 0 auto;
+        background: rgb(239 228 200 / 18%);
+      }
+
+      #loading .loading-bar::after {
+        position: absolute;
+        inset: 0;
+        background: #d8b46a;
+        box-shadow: 0 0 10px rgb(216 180 106 / 70%);
+        transform: scaleX(var(--progress));
+        transform-origin: left;
+        transition: transform 160ms ease-out;
+        content: "";
+      }
+    </style>
   </head>
   <body>
     <canvas id="scene"></canvas>
@@ -11,6 +75,17 @@
     <div id="charge-ring" hidden></div>
     <div id="hud" hidden></div>
     <section id="overlay" hidden></section>
+    <section
+      id="loading"
+      role="progressbar"
+      aria-valuemin="0"
+      aria-valuemax="100"
+      aria-valuenow="0"
+    >
+      <h1>Spellbound</h1>
+      <p class="loading-label"></p>
+      <div class="loading-bar"></div>
+    </section>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

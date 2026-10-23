@@ -1362,6 +1362,14 @@ export const tuning = {
     standOff: 2.5,
   },
 
+  /**
+   * The loading screen's progress bar: the share of it done once the
+   * renderer is up (`renderer`) and once the wizard has downloaded
+   * (`wizard`, filling in between by its bytes); compiling the shaders
+   * fills the rest.
+   */
+  loading: { stages: { renderer: 0.1, wizard: 0.8 } },
+
   /** Lock-on: R3 locks a Duelist onto an opponent, who becomes their Target. */
   lockOn: {
     /**
