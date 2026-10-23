@@ -124,6 +124,52 @@ const createSlotReader = (settings: Tuning["input"]["spellSlots"]) => {
   };
 };
 
+/** The buttons whose press the simulation or Lock-on reads as an edge: a held one can be a stray press. */
+const edgeButtons = ["circle", "cross", "square", "triangle", "r3"] as const;
+
+/**
+ * Buttons that were already down when gameplay (re)started, such as the one
+ * that closed a menu, are ignored until they are let go. The Duel finds
+ * presses by comparing against the last Intent it stepped with, and it does
+ * not step behind a menu, so without this a held button would look newly
+ * pressed on the first frame back.
+ */
+const createStartGuard = () => {
+  let armed = true;
+  const ignored = new Set<(typeof edgeButtons)[number]>();
+
+  return {
+    /** The next read ignores whatever is held then, until it is released. */
+    arm: () => {
+      armed = true;
+    },
+    /** The snapshot without the buttons still held from before gameplay started. */
+    filter: (pad: DualSenseSnapshot): DualSenseSnapshot => {
+      for (const button of edgeButtons) {
+        if (!pad.buttons[button]) {
+          ignored.delete(button);
+        } else if (armed) {
+          ignored.add(button);
+        }
+      }
+
+      armed = false;
+
+      if (ignored.size === 0) {
+        return pad;
+      }
+
+      const buttons = { ...pad.buttons };
+
+      for (const button of ignored) {
+        buttons[button] = false;
+      }
+
+      return { ...pad, buttons };
+    },
+  };
+};
+
 /**
  * A human holding a DualSense. `readPad` returns this frame's DualSense
  * snapshot, or nothing while no DualSense is connected (the Duelist then idles).
@@ -152,20 +198,24 @@ export const createHumanController = (
   const aimResponse = createAimResponse(look);
   const flicks = createFlickDetector(flick, tickSeconds);
   const slots = createSlotReader(settings.input.spellSlots);
+  const startGuard = createStartGuard();
   let r3WasDown = false;
   let settleTicks = 0;
 
   return {
     intent: () => {
-      const pad = readPad();
+      const raw = readPad();
 
-      if (!pad) {
+      if (!raw) {
         aimResponse.reset();
         slots.reset();
+        startGuard.arm();
         r3WasDown = false;
 
         return idleIntent;
       }
+
+      const pad = startGuard.filter(raw);
 
       const lockOn = pad.buttons.r3 && !r3WasDown;
       r3WasDown = pad.buttons.r3;
@@ -205,5 +255,6 @@ export const createHumanController = (
         switchTarget: settling ? 0 : flicks.read(stick),
       };
     },
+    suspend: startGuard.arm,
   };
 };

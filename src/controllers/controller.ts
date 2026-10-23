@@ -14,6 +14,12 @@ export interface ControllerView {
  */
 export interface Controller {
   readonly intent: (view: ControllerView) => Intent;
+  /**
+   * The Duel has stopped asking for Intents (a menu, the pause, a prompt).
+   * Called every frame it is not stepping. A Controller reading a human's
+   * buttons uses it to ignore whatever is held when asking resumes.
+   */
+  readonly suspend?: () => void;
 }
 
 /** A Controller that never does anything: a dummy opponent for testing (`?rival=idle`). */

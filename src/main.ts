@@ -378,6 +378,20 @@ const start = async () => {
   };
 
   /**
+   * While the Duel is not stepping, whatever is held when it next does (the
+   * press that closed the menu, say) is not a gameplay input.
+   */
+  const suspendControllersUnless = (playing: boolean) => {
+    if (playing) {
+      return;
+    }
+
+    for (const controller of controllers.values()) {
+      controller.suspend?.();
+    }
+  };
+
+  /**
    * Tells the screens what the controller did this frame, then builds a new
    * Duel if they now call for one: a Duel they just started is a new
    * simulation, and the connect prompt and the Difficulty select show a fresh one
@@ -529,6 +543,8 @@ const start = async () => {
 
     const timeScale =
       current.round.phase === "knockout" ? tuning.round.knockout.timeScale : 1;
+
+    suspendControllersUnless(playing);
 
     const simSeconds = playing ? seconds * timeScale : 0;
     const { alpha, events } = advance(simSeconds);

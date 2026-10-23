@@ -43,8 +43,10 @@ const holding = (axes: readonly [number, number, number, number]) => {
     id: "DualSense Wireless Controller (STANDARD GAMEPAD Vendor: 054c Product: 0ce6)",
   } satisfies GamepadLike;
 
+  let connected = true;
+
   const controller = createHumanController(() =>
-    readDualSense(pad, tuning.input)
+    connected ? readDualSense(pad, tuning.input) : undefined
   );
 
   const press = (index: number, down: boolean) => {
@@ -52,8 +54,14 @@ const holding = (axes: readonly [number, number, number, number]) => {
   };
 
   return {
+    /** The pad drops out and comes back, as on the "Reconecta tu mando" prompt. */
+    connect: (value: boolean) => {
+      connected = value;
+    },
     pad,
     press,
+    /** The Duel stops asking for Intents, as behind a menu or the pause. */
+    suspend: () => controller.suspend?.(),
     tick: () => controller.intent({ self: "hero", snapshot: duel.snapshot() }),
     /** Ticks `count` times and returns every Intent. */
     ticks: (count: number) =>
@@ -84,6 +92,7 @@ const settle = (tick: () => Intent) => {
 describe(createHumanController, () => {
   it("walks with the left stick and casts the Light Spell while □ is down", () => {
     const { press, tick } = holding([1, -1, 0, 0]);
+    tick();
     press(square, true);
 
     const intent = tick();
@@ -129,6 +138,77 @@ describe(createHumanController, () => {
       jump: true,
       shield: true,
       sprint: true,
+    });
+  });
+
+  describe("a press that closes a menu is not a gameplay input", () => {
+    const circle = 1;
+    const cross = 0;
+
+    it("does not Dodge while ○ is still held across a resume, until it is let go and pressed again", () => {
+      const { press, suspend, tick } = holding([0, 0, 0, 0]);
+      tick();
+      suspend();
+      press(circle, true);
+
+      const held = [tick(), tick()];
+      press(circle, false);
+      const released = tick();
+      press(circle, true);
+      const again = tick();
+
+      expect(held.map((each) => each.dodge)).toStrictEqual([false, false]);
+      expect(released.dodge).toBeFalsy();
+      expect(again.dodge).toBeTruthy();
+    });
+
+    it.each([
+      ["✕", cross, "jump"],
+      ["□", square, "lightSpell"],
+      ["△", triangle, "heavySpell"],
+    ] as const)(
+      "ignores %s held across a resume until it is released",
+      (_name, button, action) => {
+        const { press, suspend, tick } = holding([0, 0, 0, 0]);
+        suspend();
+        press(button, true);
+
+        const held = tick();
+        press(button, false);
+        tick();
+        press(button, true);
+
+        expect(held[action]).toBeFalsy();
+        expect(tick()[action]).toBeTruthy();
+      }
+    );
+
+    it("ignores a button already held when the Controller is first asked, as a Duel started by that press", () => {
+      const { press, tick } = holding([0, 0, 0, 0]);
+      press(cross, true);
+
+      expect(tick().jump).toBeFalsy();
+    });
+
+    it("ignores a button held while the DualSense comes back", () => {
+      const { connect, press, tick } = holding([0, 0, 0, 0]);
+      tick();
+      connect(false);
+      tick();
+      press(circle, true);
+      connect(true);
+
+      expect(tick().dodge).toBeFalsy();
+    });
+
+    it("still moves, aims and Shields while a closing button is held", () => {
+      const { press, suspend, tick } = holding([1, 0, 0, 0]);
+      suspend();
+      press(circle, true);
+      press(4, true);
+
+      expect(tick()).toMatchObject({ dodge: false, shield: true });
+      expect(tick().move.x).toBeCloseTo(1);
     });
   });
 
@@ -210,6 +290,7 @@ describe(createHumanController, () => {
     it("toggles Lock-on once per press, however long it is held", () => {
       const { press, ticks } = holding([0, 0, 0, 0]);
 
+      ticks(1);
       press(r3, true);
       const held = ticks(4);
       press(r3, false);
@@ -223,8 +304,10 @@ describe(createHumanController, () => {
     });
 
     it("ignores a right stick knocked by the R3 click for a moment", () => {
-      const { press, ticks } = holding([0, 0, 1, 0]);
+      const { pad, press, ticks } = holding([0, 0, 0, 0]);
 
+      ticks(1);
+      pad.axes[2] = 1;
       press(r3, true);
       const settling = ticks(ticksOf(tuning.input.lockOnSettleSeconds));
       const after = ticks(3);
@@ -391,6 +474,7 @@ describe(createHumanController, () => {
     it("keeps a Charge going when R2 is pulled while △ is already held", () => {
       const { pad, press, tick } = holding([0, 0, 0, 0]);
 
+      tick();
       press(faces.triangle, true);
       tick();
       pull(pad, 1);
