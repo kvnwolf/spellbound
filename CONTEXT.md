@@ -175,6 +175,9 @@ A Special Spell that deals no damage and Disarms the Duelist it hits; a Parried 
 **Incendio**:
 A Special Spell that explodes in an area on impact, dealing heavy damage and leaving a Burn.
 
+**Depulso**:
+A cheap Special Spell that blasts a short cone in front of the caster, knocking opponents back and interrupting their Charge or drinking.
+
 **Petrificus Totalus**:
 A Special Spell that leaves the Duelist it hits Petrified for a moment.
 
