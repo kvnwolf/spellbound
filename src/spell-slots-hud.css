@@ -1,6 +1,6 @@
 /*
  * The Spell Slots, bottom-right: the compact diamond (slot-diamond.css)
- * with the three Focus orbs beside it. Each Special Spell's glyph is a thin
+ * with the three Focus orbs to its right. Each Special Spell's glyph is a thin
  * line in that Spell's colour.
  */
 .ss-panel {
@@ -9,8 +9,6 @@
   display: flex;
   gap: 0.75rem;
   align-items: center;
-  /* Room for the right slot's name while R2 spreads the diamond. */
-  padding-right: 1rem;
 }
 
 /* Focus: three orbs stacked bottom to top, filling in turn. */

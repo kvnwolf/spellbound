@@ -18,8 +18,8 @@
 }
 
 .sd-diamond {
-  --sd-spread: 1.25rem;
-  --sd-badge: 1.6rem;
+  --sd-spread: 2.1rem;
+  --sd-badge: 2.7rem;
 
   position: relative;
   flex: none;
@@ -34,8 +34,8 @@
 
 /* Trigger held: the slots spread apart, ready for a face button. */
 .sd-diamond[data-held="true"] {
-  --sd-spread: 3.2rem;
-  --sd-badge: 2.1rem;
+  --sd-spread: 5.4rem;
+  --sd-badge: 3.5rem;
 
   opacity: 1;
 }
@@ -87,28 +87,28 @@
 /* The face button, a small mark tucked against the badge's lower edge. */
 .sd-face {
   position: absolute;
-  top: calc(var(--sd-badge) - 0.45rem);
+  top: calc(var(--sd-badge) - 0.55rem);
   display: grid;
   place-items: center;
-  width: 0.8rem;
-  height: 0.8rem;
+  width: 1.1rem;
+  height: 1.1rem;
   border: 1px solid rgb(216 180 106 / 45%);
   border-radius: 50%;
   background: rgb(10 12 24 / 92%);
   color: rgb(239 228 200 / 80%);
   font-family: system-ui, sans-serif;
-  font-size: 0.45rem;
+  font-size: 0.6rem;
   line-height: 1;
 }
 
 /* The names show only while the trigger is held, when the player is choosing. */
 .sd-name {
   position: absolute;
-  top: calc(var(--sd-badge) + 0.4rem);
+  top: calc(var(--sd-badge) + 0.5rem);
   width: max-content;
-  max-width: 5rem;
+  max-width: 6rem;
   color: var(--parchment);
-  font-size: 0.55rem;
+  font-size: 0.65rem;
   letter-spacing: 0.1em;
   line-height: 1.15;
   text-align: center;
@@ -136,9 +136,9 @@
 /* A Potion's remaining charges, a small numeral on the badge's upper right. */
 .sd-count {
   position: absolute;
-  top: -0.2rem;
-  right: -0.25rem;
+  top: -0.25rem;
+  right: -0.3rem;
   color: var(--parchment);
-  font-size: 0.6rem;
+  font-size: 0.75rem;
   font-variant-numeric: lining-nums tabular-nums;
 }

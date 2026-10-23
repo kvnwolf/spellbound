@@ -6,6 +6,8 @@
   --confringo: #ffb25e;
   --incendio: #ff8a52;
   --petrificus: #a9c0ff;
+  /* The Stamina bar: a calm magical blue, cool against the gold. */
+  --stamina: #5f8fd8;
 
   color: var(--parchment);
   background: #0b1020;
@@ -262,11 +264,11 @@ body {
   background: linear-gradient(180deg, #fbf6ea, #d9c08a);
 }
 
-/* Stamina: thin and amber, quieter while full. */
+/* Stamina: about half the Health bar's height, blue, quieter while full. */
 .hud-stamina {
   position: relative;
   width: 72%;
-  height: 0.2rem;
+  height: 0.3rem;
   overflow: hidden;
   border-radius: 1px;
   background: var(--ink);
@@ -282,7 +284,11 @@ body {
   position: absolute;
   inset: 0 auto 0 0;
   width: 100%;
-  background: linear-gradient(180deg, #f0cf7c, #b98a35);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--stamina), white 30%),
+    var(--stamina)
+  );
 }
 
 /* An action refused for want of Stamina: the bar flares red. */

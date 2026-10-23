@@ -2,8 +2,8 @@
  * The Special Spells' part of the Duel HUD, bottom-right: the four Spell
  * Slots as a compact diamond laid out like the face buttons (see
  * `slot-diamond.ts`), each with its Special Spell's glyph in the Spell's
- * colour and a dark radial Cooldown that uncovers as it recovers, and beside
- * it the three Focus orbs. While R2 is held the diamond spreads apart and
+ * colour and a dark radial Cooldown that uncovers as it recovers, and to its
+ * right the three Focus orbs. While R2 is held the diamond spreads apart and
  * shows the names. A slot dims while its Special Spell cannot be cast (short
  * of Focus, or cooling down); ○ is shown locked, kept for Expelliarmus, and
  * an empty slot is a dashed ring. Reads the local Duelist's snapshot and only
@@ -130,8 +130,8 @@ export const createSpellSlotsHud = (
   settings: SpellSlotsHudSettings
 ): SpellSlotsHud => {
   const panel = create("div", "ss-panel", root);
-  const focus = createFocusOrbs(panel, settings);
   const diamond = createSlotDiamond(panel, "ss-diamond");
+  const focus = createFocusOrbs(panel, settings);
 
   const slots = spellSlots.map((slot) =>
     createSlot(diamond.slots[slot], slot, settings)

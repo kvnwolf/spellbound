@@ -1,7 +1,7 @@
 /**
  * The Duel HUD: a DOM overlay that reads the simulation snapshot and events,
  * keeping the centre clear. Bottom-left, the local Duelist's bars with no
- * labels (a thick Health bar over a thin Stamina bar) beside the Potion
+ * labels (a thick Health bar over a thinner blue Stamina bar) beside the Potion
  * Slots; top-centre, only small diamonds for the Rounds each side has won; in
  * the middle, the call-outs (the "3, 2, 1, ¡Duelo!" countdown, "¡Parry!", the
  * Knockout and each Round's result); and just under the reticle, the name of
@@ -52,7 +52,7 @@ const create = (tag: string, className: string, parent?: HTMLElement) => {
 };
 
 /**
- * The local Duelist's Stamina, under their Health: a thin bar of the pool,
+ * The local Duelist's Stamina, under their Health: a blue bar of the pool,
  * dimmed while full, which flashes red when an action is refused for want
  * of Stamina.
  */
