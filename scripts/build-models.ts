@@ -70,6 +70,7 @@ const clips: readonly {
   { library: "ual1", name: "Jog_Fwd_Loop" },
   { library: "ual1", name: "Sprint_Loop" },
   { library: "ual1", name: "Roll" },
+  { library: "ual1", name: "Jump_Start" },
   { library: "ual1", name: "Jump_Loop" },
   { library: "ual1", name: "Jump_Land" },
   { library: "ual1", mirror: true, name: "Spell_Simple_Idle_Loop" },
@@ -684,6 +685,15 @@ await doc.transform(
     resize: [256, 256],
     targetFormat: "webp",
   }),
+  // The outfit's colour at 2K: it covers the whole body, so at 1K the
+  // close cameras (the Clash, the Knockout) magnify it into blur.
+  textureCompress({
+    encoder: sharp,
+    pattern: /Ranger_BaseColor/u,
+    quality: 82,
+    resize: [2048, 2048],
+    targetFormat: "webp",
+  }),
   textureCompress({
     encoder: sharp,
     quality: 90,
@@ -693,6 +703,7 @@ await doc.transform(
   }),
   textureCompress({
     encoder: sharp,
+    pattern: /^(?!.*Ranger_BaseColor)/u,
     quality: 82,
     resize: [1024, 1024],
     targetFormat: "webp",
