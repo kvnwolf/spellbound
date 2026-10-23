@@ -111,3 +111,27 @@ export const rotateToward = (
     z: from.z * keep + to.z * take,
   });
 };
+
+/**
+ * One step of a critically damped spring (Holden's, exact for any `step`)
+ * drawing `value`, moving at `rate`, toward `goal` with half its gap closed
+ * every `halflife` seconds: no overshoot, and no jolt in `rate` when the
+ * goal jumps. Returns the new value and rate.
+ */
+export const springStep = (
+  value: number,
+  rate: number,
+  goal: number,
+  halflife: number,
+  step: number
+) => {
+  const damping = (2 * Math.LN2) / halflife;
+  const gap = value - goal;
+  const drift = rate + gap * damping;
+  const decay = Math.exp(-damping * step);
+
+  return {
+    rate: decay * (rate - drift * damping * step),
+    value: decay * (gap + drift * step) + goal,
+  };
+};

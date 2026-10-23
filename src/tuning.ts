@@ -963,6 +963,13 @@ export const tuning = {
       /** The head looks this share of the aim's pitch. */
       headPitch: 0.5,
       /**
+       * When a one-shot starts (a Dodge, a hit, a jump, a landing, a pickup,
+       * a knock-back, a Stagger, a Knockout or getting up), the gap from the
+       * last drawn pose decays on a spring closing half of it every
+       * `halflife` seconds, instead of the pose popping.
+       */
+      inertialization: { halflife: 0.08 },
+      /**
        * A jump: the take-off plays `Jump_Start` from `takeoff.from` to
        * `takeoff.to` seconds of the clip over the first `takeoff.seconds` in
        * the air (the push off the floor and the legs tucking), then the air
@@ -984,7 +991,7 @@ export const tuning = {
        * the Dodge, then on at its own pace while it fades out over
        * `recoverSeconds`, the body turned toward the Dodge.
        */
-      roll: { from: 0.1, recoverSeconds: 0.25, to: 0.95 },
+      roll: { from: 0.34, recoverSeconds: 0.3, to: 1.08 },
       /** Clip weights ease in and out at `sharpness` per second. */
       sharpness: 12,
       /** How much of the Shield clip (`Idle_Shield_Loop`) the upper body takes: it swings the right shoulder back, out of the Wand arm's reach. */

@@ -47,6 +47,7 @@ import type {
   PotionKind,
   SpellState,
 } from "../duel/duel";
+import { springStep } from "../duel/geometry";
 import type { Point3 } from "../duel/geometry";
 import type { Tuning } from "../tuning";
 import type { DuelistSample } from "./interpolate";
@@ -157,6 +158,30 @@ const scratchQuaternion = new Quaternion();
 const parentQuaternion = new Quaternion();
 
 /** Turns `joint` by `angle` about `axis` (a world direction), after whatever posed it. */
+/** The rotation vector (axis times angle, the short way) of `quaternion`, into `out`. */
+const rotationVectorOf = (quaternion: Quaternion, out: Vector3) => {
+  const sign = quaternion.w < 0 ? -1 : 1;
+  const w = Math.min(Math.abs(quaternion.w), 1);
+  const sine = Math.sqrt(1 - w * w);
+  const angle = 2 * Math.acos(w);
+  const scale = sine < 1e-6 ? 2 : (angle / sine) * sign;
+
+  return out.set(
+    quaternion.x * scale,
+    quaternion.y * scale,
+    quaternion.z * scale
+  );
+};
+
+/** The quaternion turning by the rotation vector `turn`, into `out`. */
+const quaternionOfRotation = (turn: Vector3, out: Quaternion) => {
+  const angle = turn.length();
+
+  return angle < 1e-9
+    ? out.identity()
+    : out.setFromAxisAngle(scratch.copy(turn).divideScalar(angle), angle);
+};
+
 const turnAbout = (joint: Object3D, axis: Vector3, angle: number) => {
   if (Math.abs(angle) < 1e-5 || !joint.parent) {
     return;
@@ -233,6 +258,26 @@ export const createDuelistView = (
     position: bone.position.clone(),
     quaternion: bone.quaternion.clone(),
   }));
+
+  // Inertialization: when a one-shot starts (a Dodge, a hit, a jump, a
+  // landing...), the new pose takes over at once and the gap from the last
+  // drawn pose decays on a critically damped spring, so the body flows into
+  // it instead of popping (Holden's offset inertialization).
+  const drawnPose = bones.map((bone) => ({
+    position: bone.position.clone(),
+    quaternion: bone.quaternion.clone(),
+  }));
+
+  const offsets = bones.map(() => ({
+    position: new Vector3(),
+    positionRate: new Vector3(),
+    rotation: new Vector3(),
+    rotationRate: new Vector3(),
+  }));
+
+  let blendPending = false;
+  let blending = false;
+  const was = { knockedBack: false, knockedOut: false, staggered: false };
 
   /** Hands each layer's weights and times to the mixer and poses the body. */
   const play = () => {
@@ -1402,6 +1447,111 @@ export const createDuelistView = (
     turnAbout(joints.head, leftAxis, -looking * 0.6);
   };
 
+  /** Starts a blend from the last drawn pose when a state that throws the body about begins or ends. */
+  const watchThrows = (sample: DuelistSample) => {
+    const starts =
+      (sample.knockedBack && !was.knockedBack) ||
+      sample.knockedOut !== was.knockedOut ||
+      (sample.staggered && !was.staggered);
+
+    if (starts) {
+      blendPending = true;
+    }
+
+    was.knockedBack = sample.knockedBack;
+    was.knockedOut = sample.knockedOut;
+    was.staggered = sample.staggered;
+  };
+
+  /** The gap from this new pose back to the last drawn one, to decay from. */
+  const startBlend = () => {
+    blendPending = false;
+    blending = true;
+
+    for (const [index, bone] of bones.entries()) {
+      const drawn = drawnPose[index];
+      const offset = offsets[index];
+
+      if (drawn && offset) {
+        // drawn = offset * new.
+        scratchQuaternion
+          .copy(bone.quaternion)
+          .invert()
+          .premultiply(drawn.quaternion);
+        rotationVectorOf(scratchQuaternion, offset.rotation);
+        offset.position.subVectors(drawn.position, bone.position);
+      }
+    }
+  };
+
+  /** Decays one offset's vector on the spring. */
+  const decay = (value: Vector3, rate: Vector3, seconds: number) => {
+    for (const axis of ["x", "y", "z"] as const) {
+      const next = springStep(
+        value[axis],
+        rate[axis],
+        0,
+        motion.inertialization.halflife,
+        seconds
+      );
+
+      value[axis] = next.value;
+      rate[axis] = next.rate;
+    }
+  };
+
+  /** Decays the blend and lays what is left of it over the new pose. */
+  const decayBlend = (seconds: number) => {
+    let left = 0;
+
+    for (const [index, bone] of bones.entries()) {
+      const offset = offsets[index];
+
+      if (offset) {
+        decay(offset.rotation, offset.rotationRate, seconds);
+        decay(offset.position, offset.positionRate, seconds);
+        left = Math.max(left, offset.rotation.length());
+        bone.quaternion.premultiply(
+          quaternionOfRotation(offset.rotation, scratchQuaternion)
+        );
+        bone.position.add(offset.position);
+      }
+    }
+
+    if (left < 1e-4) {
+      blending = false;
+
+      for (const offset of offsets) {
+        offset.rotation.set(0, 0, 0);
+        offset.rotationRate.set(0, 0, 0);
+        offset.position.set(0, 0, 0);
+        offset.positionRate.set(0, 0, 0);
+      }
+    }
+  };
+
+  /**
+   * Inertialization: a one-shot or a throw starts a blend from the last
+   * drawn pose to this new one, which decays (`motion.inertialization`);
+   * then the pose is noted as drawn.
+   */
+  const inertialize = (sample: DuelistSample, seconds: number) => {
+    watchThrows(sample);
+
+    if (blendPending) {
+      startBlend();
+    }
+
+    if (blending && seconds > 0) {
+      decayBlend(seconds);
+    }
+
+    for (const [index, bone] of bones.entries()) {
+      drawnPose[index]?.position.copy(bone.position);
+      drawnPose[index]?.quaternion.copy(bone.quaternion);
+    }
+  };
+
   /** Poses the whole body for `seconds`. */
   const pose = (sample: DuelistSample, seconds: number) => {
     clock += seconds;
@@ -1438,6 +1588,7 @@ export const createDuelistView = (
     grip(1 - weight.disarmed);
     poseWandArm(sample);
     poseFreeArm(sample);
+    inertialize(sample, seconds);
     rig.model.updateMatrixWorld(true);
 
     // One-shots age after they are drawn, so each starts from its first
@@ -1489,17 +1640,21 @@ export const createDuelistView = (
   /** This Duelist's own moves: a Dodge, a landing, a Parry, a Wand picked up, a Potion down. */
   const reactToOwn = (event: DuelEvent) => {
     if (event.type === "dodge") {
+      blendPending = true;
       rollAge = 0;
       rollYaw = Math.atan2(event.direction.x, event.direction.z);
     } else if (event.type === "jump") {
+      blendPending = true;
       jumpAge = 0;
     } else if (event.type === "land") {
+      blendPending = true;
       landAge = 0;
       jumpAge = idle;
     } else if (event.type === "parry") {
       parryAge = 0;
       raisedAge = 0;
     } else if (event.type === "wand-recovered" && event.how === "pickup") {
+      blendPending = true;
       pickupAge = 0;
     } else if (event.type === "potion-drunk") {
       flashAge = 0;
@@ -1518,6 +1673,7 @@ export const createDuelistView = (
       }
     } else if (event.type === "spell-hit") {
       if (event.targetId === id) {
+        blendPending = true;
         flinchAge = 0;
         flinchClip =
           event.position.y - (last?.elevation ?? 0) > duelist.chestHeight + 0.15
