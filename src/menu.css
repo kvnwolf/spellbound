@@ -6,10 +6,17 @@
  * logo, so no screen's content can move it. A new menu screen only fills
  * `#overlay`. Linked from index.html so the loading screen's first paint has it.
  */
+/* Registered so the logo glides, not jumps, between the title and the menus. */
+@property --logo-top {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 0px;
+}
+
 #menu {
   /*
-   * Where the logo sits: the same on every screen. Short screens shrink it,
-   * so the longest menu still fits under it.
+   * Where the logo sits: the same on every menu screen. Short screens shrink
+   * it, so the longest menu still fits under it.
    */
   --logo-width: min(40rem, 86vw, 72vh);
   --logo-top: clamp(1rem, 8vh, 7rem);
@@ -20,6 +27,7 @@
   --clash-delay: 160ms;
 
   position: fixed;
+  transition: --logo-top 600ms ease-in-out;
   inset: 0;
   z-index: 10;
   overflow: hidden;
@@ -60,6 +68,15 @@
 
 #menu[hidden] {
   display: none;
+}
+
+/*
+ * Loading and the connect prompt are the title alone: the logo and the
+ * prompt under it centred together on the screen.
+ */
+#menu:is([data-intro="loading"], :has(#overlay[data-screen="connect"])) {
+  /* ponytail: the prompt's height (two short lines) is estimated, 4.5rem. */
+  --logo-top: calc(50vh - (var(--logo-height) + 1.25rem + 4.5rem) / 2);
 }
 
 /* A faint magic circle round the Clash point. */
@@ -155,7 +172,7 @@
 /* The screen's content: from just under the logo, never over the disclaimer. */
 #overlay {
   position: absolute;
-  inset: calc(var(--logo-top) + var(--logo-height) + 1.25rem) 0 4.5rem;
+  inset: calc(var(--logo-top) + var(--logo-height) + 1.25rem) 0 6rem;
   z-index: 1;
   display: flex;
   flex-direction: column;
@@ -290,7 +307,7 @@
 #overlay .overlay-legal {
   position: fixed;
   right: 0;
-  bottom: 1rem;
+  bottom: calc(clamp(0.5rem, 1.6vmin, 1.25rem) + 1.25rem);
   left: 0;
   max-width: 52rem;
   margin: 0 auto;
