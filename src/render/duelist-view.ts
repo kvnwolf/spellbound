@@ -1524,15 +1524,26 @@ export const createDuelistView = (
       }
     }
 
-    // The run clips stoop (the walk does not): the spine straightens up by
-    // `upright` about the hips' own side-to-side axis.
-    const upright = gait.upright * runningShare();
+    // The clips walk and run hips back and stooped: the pelvis tucks under
+    // (the thighs turned back, so the feet stay put) and the spine
+    // straightens, about the hips' own side-to-side axis.
+    const running = runningShare();
+    const walkingShare = Math.max(gaitWeight - running, 0);
+    const tuck = gait.tuck.walk * walkingShare + gait.tuck.run * running;
 
-    if (upright > 1e-4) {
+    const upright =
+      gait.upright.walk * walkingShare + gait.upright.run * running;
+
+    if (tuck + upright > 1e-4) {
       directionToWorld(leftAxis.set(1, 0, 0), leftAxis).applyAxisAngle(
         up,
         twist
       );
+      turnAbout(joints.pelvis, leftAxis, -tuck);
+
+      for (const thigh of joints.thighs) {
+        turnAbout(thigh, leftAxis, tuck);
+      }
 
       for (const spine of joints.spine) {
         turnAbout(spine, leftAxis, -upright / joints.spine.length);

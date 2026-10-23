@@ -921,8 +921,10 @@ export const tuning = {
        * `raisedTwist` with the Wand up, easing at `twistSharpness`); a
        * shortened step raises the pelvis (at most `maxRaise` metres) so the
        * legs keep the clip's straightness, and running it rides `lift` metres
-       * higher still and the spine straightens `upright` radians (the run
-       * clips crouch and stoop); the spine turns the chest back at most
+       * higher still. The clips walk and run hips back and stooped: the
+       * pelvis tucks under `tuck` radians (the thighs turned back, so the
+       * feet stay put) and the spine straightens `upright` more, each by
+       * the walk's or the run's share of the gait; the spine turns the chest back at most
        * `counterTwist` (all the way while the Wand is up) and the head looks
        * the rest, at most `headTurn` off the chest, leading a turn by
        * `headLead.seconds` of it (at most `headLead.max`). The body leans
@@ -944,11 +946,11 @@ export const tuning = {
         },
         calm: 0.35,
         counterTwist: 0.45,
-        // The run (R1, 5 m/s) is the sprint clip: the jog's high heel kicks
+        // The run (R1, 6 m/s) is the sprint clip: the jog's high heel kicks
         // skip like a cartoon; the jog only bridges the walk to it.
         crossovers: [
-          [2.6, 3.4],
-          [3.4, 4.2],
+          [3.2, 4.2],
+          [4.2, 5.2],
         ],
         gaitSharpness: 8,
         headLead: { max: 0.45, seconds: 0.18 },
@@ -978,8 +980,9 @@ export const tuning = {
         raisedTwist: 1.1,
         speedSharpness: 10,
         stride: [0.4, 1.3],
+        tuck: { run: 0.24, walk: 0.1 },
         twistSharpness: 10,
-        upright: 0.28,
+        upright: { run: 0.37, walk: 0.08 },
       },
       /** The head looks this share of the aim's pitch. */
       headPitch: 0.5,
@@ -1061,7 +1064,7 @@ export const tuning = {
         rim: "#ffb36b",
       },
     },
-    walkSpeed: 2.5,
+    walkSpeed: 3,
     /**
      * The visible Wand and the right arm that holds it. At rest, walking or
      * running the arm hangs with the clips, the Wand held low. It rises (by
