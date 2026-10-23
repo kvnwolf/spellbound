@@ -1032,10 +1032,12 @@ export const tuning = {
         parry: { from: 0.1, peak: 0.3, seconds: 0.4, to: 0.6 },
         pickup: { from: 0, peak: 0.42, seconds: 0.55, to: 0.83 },
         push: { from: 0, peak: 0.25, seconds: 0.32, to: 0 },
-        strike: { from: 0.27, peak: 0.15, seconds: 0.5, to: 0.75 },
+        strike: { from: 0.27, peak: 0.15, seconds: 0.42, to: 0.58 },
       },
       /** The armed upper-body stance (`Spell_Simple_Idle_Loop`): its weight standing, and how much of it stays at a run. */
       stance: { moving: 0.35, standing: 1 },
+      /** How much of the overhand strike the upper body takes on a Confringo release: in full, its follow-through throws both arms wide. */
+      strikeUpper: 0.55,
       tremble: 0.012,
       trembleRate: 17,
       url: "models/wizard.glb",

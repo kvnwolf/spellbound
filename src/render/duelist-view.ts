@@ -863,7 +863,12 @@ export const createDuelistView = (
     const cast = shot(castAge, shots.cast);
     over(upper, "Spell_Simple_Shoot", cast.time, cast.weight);
     const strike = shot(strikeAge, shots.strike);
-    over(upper, "OverhandThrow", strike.time, strike.weight);
+    over(
+      upper,
+      "OverhandThrow",
+      strike.time,
+      strike.weight * motion.strikeUpper
+    );
     over(lower, "OverhandThrow", strike.time, strike.weight * 0.5);
     const push = shot(pushAge, shots.push);
     over(upper, "Push_Loop", push.time, push.weight);
