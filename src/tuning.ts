@@ -620,6 +620,10 @@ export const tuning = {
      * faster wins and not pumping loses.
      */
     rivalClashPumpRate: 4,
+    /** With `?rival=disarms`, the first Expelliarmus comes this many seconds after "¡Duelo!". */
+    rivalDisarmsFirstCast: 2,
+    /** With `?rival=disarms`, the rival casts Expelliarmus at the player this often (seconds). */
+    rivalDisarmsInterval: 8,
   },
 
   /**

@@ -14,6 +14,7 @@ import type { Controller } from "./controllers/controller";
 import { idleController } from "./controllers/controller";
 import { createDebugCasterController } from "./controllers/debug-caster";
 import { createDebugClashController } from "./controllers/debug-clash";
+import { createDebugDisarmsController } from "./controllers/debug-disarms";
 import { createHumanController } from "./controllers/human-controller";
 import { createRandom } from "./controllers/random";
 import { createDualSenseEffects } from "./dualsense-effects";
@@ -55,6 +56,7 @@ import type { PadKind, ScreenEvent } from "./screens/screens";
 import { viewOf } from "./screens/view";
 import { createSpellSlotsHud } from "./spell-slots-hud";
 import { tuning } from "./tuning";
+import type { Tuning } from "./tuning";
 
 const localId: DuelistId = "local";
 const opponentId: DuelistId = "opponent";
@@ -121,7 +123,9 @@ const start = async () => {
   // The opponent is the AI at the chosen Difficulty. For testing,
   // `?rival=casts` swaps in a stationary rival casting Stupefy on a beat,
   // `?rival=clash` one that Charges and releases a Confringo with the player
-  // and pumps the Clash it leads to, and `?rival=idle` one that does nothing.
+  // and pumps the Clash it leads to, `?rival=disarms` one that casts
+  // Expelliarmus at the player every few seconds (free of Focus and Cooldown,
+  // for every Duelist), and `?rival=idle` one that does nothing.
   const rival = new URLSearchParams(window.location.search).get("rival");
 
   const createRival = (difficulty: Difficulty): Controller => {
@@ -147,6 +151,18 @@ const start = async () => {
       });
     }
 
+    if (rival === "disarms") {
+      return createDebugDisarmsController({
+        firstCastTicks: Math.round(
+          tuning.debug.rivalDisarmsFirstCast * tuning.tickRate
+        ),
+        intervalTicks: Math.round(
+          tuning.debug.rivalDisarmsInterval * tuning.tickRate
+        ),
+        spellSlots: tuning,
+      });
+    }
+
     // A fresh seed every Duel, so no two play out the same.
     return createAiController({
       arena: courtyard,
@@ -156,6 +172,20 @@ const start = async () => {
     });
   };
 
+  // `?rival=disarms` makes Expelliarmus free of Focus and Cooldown, so the
+  // rival can cast it without earning Focus; nothing else changes.
+  const duelTuning: Tuning =
+    rival === "disarms"
+      ? {
+          ...tuning,
+          expelliarmus: {
+            ...tuning.expelliarmus,
+            cooldownSeconds: 0,
+            segments: 0,
+          },
+        }
+      : tuning;
+
   const createDuelFor = (difficulty: Difficulty) =>
     createDuel({
       arena: courtyard,
@@ -164,7 +194,7 @@ const start = async () => {
         { id: localId, spawn: courtyardSpawns.near, team: "near" },
         { id: opponentId, spawn: courtyardSpawns.far, team: "far" },
       ],
-      tuning,
+      tuning: duelTuning,
     });
 
   const createControllers = (difficulty: Difficulty) =>
