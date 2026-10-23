@@ -1,0 +1,69 @@
+/*
+ * The Spellbound logo (its SVG lives in index.html): the name over two
+ * Spells meeting in a Clash, crimson from the left, emerald from the right.
+ * Linked from index.html so it styles the loading screen's first paint;
+ * `--progress` (0 to 1) grows the beams toward the flare while loading.
+ */
+@import "@fontsource-variable/cinzel/wght.css";
+
+.logo {
+  --progress: 1;
+
+  display: block;
+  width: min(40rem, 86vw);
+  height: auto;
+  margin: 0 auto;
+  overflow: visible;
+}
+
+/* Loading starts with the beams drawn in. */
+#loading .logo {
+  --progress: 0;
+}
+
+.logo-word {
+  fill: #efe4c8;
+  font-family: "Cinzel Variable", "Iowan Old Style", Palatino, serif;
+  font-size: 64px;
+  font-weight: 600;
+}
+
+.logo-beam {
+  transform: scaleX(var(--progress));
+  transform-box: fill-box;
+  transition: transform 160ms ease-out;
+}
+
+.logo-beam line {
+  stroke-linecap: round;
+}
+
+.logo-crimson {
+  transform-origin: left center;
+  filter: drop-shadow(0 0 6px rgb(217 71 60 / 80%));
+}
+
+.logo-emerald {
+  transform-origin: right center;
+  filter: drop-shadow(0 0 6px rgb(63 174 122 / 80%));
+}
+
+.logo-flare {
+  opacity: var(--progress);
+  filter: drop-shadow(0 0 10px rgb(255 240 200 / 90%));
+  animation: logo-flare 1.6s ease-in-out infinite alternate;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+@keyframes logo-flare {
+  to {
+    transform: scale(1.12) rotate(8deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .logo-flare {
+    animation: none;
+  }
+}

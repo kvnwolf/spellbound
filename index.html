@@ -4,6 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Spellbound</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/src/logo.css" />
     <!-- The loading screen's own look, inline so it shows from the first paint. -->
     <style>
       html,
@@ -31,35 +33,6 @@
       #loading[hidden] {
         display: none;
       }
-
-      #loading h1 {
-        margin: 0;
-        color: #d8b46a;
-        font-size: clamp(2.5rem, 7vw, 5rem);
-        font-weight: 400;
-        letter-spacing: 0.08em;
-      }
-
-      #loading .loading-bar {
-        --progress: 0;
-
-        position: relative;
-        width: min(22rem, 70vw);
-        height: 3px;
-        margin: 0 auto;
-        background: rgb(239 228 200 / 18%);
-      }
-
-      #loading .loading-bar::after {
-        position: absolute;
-        inset: 0;
-        background: #d8b46a;
-        box-shadow: 0 0 10px rgb(216 180 106 / 70%);
-        transform: scaleX(var(--progress));
-        transform-origin: left;
-        transition: transform 160ms ease-out;
-        content: "";
-      }
     </style>
   </head>
   <body>
@@ -75,8 +48,70 @@
       aria-valuemax="100"
       aria-valuenow="0"
     >
-      <h1>Spellbound</h1>
-      <div class="loading-bar"></div>
+      <h1>
+        <!-- The logo; the menus clone it (overlay.ts). -->
+        <svg
+          class="logo"
+          viewBox="0 0 640 160"
+          role="img"
+          aria-label="Spellbound"
+        >
+          <text
+            class="logo-word"
+            x="320"
+            y="74"
+            text-anchor="middle"
+            textLength="580"
+            lengthAdjust="spacing"
+          >
+            SPELLBOUND
+          </text>
+          <g class="logo-beam logo-crimson">
+            <line
+              x1="24"
+              y1="118"
+              x2="316"
+              y2="118"
+              stroke="#d9473c"
+              stroke-width="6"
+            />
+            <line
+              x1="24"
+              y1="118"
+              x2="314"
+              y2="118"
+              stroke="#ffc2b8"
+              stroke-width="1.6"
+            />
+          </g>
+          <g class="logo-beam logo-emerald">
+            <line
+              x1="324"
+              y1="118"
+              x2="616"
+              y2="118"
+              stroke="#3fae7a"
+              stroke-width="6"
+            />
+            <line
+              x1="326"
+              y1="118"
+              x2="616"
+              y2="118"
+              stroke="#c4f2d9"
+              stroke-width="1.6"
+            />
+          </g>
+          <g class="logo-flare">
+            <circle cx="320" cy="118" r="20" fill="#fff0c8" opacity="0.22" />
+            <path
+              d="M320 88 L325 112 L350 118 L325 124 L320 148 L315 124 L290 118 L315 112 Z"
+              fill="#fff6dc"
+            />
+            <circle cx="320" cy="118" r="7" fill="#ffffff" />
+          </g>
+        </svg>
+      </h1>
     </section>
     <script type="module" src="/src/main.ts"></script>
   </body>

@@ -1,13 +1,13 @@
 import { text } from "./text";
 
 /**
- * The loading screen, in the menus' style: the title and a progress bar
- * from the real loading (the renderer, the wizard's bytes, the shaders),
- * shown from the first paint (its shell is in `index.html`, styled inline so
+ * The loading screen, in the menus' style: the logo, whose two Spells grow
+ * toward their Clash with the real loading (the renderer, the wizard's
+ * bytes, the shaders), shown from the first paint (its shell is in `index.html`, styled inline so
  * nothing else has to load first) until the game hands over to the menus.
  */
 export const createLoadingScreen = (element: HTMLElement) => {
-  const bar = element.querySelector<HTMLElement>(".loading-bar");
+  const logo = element.querySelector<SVGElement>(".logo");
 
   // No visible label (the user's call): the bar's name is for screen readers.
   element.ariaLabel = text.loading;
@@ -22,7 +22,7 @@ export const createLoadingScreen = (element: HTMLElement) => {
     /** Never moves back: `share` of the loading done, 0 to 1. */
     progress: (share: number) => {
       shown = Math.max(shown, Math.min(Math.max(share, 0), 1));
-      bar?.style.setProperty("--progress", String(shown));
+      logo?.style.setProperty("--progress", String(shown));
       element.ariaValueNow = String(Math.round(shown * 100));
     },
   };

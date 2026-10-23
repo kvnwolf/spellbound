@@ -7,6 +7,14 @@ import { text } from "./text";
  */
 export const createOverlay = (element: HTMLElement) => {
   const heading = document.createElement("h1");
+  // The logo from the loading screen's markup (index.html) stands in for the
+  // plain title, its beams drawn in full (no loading `--progress` carried over).
+  const logo = document.querySelector("#loading .logo")?.cloneNode(true);
+
+  if (logo instanceof SVGElement) {
+    logo.style.removeProperty("--progress");
+  }
+
   const body = document.createElement("p");
   const items = document.createElement("ul");
   const hint = document.createElement("p");
@@ -33,7 +41,9 @@ export const createOverlay = (element: HTMLElement) => {
 
       shown = key;
       element.dataset.screen = view.screen;
-      heading.textContent = view.heading;
+      heading.replaceChildren(
+        view.heading === text.title && logo ? logo : view.heading
+      );
       body.textContent = view.body ?? "";
       body.hidden = view.body === undefined;
       hint.textContent = view.hint ?? "";
