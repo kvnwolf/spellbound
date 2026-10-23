@@ -1,16 +1,18 @@
 /**
  * Wires the game together: the WebGPU check, the courtyard, one Duel between
- * a DualSense-driven Duelist and a stationary opponent, and the frame loop
+ * a DualSense-driven Duelist and an AI opponent, and the frame loop
  * that steps the fixed-rate simulation, feeds its events to the VFX, HUD and
  * camera, and renders interpolated snapshots at display rate.
  */
 import "./style.css";
 import { courtyard, courtyardSpawns } from "./arena/courtyard";
 import { createDuelAudio } from "./audio/audio";
+import { createAiController } from "./controllers/ai-controller";
 import type { Controller } from "./controllers/controller";
 import { idleController } from "./controllers/controller";
 import { createDebugCasterController } from "./controllers/debug-caster";
 import { createHumanController } from "./controllers/human-controller";
+import { createRandom } from "./controllers/random";
 import { createDualSenseEffects } from "./dualsense-effects";
 import { createHapticsDirector } from "./dualsense/haptics";
 import { readDualSense, scanGamepads } from "./dualsense/input";
@@ -110,10 +112,30 @@ const start = async () => {
   // frame's snapshot for every tick run during the frame.
   let pad: DualSenseSnapshot | undefined;
 
-  // The opponent stands still until the AI exists; `?rival=casts` makes it
-  // cast Stupefy on a beat, for trying out incoming Spells.
-  const rivalCasts =
-    new URLSearchParams(window.location.search).get("rival") === "casts";
+  // The opponent is the AI at the chosen Difficulty. For testing,
+  // `?rival=casts` swaps in a stationary rival casting Stupefy on a beat, and
+  // `?rival=idle` one that does nothing at all.
+  const rival = new URLSearchParams(window.location.search).get("rival");
+
+  const createRival = (difficulty: Difficulty): Controller => {
+    if (rival === "idle") {
+      return idleController;
+    }
+
+    if (rival === "casts") {
+      return createDebugCasterController(
+        Math.round(tuning.debug.rivalCastInterval * tuning.tickRate)
+      );
+    }
+
+    // A fresh seed every Duel, so no two play out the same.
+    return createAiController({
+      arena: courtyard,
+      difficulty,
+      random: createRandom(Math.floor(Math.random() * 2 ** 31)),
+      tuning,
+    });
+  };
 
   const createDuelFor = (difficulty: Difficulty) =>
     createDuel({
@@ -126,23 +148,16 @@ const start = async () => {
       tuning,
     });
 
-  const createControllers = () =>
+  const createControllers = (difficulty: Difficulty) =>
     new Map<DuelistId, Controller>([
       [localId, createHumanController(() => pad)],
-      [
-        opponentId,
-        rivalCasts
-          ? createDebugCasterController(
-              Math.round(tuning.debug.rivalCastInterval * tuning.tickRate)
-            )
-          : idleController,
-      ],
+      [opponentId, createRival(difficulty)],
     ]);
 
   // Behind the connect prompt and the Difficulty select sits a fresh Duel (run 0),
   // frozen at its start; every Duel the screens start is a new run.
   let duel = createDuelFor("duelista");
-  let controllers = createControllers();
+  let controllers = createControllers("duelista");
   let activeRun = 0;
 
   const shake = createCameraShake(tuning.cameraShake);
@@ -342,7 +357,7 @@ const start = async () => {
     // Hide any Spell still flying from the old Duel before its ids repeat.
     vfx.update(current.spells, [], 0, 0);
     duel = createDuelFor(difficulty);
-    controllers = createControllers();
+    controllers = createControllers(difficulty);
     clock = createFixedStepClock(tuning.tickRate);
     previous = duel.snapshot();
     current = previous;
