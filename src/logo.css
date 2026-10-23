@@ -86,8 +86,9 @@
   transform-origin: 320px 118px;
 }
 
+/* Forwards only: its bright first frame must not show while the beams close in. */
 #menu[data-intro="clash"] .logo-flash {
-  animation: logo-flash 560ms ease-out var(--clash-delay) both;
+  animation: logo-flash 560ms ease-out var(--clash-delay) forwards;
 }
 
 #menu[data-intro="clash"] .logo-beam {
