@@ -1,0 +1,263 @@
+/*
+ * The Special Spells' HUD: the Focus meter (bottom-left, above Stamina), the
+ * Special Spells with their Cooldowns (bottom-right) and the Spell Wheel
+ * (centre). Same restrained style as the rest of the HUD: gold on
+ * translucent ink.
+ */
+
+/* Focus: three segments, each filling in turn, glowing gold once whole. */
+.sw-focus {
+  position: absolute;
+  inset: auto auto calc(clamp(1rem, 4vh, 2rem) + 2.6rem)
+    clamp(1rem, 3vw, 1.5rem);
+  display: grid;
+  gap: 0.3rem;
+  width: min(16rem, 40vw);
+}
+
+.sw-focus-label {
+  color: var(--parchment);
+  font-size: 0.8rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.sw-focus-segments {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.3rem;
+}
+
+.sw-focus-segment {
+  position: relative;
+  height: 0.6rem;
+  overflow: hidden;
+  border: 1px solid rgb(216 180 106 / 60%);
+  border-radius: 1px;
+  background: var(--ink);
+  box-shadow: 0 0 8px rgb(0 0 0 / 50%);
+}
+
+.sw-focus-segment::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, #c9b8ff, #7a5fd0);
+  transform: scaleX(var(--fill, 0));
+  transform-origin: left;
+  transition: transform 120ms ease-out;
+}
+
+.sw-focus-segment[data-full="true"] {
+  border-color: #e9c983;
+  box-shadow:
+    0 0 10px rgb(201 184 255 / 70%),
+    0 0 4px rgb(233 201 131 / 80%);
+}
+
+.sw-focus-segment[data-full="true"]::after {
+  background: linear-gradient(180deg, #efe6ff, #a58cf0);
+}
+
+/* The Special Spells, bottom-right. */
+.sw-specials {
+  position: absolute;
+  inset: auto clamp(1rem, 3vw, 1.5rem) clamp(1rem, 4vh, 2rem) auto;
+  display: flex;
+  gap: 1rem;
+  align-items: end;
+}
+
+.sw-special {
+  display: grid;
+  gap: 0.2rem;
+  justify-items: center;
+  width: 5.2rem;
+  text-align: center;
+  transition: opacity 200ms ease-out;
+}
+
+.sw-special-badge {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 3rem;
+  height: 3rem;
+  border: 1px solid var(--gold);
+  border-radius: 50%;
+  background: var(--ink);
+  box-shadow: 0 0 10px rgb(216 180 106 / 45%);
+}
+
+/* The Cooldown: a dark sweep over the badge that unwinds clockwise. */
+.sw-special-badge::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: conic-gradient(
+    rgb(5 6 14 / 78%) calc(var(--cooldown, 0) * 360deg),
+    transparent 0
+  );
+}
+
+.sw-special-timer {
+  position: absolute;
+  z-index: 1;
+  color: var(--parchment);
+  font-size: 1.1rem;
+}
+
+.sw-special-name {
+  color: var(--parchment);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  line-height: 1.15;
+  text-transform: uppercase;
+}
+
+.sw-special-cost {
+  color: #c9b8ff;
+  font-size: 0.7rem;
+  letter-spacing: 0.2em;
+}
+
+.sw-special[data-state="focus"],
+.sw-special[data-state="cooldown"] {
+  opacity: 0.5;
+}
+
+.sw-special[data-state="focus"] .sw-special-badge,
+.sw-special[data-state="cooldown"] .sw-special-badge {
+  border-color: rgb(216 180 106 / 40%);
+  box-shadow: none;
+}
+
+.sw-special[data-state="locked"] {
+  opacity: 0.32;
+}
+
+.sw-special[data-state="locked"] .sw-special-cost {
+  color: var(--parchment);
+  letter-spacing: 0.06em;
+}
+
+.sw-glyph {
+  width: 1.45rem;
+  height: 1.45rem;
+  fill: none;
+  stroke: var(--gold);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* The Spell Wheel, in the centre while R2 holds it open. */
+.sw-wheel {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: min(22rem, 70vmin);
+  aspect-ratio: 1;
+  translate: -50% -50%;
+  animation: sw-wheel-open 120ms ease-out;
+}
+
+.sw-wheel[hidden] {
+  display: none;
+}
+
+@keyframes sw-wheel-open {
+  from {
+    opacity: 0;
+    scale: 0.88;
+  }
+}
+
+.sw-wheel-ring {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.sw-slice {
+  fill: rgb(10 12 24 / 62%);
+  stroke: rgb(216 180 106 / 55%);
+  stroke-width: 0.8;
+  transition:
+    fill 90ms ease-out,
+    stroke 90ms ease-out;
+}
+
+.sw-slice[data-picked="true"] {
+  fill: rgb(216 180 106 / 32%);
+  stroke: #f3d796;
+  stroke-width: 1.6;
+  filter: drop-shadow(0 0 6px rgb(216 180 106 / 80%));
+}
+
+.sw-slice[data-state="focus"],
+.sw-slice[data-state="cooldown"],
+.sw-slice[data-state="locked"] {
+  fill: rgb(10 12 24 / 40%);
+  stroke: rgb(216 180 106 / 22%);
+}
+
+.sw-slice[data-state="focus"][data-picked="true"],
+.sw-slice[data-state="cooldown"][data-picked="true"] {
+  fill: rgb(224 87 74 / 22%);
+  stroke: rgb(240 138 126 / 70%);
+  filter: none;
+}
+
+.sw-slice-label {
+  position: absolute;
+  top: calc(50% + var(--y));
+  left: calc(50% + var(--x));
+  display: grid;
+  gap: 0.15rem;
+  justify-items: center;
+  width: 7rem;
+  text-align: center;
+  translate: -50% -50%;
+}
+
+.sw-slice-name {
+  color: var(--parchment);
+  font-size: 0.85rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.sw-slice-note {
+  color: #c9b8ff;
+  font-size: 0.72rem;
+  letter-spacing: 0.2em;
+}
+
+.sw-slice-label[data-picked="true"] .sw-slice-name {
+  color: #fff3d0;
+}
+
+.sw-slice-label[data-state="focus"],
+.sw-slice-label[data-state="cooldown"],
+.sw-slice-label[data-state="locked"] {
+  opacity: 0.4;
+}
+
+.sw-slice-label[data-state="locked"] .sw-slice-note {
+  color: var(--parchment);
+  letter-spacing: 0.06em;
+}
+
+.sw-wheel-hint {
+  position: absolute;
+  top: calc(100% + 0.6rem);
+  left: 50%;
+  width: max-content;
+  color: var(--parchment);
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  opacity: 0.75;
+  translate: -50% 0;
+}

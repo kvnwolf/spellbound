@@ -13,6 +13,12 @@
  *   a ring of stable slots, each slot holding its birth time, origin, tint
  *   and motion, with position, size and fade computed in TSL from the
  *   effects clock. Confringo's blast is the same mechanism, much bigger.
+ * - Incendio is a fireball that explodes into a big burst, a rolling ball
+ *   of flame, a shockwave ring on the floor as wide as the gameplay blast and
+ *   embers that drift up over it; a Burning Duelist sheds rising embers and
+ *   a flickering warm light. Petrificus Totalus is a pale-blue bolt that
+ *   lands in a cold flash and a puff of stone dust (the stone itself is the
+ *   Duelist view's).
  * - A Charging Wand sheds sparks from the same ring at a rate that rises with
  *   the Charge, and crackles hotter and wilder as Overcharge nears.
  * - A small fixed pool of point lights follows the brightest Spells, flashes
@@ -38,12 +44,14 @@ import {
   AdditiveBlending,
   Color,
   CylinderGeometry,
+  DoubleSide,
   Group,
   InstancedBufferAttribute,
   Mesh,
   MeshBasicNodeMaterial,
   PointLight,
   Quaternion,
+  RingGeometry,
   SphereGeometry,
   Sprite,
   SpriteNodeMaterial,
@@ -78,7 +86,9 @@ export interface SpellVfx {
     current: readonly SpellState[],
     alpha: number,
     seconds: number,
-    charging?: readonly ChargingWand[]
+    charging?: readonly ChargingWand[],
+    /** Where each Burning Duelist stands (their feet), to shed embers from. */
+    burning?: readonly Point3[]
   ) => void;
 }
 
@@ -263,6 +273,58 @@ const bursts = {
 } satisfies Record<string, BurstStyle>;
 
 /**
+ * Incendio's explosion: a big burst of sparks and flash, a rolling fireball
+ * of large slow flames, a shockwave ring on the floor as wide as the blast,
+ * and embers scattered over the blast that drift up and die out.
+ */
+const incendioBlast = {
+  burst: {
+    flashLife: 0.32,
+    flashSize: 4.8,
+    life: 0.9,
+    light: 240,
+    lightLife: 0.7,
+    size: 0.13,
+    sparks: 170,
+    speed: 12,
+  } satisfies BurstStyle,
+  embers: { count: 60, life: 1.9, rise: 0.4, size: 0.05, speed: 0.7 },
+  fireball: { count: 28, life: 0.55, size: 0.95, speed: 3.4 },
+  /** The ring reaches the blast's edge over `life` seconds, at this radiance. */
+  ring: { life: 0.4, radiance: 3.4 },
+};
+
+/** Embers rising off a Burning Duelist, and the warm light they cast. */
+const burnEmbers = {
+  /** Height range on the body they rise from, metres. */
+  from: 0.25,
+  life: 0.85,
+  light: 7,
+  rate: 70,
+  rise: 0.7,
+  size: 0.06,
+  speed: 0.7,
+  to: 1.75,
+};
+
+/** Petrificus Totalus landing: a cold flash and a puff of stone dust. */
+const petrifyBurst: BurstStyle = {
+  flashLife: 0.22,
+  flashSize: 2.4,
+  life: 0.7,
+  light: 60,
+  lightLife: 0.4,
+  size: 0.08,
+  sparks: 60,
+  speed: 4,
+};
+
+const stoneDust: Palette = {
+  hot: new Color("#f0f4ff"),
+  main: new Color("#8f99ad"),
+};
+
+/**
  * The crackle at a Charging Wand: sparks per second, size and launch speed
  * while it builds, rising to the `overcharge` values as a held full Charge
  * nears its Backfire; plus a glow sprite and a light at the tip.
@@ -279,8 +341,8 @@ const crackle = {
   tipGlow: { empty: 0.12, full: 0.55 },
 };
 
-/** Spark slots in the ring: enough for several big bursts at once. */
-const sparkSlots = 2048;
+/** Spark slots in the ring: enough for several big bursts (and an Incendio) at once. */
+const sparkSlots = 3072;
 
 /** Sparks slow down with this drag (per second) and fall with this gravity. */
 const sparkDrag = 4;
@@ -374,9 +436,20 @@ const createSparkRing = () => {
     transparent: true,
   });
 
+  // Gravity is scaled per spark (motion.z): 1 falls like a spark, a
+  // negative scale rises like an ember on hot air.
   material.positionNode = spawnNode.xyz
     .add(direction.xyz.mul(speed).mul(travel))
-    .add(vec3(0, age.mul(age).mul(-0.5 * sparkGravity), 0));
+    .add(
+      vec3(
+        0,
+        age
+          .mul(age)
+          .mul(motionNode.z)
+          .mul(-0.5 * sparkGravity),
+        0
+      )
+    );
   material.scaleNode = tintNode.w.mul(float(1).sub(life)).mul(alive);
 
   // A soft round spark that fades out over its life.
@@ -400,7 +473,8 @@ const createSparkRing = () => {
     intensity: number,
     size: number,
     speedOf: number,
-    lifeOf: number
+    lifeOf: number,
+    gravity = 1
   ) => {
     spawn.setXYZW(next, origin.x, origin.y, origin.z, now.value);
     tint.setXYZW(
@@ -410,7 +484,7 @@ const createSparkRing = () => {
       color.b * intensity,
       size
     );
-    motion.setXY(next, speedOf, lifeOf);
+    motion.setXYZ(next, speedOf, lifeOf, gravity);
     next = (next + 1) % sparkSlots;
     dirty = true;
   };
@@ -629,9 +703,77 @@ const createTipGlows = (parent: Group) => {
   };
 };
 
-export const createSpellVfx = (): SpellVfx => {
+/**
+ * Incendio's shockwave: a flat ring that races out across the blast and
+ * fades, a few reused. Each ring has its own strength uniform, so they fade
+ * independently in one shader.
+ */
+const createShockwaves = (parent: Group, blastRadius: number) => {
+  const { main, hot } = palettes.incendio;
+  const { life, radiance } = incendioBlast.ring;
+  const geometry = new RingGeometry(0.82, 1, 64);
+  // Flat on the floor.
+  geometry.rotateX(-Math.PI / 2);
+
+  const rings = Array.from({ length: 3 }, () => {
+    const strength = uniform(0);
+
+    const material = new MeshBasicNodeMaterial({
+      blending: AdditiveBlending,
+      depthWrite: false,
+      side: DoubleSide,
+      transparent: true,
+    });
+
+    material.colorNode = vec3(main.r, main.g, main.b)
+      .mul(2)
+      .add(vec3(hot.r, hot.g, hot.b))
+      .mul(strength.mul(radiance));
+
+    const mesh = new Mesh(geometry, material);
+    mesh.visible = false;
+    parent.add(mesh);
+
+    return { age: life, mesh, strength };
+  });
+
+  let next = 0;
+
+  return {
+    advance: (seconds: number) => {
+      for (const ring of rings) {
+        ring.age += seconds;
+        const t = Math.min(ring.age / life, 1);
+        ring.mesh.visible = t < 1;
+        // Fast out, easing to the blast's edge, fading as it goes.
+        ring.mesh.scale.setScalar(blastRadius * (1 - (1 - t) ** 3));
+        ring.strength.value = (1 - t) ** 2;
+      }
+    },
+    start: (at: Point3) => {
+      const ring = rings[next];
+      next = (next + 1) % rings.length;
+
+      if (ring) {
+        ring.age = 0;
+        // On the floor under the blast, wherever it went off, so it marks
+        // the ground the blast reaches; just off it, so it never z-fights.
+        ring.mesh.position.set(at.x, 0.05, at.z);
+      }
+    },
+  };
+};
+
+/** How the Spell VFX is set up: the blast radius comes from the simulation's tuning, so the shockwave shows its true reach. */
+export interface SpellVfxSettings {
+  readonly blastRadius: number;
+}
+
+export const createSpellVfx = (settings: SpellVfxSettings): SpellVfx => {
   const object = new Group();
   const sparks = createSparkRing();
+  const shockwaves = createShockwaves(object, settings.blastRadius);
+  const random = seededRandom(11);
 
   const pools: Record<SpellKind, ReturnType<typeof createBoltPool>> = {
     confringo: createBoltPool("confringo", object),
@@ -646,6 +788,8 @@ export const createSpellVfx = (): SpellVfx => {
   const flashes: Flash[] = [];
   // Sparks owed to each Charging Wand: fractional counts carried frame to frame.
   let owed: number[] = [];
+  // Embers owed to each Burning Duelist, likewise.
+  let smouldering: number[] = [];
   // Drives the tip glow's flicker.
   let clock = 0;
 
@@ -678,6 +822,92 @@ export const createSpellVfx = (): SpellVfx => {
     });
   };
 
+  /** A point scattered uniformly over a disc of `radius` round `centre`, at height `y`. */
+  const scatter = (centre: Point3, radius: number, y: number): Point3 => {
+    const angle = random() * Math.PI * 2;
+    const reach = Math.sqrt(random()) * radius;
+
+    return {
+      x: centre.x + Math.cos(angle) * reach,
+      y,
+      z: centre.z + Math.sin(angle) * reach,
+    };
+  };
+
+  /** Incendio's explosion: the blast, the fireball, the shockwave and the embers it leaves. */
+  const explode = (at: Point3) => {
+    const { hot, main } = palettes.incendio;
+    const { embers, fireball } = incendioBlast;
+    burst(at, incendioBlast.burst, palettes.incendio);
+    shockwaves.start(at);
+
+    // Big, slow, short-lived flames rolling out of the centre.
+    for (let flame = 0; flame < fireball.count; flame += 1) {
+      sparks.emit(
+        at,
+        flame % 4 === 0 ? hot : main,
+        2.5,
+        fireball.size * (0.6 + random() * 0.6),
+        fireball.speed,
+        fireball.life,
+        0
+      );
+    }
+
+    // Embers over the scorched floor of the blast, drifting up on the heat.
+    for (let ember = 0; ember < embers.count; ember += 1) {
+      sparks.emit(
+        scatter(at, settings.blastRadius, random() * 0.6),
+        ember % 3 === 0 ? hot : main,
+        5,
+        embers.size,
+        embers.speed,
+        embers.life * (0.6 + random() * 0.4),
+        -embers.rise
+      );
+    }
+  };
+
+  /** Embers rising off every Burning Duelist; returns their light requests. */
+  const smoulder = (burning: readonly Point3[], seconds: number): Glow[] => {
+    const { hot, main } = palettes.incendio;
+
+    smouldering = burning.map((_, index) => smouldering[index] ?? 0);
+
+    return burning.map((body, index) => {
+      let due = (smouldering[index] ?? 0) + burnEmbers.rate * seconds;
+
+      for (let ember = 0; due >= 1; ember += 1, due -= 1) {
+        sparks.emit(
+          scatter(
+            body,
+            0.4,
+            body.y +
+              burnEmbers.from +
+              random() * (burnEmbers.to - burnEmbers.from)
+          ),
+          ember % 3 === 0 ? hot : main,
+          5,
+          burnEmbers.size,
+          burnEmbers.speed,
+          burnEmbers.life,
+          -burnEmbers.rise
+        );
+      }
+
+      smouldering[index] = due;
+
+      return {
+        color: main,
+        distance: flashDistance,
+        // A flickering glow from the flames licking the body.
+        intensity:
+          burnEmbers.light * (0.75 + 0.25 * Math.sin(clock * 23 + index)),
+        position: new Vector3(body.x, body.y + 1, body.z),
+      };
+    });
+  };
+
   const handle = (events: readonly DuelEvent[]) => {
     // Round and Duel events have no Spell look.
     for (const event of events) {
@@ -703,11 +933,16 @@ export const createSpellVfx = (): SpellVfx => {
             palettes.confringo,
             sizeOf(spell)
           );
+        } else if (spell.kind === "petrificus") {
+          // A cold flash and a puff of stone dust as the Duelist turns to stone.
+          burst(event.position, petrifyBurst, palettes.petrificus);
+          burst(event.position, petrifyBurst, stoneDust, 0.8);
         } else {
+          // Incendio's hit is mostly its explosion, reported on its own.
           burst(
             event.position,
             spell.strong ? bursts.strongHit : bursts.hit,
-            palettes.stupefy
+            palettes[spell.kind]
           );
         }
       } else if (event.type === "spell-stopped") {
@@ -721,8 +956,10 @@ export const createSpellVfx = (): SpellVfx => {
             sizeOf(spell)
           );
         } else {
-          burst(event.position, bursts.stop, palettes.stupefy);
+          burst(event.position, bursts.stop, palettes[spell.kind]);
         }
+      } else if (event.type === "explosion") {
+        explode(event.position);
       } else if (event.type === "spells-cancelled") {
         const [first] = event.spells;
         burst(event.position, bursts.cancel, palettes[first.kind]);
@@ -806,14 +1043,19 @@ export const createSpellVfx = (): SpellVfx => {
     current: readonly SpellState[],
     alpha: number,
     seconds: number,
-    charging: readonly ChargingWand[] = []
+    charging: readonly ChargingWand[] = [],
+    burning: readonly Point3[] = []
   ) => {
     sparks.advance(seconds);
+    shockwaves.advance(seconds);
     clock += seconds;
     const before = new Map(previous.map((spell) => [spell.id, spell]));
 
-    // Light requests this frame: every flash, Spell in flight and Charging Wand.
-    const glows: Glow[] = crackleAt(charging, seconds);
+    // Light requests this frame: every flash, Spell in flight, Charging Wand and Burn.
+    const glows: Glow[] = [
+      ...crackleAt(charging, seconds),
+      ...smoulder(burning, seconds),
+    ];
 
     for (const pool of Object.values(pools)) {
       pool.begin();

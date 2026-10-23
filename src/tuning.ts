@@ -141,6 +141,8 @@ export const tuning = {
     confringoBonus: 0.4,
     /** Trauma lost per second. */
     decay: 1.8,
+    /** Trauma added by an Incendio explosion: all of it when the local Duelist is caught in the blast, half otherwise. */
+    explosion: 0.5,
     /** Shake frequency in Hz. */
     frequency: 22,
     /** Trauma added when the local Duelist lands a hit. */
@@ -595,6 +597,21 @@ export const tuning = {
     /** Focus segments it costs. */
     segments: 2,
     speed: 24,
+  },
+
+  /**
+   * How a Petrified Duelist looks: turned to grey stone with a cold, pale
+   * rim of light round the silhouette. Colours are hex; radiance is
+   * scene-linear HDR (above the bloom threshold glows).
+   */
+  petrifiedLook: {
+    /** Exponential rate, per second, at which the stone spreads in and fades back out. */
+    fadeSharpness: 14,
+    rimColor: "#bcd4ff",
+    /** Fresnel exponent of the rim: higher hugs the silhouette's edge more tightly. */
+    rimPower: 2,
+    rimRadiance: 1.3,
+    stoneColor: "#8a8e96",
   },
 
   /**

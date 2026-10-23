@@ -5,8 +5,15 @@
  * and Charging keeps it raised. It only reads presentation samples; the
  * procedural wizard and its poses come later. While it is the local
  * Duelist's Lock-on Target, a fresnel rim glow traces its silhouette.
+ * Petrified, it turns to grey stone with a cold, pale rim of light.
  */
-import { color, normalView, positionViewDirection, uniform } from "three/tsl";
+import {
+  color,
+  mix,
+  normalView,
+  positionViewDirection,
+  uniform,
+} from "three/tsl";
 import {
   BoxGeometry,
   ConeGeometry,
@@ -55,35 +62,42 @@ const flickLift = (progress: number) => {
 
 const wood = new MeshStandardNodeMaterial({ color: "#8a6038", roughness: 0.5 });
 
+/** Fresnel: 1 where the surface turns away from the camera (the silhouette), sharper with `power`. */
+const silhouette = (power: number) =>
+  normalView.dot(positionViewDirection).saturate().oneMinus().pow(power);
+
 export const createDuelistView = (
   robeColor: string,
   glow: Tuning["lockOnGlow"],
+  stone: Tuning["petrifiedLook"],
   duelist: Tuning["duelist"]
 ): DuelistView => {
   // The rim glow: brightest where the surface turns away from the camera
   // (the silhouette), scaled by a per-Duelist strength the view eases.
   const glowStrength = uniform(0);
+  // How far the Duelist has turned to stone (Petrified): 0 flesh, 1 stone.
+  const petrify = uniform(0);
 
   const rim = color(glow.color)
-    .mul(
-      normalView
-        .dot(positionViewDirection)
-        .saturate()
-        .oneMinus()
-        .pow(glow.power)
-    )
-    .mul(glowStrength.mul(glow.radiance));
+    .mul(silhouette(glow.power))
+    .mul(glowStrength.mul(glow.radiance))
+    // Petrified: a cold, pale rim of light round the stone figure.
+    .add(
+      color(stone.rimColor)
+        .mul(silhouette(stone.rimPower))
+        .mul(petrify.mul(stone.rimRadiance))
+    );
 
-  const robeMaterial = new MeshStandardNodeMaterial({
-    color: robeColor,
-    roughness: 0.8,
-  });
+  const robeMaterial = new MeshStandardNodeMaterial({ roughness: 0.8 });
+  const skin = new MeshStandardNodeMaterial({ roughness: 0.7 });
 
-  const skin = new MeshStandardNodeMaterial({
-    color: "#d9b38c",
-    roughness: 0.7,
-  });
-
+  // Robe and skin both fade to the same grey stone while Petrified.
+  robeMaterial.colorNode = mix(
+    color(robeColor),
+    color(stone.stoneColor),
+    petrify
+  );
+  skin.colorNode = mix(color("#d9b38c"), color(stone.stoneColor), petrify);
   robeMaterial.emissiveNode = rim;
   skin.emissiveNode = rim;
 
@@ -181,6 +195,9 @@ export const createDuelistView = (
 
       const fade = 1 - Math.exp(-glow.fadeSharpness * seconds);
       glowStrength.value += (wantedGlow - glowStrength.value) * fade;
+
+      const turn = 1 - Math.exp(-stone.fadeSharpness * seconds);
+      petrify.value += ((sample.petrified ? 1 : 0) - petrify.value) * turn;
     },
   };
 };

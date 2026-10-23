@@ -25,6 +25,8 @@ export interface DuelistSample {
   readonly elevation: number;
   readonly shielding: boolean;
   readonly dodging: boolean;
+  /** Frozen by Petrificus Totalus. */
+  readonly petrified: boolean;
 }
 
 const lerp = (from: number, to: number, alpha: number) =>
@@ -64,6 +66,7 @@ export const sampleDuelist = (
   facing: blendDirection(previous.facing, current.facing, alpha),
   knockedOut: current.knockedOut,
   lockNudge: lerpAim(previous.lockNudge, current.lockNudge, alpha),
+  petrified: current.petrifiedSeconds > 0,
   position: {
     x: lerp(previous.position.x, current.position.x, alpha),
     z: lerp(previous.position.z, current.position.z, alpha),

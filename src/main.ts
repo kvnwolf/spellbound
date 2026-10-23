@@ -44,6 +44,7 @@ import {
 } from "./screens/screens";
 import type { PadKind, ScreenEvent } from "./screens/screens";
 import { viewOf } from "./screens/view";
+import { createSpellWheelHud } from "./spell-wheel-hud";
 import { tuning } from "./tuning";
 
 const localId: DuelistId = "local";
@@ -157,6 +158,14 @@ const start = async () => {
         shake.add(backfire);
       }
 
+      // An Incendio blast jolts the camera, hardest for the one caught in it.
+      if (event.type === "explosion") {
+        shake.add(
+          tuning.cameraShake.explosion *
+            (event.burned.includes(localId) ? 1 : 0.5)
+        );
+      }
+
       if (event.type !== "spell-hit") {
         continue;
       }
@@ -178,10 +187,23 @@ const start = async () => {
   const scene = createCourtyardScene(courtyard);
 
   const views = new Map([
-    [localId, createDuelistView("#8a1c24", tuning.lockOnGlow, tuning.duelist)],
+    [
+      localId,
+      createDuelistView(
+        "#8a1c24",
+        tuning.lockOnGlow,
+        tuning.petrifiedLook,
+        tuning.duelist
+      ),
+    ],
     [
       opponentId,
-      createDuelistView("#1f5a3a", tuning.lockOnGlow, tuning.duelist),
+      createDuelistView(
+        "#1f5a3a",
+        tuning.lockOnGlow,
+        tuning.petrifiedLook,
+        tuning.duelist
+      ),
     ],
   ]);
 
@@ -189,7 +211,7 @@ const start = async () => {
     scene.add(view.object);
   }
 
-  const vfx = createSpellVfx();
+  const vfx = createSpellVfx({ blastRadius: tuning.incendio.blastRadius });
   scene.add(vfx.object);
 
   // Protego domes and Parry flashes.
@@ -267,6 +289,9 @@ const start = async () => {
     maxStamina: tuning.defence.stamina.max,
     roundsToWin: tuning.round.roundsToWin,
   });
+
+  // Focus, the Special Spells' Cooldowns and the Spell Wheel.
+  const specialsHud = createSpellWheelHud(hudElement, localId, tuning);
 
   let clock = createFixedStepClock(tuning.tickRate);
 
@@ -482,9 +507,16 @@ const start = async () => {
       current.spells,
       alpha,
       simSeconds,
-      chargingWands(current.duelists, tuning)
+      chargingWands(current.duelists, tuning),
+      // Embers rise off every Duelist with an Incendio Burn.
+      current.duelists.flatMap((each) =>
+        each.burnSeconds > 0
+          ? [{ x: each.position.x, y: each.elevation, z: each.position.z }]
+          : []
+      )
     );
     hud.show(current, events, seconds);
+    specialsHud.show(current);
 
     showCharge(current, events, seconds, inDuel);
 

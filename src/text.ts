@@ -43,6 +43,18 @@ export const text = {
     changeDifficulty: "Cambiar dificultad",
     rematch: "Revancha",
   },
+  /** The Special Spells, as the Spell Wheel and the HUD name them. */
+  specials: {
+    expelliarmus: "Expelliarmus",
+    /** Label of the Focus meter. */
+    focus: "Concentración",
+    incendio: "Incendio",
+    /** On a Special Spell's slice that is not in the game yet. */
+    locked: "Próximamente",
+    petrificus: "Petrificus Totalus",
+    /** Under the open Spell Wheel. */
+    wheelHint: "Suelta R2 para lanzar · stick al centro para cancelar",
+  },
   title: "Spellbound",
   unsupportedBrowser: {
     body: "Spellbound necesita WebGPU. Ábrelo en una versión reciente de Chrome.",
