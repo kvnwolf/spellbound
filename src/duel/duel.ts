@@ -723,7 +723,7 @@ export const clashOpponentOf = (
 /**
  * Whether a Duelist looks around (turns, Locks On, holds the Spell Slots)
  * this tick: standing, during the intro or the fight, and not rooted in a
- * Clash, where R2 is the pump and nothing else moves.
+ * Clash, where △ is the pump and nothing else moves.
  */
 const looksAround = (
   self: DuelistState,

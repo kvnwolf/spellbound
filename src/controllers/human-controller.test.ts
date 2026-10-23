@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { readDualSense } from "../dualsense/input";
 import type { GamepadLike } from "../dualsense/input";
 import { createDuel } from "../duel/duel";
+import type { ClashSide, ClashState } from "../duel/duel";
 import type { Intent } from "../duel/intent";
 import { tuning } from "../tuning";
 import { createHumanController } from "./human-controller";
@@ -25,6 +26,52 @@ const square = 2;
 const triangle = 3;
 const r3 = 11;
 
+const origin = { x: 0, y: 1, z: 0 };
+
+/** A side of a Clash: a full Confringo held at the meeting point. */
+const clashSide = (
+  duelistId: string,
+  team: "gryffindor" | "slytherin"
+): ClashSide => ({
+  duelistId,
+  spell: {
+    casterId: duelistId,
+    charge: 1,
+    empowered: false,
+    homing: null,
+    id: 1,
+    kind: "confringo",
+    position: origin,
+    strong: false,
+    team,
+    velocity: origin,
+  },
+  wand: origin,
+});
+
+const lockedClash: ClashState = {
+  along: 0.5,
+  point: origin,
+  secondsLeft: 6,
+  sides: [clashSide("hero", "gryffindor"), clashSide("rival", "slytherin")],
+};
+
+/** How many ticks the Clash pump went from up to down, given what it was just before. */
+const pressesIn = (intents: readonly Intent[], before = false) => {
+  let previous = before;
+  let presses = 0;
+
+  for (const { clashPump } of intents) {
+    if (clashPump && !previous) {
+      presses += 1;
+    }
+
+    previous = clashPump;
+  }
+
+  return presses;
+};
+
 const ticksToSettle = 120;
 const ticksOf = (seconds: number) => Math.round(seconds * tuning.tickRate);
 
@@ -44,6 +91,7 @@ const holding = (axes: readonly [number, number, number, number]) => {
   } satisfies GamepadLike;
 
   let connected = true;
+  let clash: ClashState | null = null;
 
   const controller = createHumanController(() =>
     connected ? readDualSense(pad, tuning.input) : undefined
@@ -53,7 +101,16 @@ const holding = (axes: readonly [number, number, number, number]) => {
     pad.buttons[index] = { pressed: down, value: down ? 1 : 0 };
   };
 
+  const view = () => ({
+    self: "hero",
+    snapshot: { ...duel.snapshot(), clash },
+  });
+
   return {
+    /** Whether the hero is locked in a Clash as of the Duel's last tick. */
+    clash: (locked: boolean) => {
+      clash = locked ? lockedClash : null;
+    },
     /** The pad drops out and comes back, as on the "Reconecta tu mando" prompt. */
     connect: (value: boolean) => {
       connected = value;
@@ -62,12 +119,10 @@ const holding = (axes: readonly [number, number, number, number]) => {
     press,
     /** The Duel stops asking for Intents, as behind a menu or the pause. */
     suspend: () => controller.suspend?.(),
-    tick: () => controller.intent({ self: "hero", snapshot: duel.snapshot() }),
+    tick: () => controller.intent(view()),
     /** Ticks `count` times and returns every Intent. */
     ticks: (count: number) =>
-      Array.from({ length: count }, () =>
-        controller.intent({ self: "hero", snapshot: duel.snapshot() })
-      ),
+      Array.from({ length: count }, () => controller.intent(view())),
   };
 };
 
@@ -502,24 +557,141 @@ describe(createHumanController, () => {
       ).toStrictEqual([false, true, true, false]);
     });
 
-    it("pumps the Clash with R2: down past the pull, up again once nearly released", () => {
-      const { pad, tick } = holding([0, 0, 0, 0]);
-      const pumps: boolean[] = [];
-
-      for (const travel of [0, hold * 0.8, 1, (hold + release) / 2, 0, 1]) {
-        pull(pad, travel);
-        pumps.push(tick().clashPump);
-      }
-
-      expect(pumps).toStrictEqual([false, false, true, true, false, true]);
-    });
-
     it("keeps turning the camera with the right stick while R2 is held", () => {
       const { pad, tick } = holding([0, 0, 1, 0]);
 
       pull(pad, 1);
 
       expect(settle(tick).look.yaw).toBeCloseTo(maxYawSpeed);
+    });
+  });
+  describe("pumping the Clash with △", () => {
+    it("pumps with each press of △, up and down again", () => {
+      const { clash, press, tick } = holding([0, 0, 0, 0]);
+      clash(true);
+      const pumps: boolean[] = [];
+
+      for (const down of [false, true, false, true, true, false, true]) {
+        press(triangle, down);
+        pumps.push(tick().clashPump);
+      }
+
+      expect(pumps).toStrictEqual([
+        false,
+        true,
+        false,
+        true,
+        true,
+        false,
+        true,
+      ]);
+    });
+
+    it("counts a held △ once", () => {
+      const { clash, press, ticks } = holding([0, 0, 0, 0]);
+      clash(true);
+      ticks(2);
+      press(triangle, true);
+
+      expect(pressesIn(ticks(30))).toBe(1);
+    });
+
+    it("does not pump with R2, however hard it is pulled", () => {
+      const { clash, pad, tick } = holding([0, 0, 0, 0]);
+      clash(true);
+      const pumps: boolean[] = [];
+
+      for (const travel of [0, 0.5, 1, 0, 1]) {
+        pull(pad, travel);
+        pumps.push(tick().clashPump);
+      }
+
+      expect(pumps).toStrictEqual([false, false, false, false, false]);
+    });
+
+    it("does not count the △ held from the Charge until it is pressed again", () => {
+      const { clash, press, tick, ticks } = holding([0, 0, 0, 0]);
+      ticks(2);
+      press(triangle, true);
+      ticks(10);
+      const wasDown = tick().clashPump;
+      clash(true);
+
+      const held = ticks(5);
+      press(triangle, false);
+      const released = ticks(2);
+      press(triangle, true);
+      const again = ticks(2);
+
+      expect(wasDown).toBeTruthy();
+      expect(pressesIn([...held, ...released], wasDown)).toBe(0);
+      expect(released.at(-1)?.clashPump).toBeFalsy();
+      expect(pressesIn(again, false)).toBe(1);
+    });
+
+    it("never starts a Charge while pumping", () => {
+      const { clash, press, tick, ticks } = holding([0, 0, 0, 0]);
+      clash(true);
+      ticks(1);
+      const charges: boolean[] = [];
+
+      for (const down of [true, false, true, false, true]) {
+        press(triangle, down);
+        charges.push(tick().heavySpell);
+      }
+
+      expect(charges).toStrictEqual([false, false, false, false, false]);
+    });
+
+    it("does not Charge from a △ still held when the Clash ends, until it is released and pressed again", () => {
+      const { clash, press, tick, ticks } = holding([0, 0, 0, 0]);
+      clash(true);
+      ticks(1);
+      press(triangle, true);
+      ticks(3);
+      clash(false);
+
+      const afterClash = ticks(5);
+      press(triangle, false);
+      const released = tick();
+      press(triangle, true);
+      const again = tick();
+
+      expect(afterClash.map((each) => each.heavySpell)).toStrictEqual([
+        false,
+        false,
+        false,
+        false,
+        false,
+      ]);
+      expect(released.heavySpell).toBeFalsy();
+      expect(again.heavySpell).toBeTruthy();
+    });
+
+    it("keeps the Charge going while △ is held outside a Clash", () => {
+      const { press, ticks } = holding([0, 0, 0, 0]);
+      ticks(1);
+      press(triangle, true);
+
+      expect(ticks(4).map((each) => each.heavySpell)).toStrictEqual([
+        true,
+        true,
+        true,
+        true,
+      ]);
+    });
+
+    it("casts no Spell Slot from △ while pumping with R2 held", () => {
+      const { clash, pad, press, ticks } = holding([0, 0, 0, 0]);
+      clash(true);
+      pull(pad, 1);
+      ticks(2);
+      press(triangle, true);
+
+      expect(ticks(2).map((each) => each.spellSlots.press)).toStrictEqual([
+        null,
+        null,
+      ]);
     });
   });
 });

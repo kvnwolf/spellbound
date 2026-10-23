@@ -10,10 +10,10 @@ export const text = {
   clash: {
     /** Punched onto the screen as the Clash starts. */
     callout: "¡Clash!",
-    /** Under the pulsing trigger, telling the player to pump. */
-    pump: "¡Pulsa R2!",
-    /** The trigger's label on its icon. */
-    trigger: "R2",
+    /** Under the pulsing button, telling the player to pump. */
+    pump: "¡Pulsa △!",
+    /** The button glyph. */
+    trigger: "△",
   },
   connectDualSense: "Conecta tu DualSense y pulsa cualquier botón",
   difficulty: {

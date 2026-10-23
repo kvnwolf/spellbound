@@ -87,7 +87,7 @@ export const tuning = {
         burst: { max: 2, min: 1 },
         /** How long it holds a Charge before releasing (seconds since the press): a normal spread around `mean`. */
         chargeHold: { mean: 0.47, spread: 0.07 },
-        /** Presses per second it pumps in a Clash, picked afresh for every press: a person mashing R2 manages about 6 to 9. */
+        /** Presses per second it pumps in a Clash, picked afresh for every press: a person mashing △ manages about 6 to 9. */
         clashPumpRate: { max: 3, min: 2.4 },
         /** Chance to take Cover after being hit. */
         coverChance: 0.08,
@@ -469,7 +469,7 @@ export const tuning = {
   /**
    * The Clash: two fully Charged Confringos from opposing Duelists meeting
    * roughly head-on lock into a beam between their Wands. Both Duelists are
-   * rooted; every pump (R2) pushes the meeting point along the beam toward
+   * rooted; every pump (△) pushes the meeting point along the beam toward
    * the opponent. Reaching their Wand wins: the winner's Confringo hits them
    * empowered. Nobody winning within `seconds` blows it up.
    */
@@ -616,7 +616,7 @@ export const tuning = {
     rivalClashHoldPastFull: 0.05,
     /**
      * With `?rival=clash`, the rival pumps the Clash this many presses per
-     * second: well under a person mashing R2 (about 6 to 9), so pumping
+     * second: well under a person mashing △ (about 6 to 9), so pumping
      * faster wins and not pumping loses.
      */
     rivalClashPumpRate: 4,
@@ -902,7 +902,7 @@ export const tuning = {
       /** Pulses per second of the red flash between the full Charge and its Backfire. */
       warnPulse: 14,
     },
-    /** "¡Clash!" punches in for `calloutSeconds` as the local Duelist's Clash starts; the R2 prompt kicks for `pumpKickSeconds` on every pump. */
+    /** "¡Clash!" punches in for `calloutSeconds` as the local Duelist's Clash starts; the △ prompt kicks for `pumpKickSeconds` on every pump. */
     clash: { calloutSeconds: 1.1, pumpKickSeconds: 0.14 },
     /**
      * A floating number at the impact point of every hit on an opponent (never

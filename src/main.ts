@@ -405,7 +405,7 @@ const start = async () => {
   // Focus and the Spell Slots with their Cooldowns.
   const specialsHud = createSpellSlotsHud(hudElement, localId, tuning);
 
-  // "¡Clash!" and the R2 pump prompt.
+  // "¡Clash!" and the △ pump prompt.
   const clashHud = createClashHud(hudElement, localId, tuning.hud.clash);
 
   // Opponents' floating Health bars and the damage numbers on them.

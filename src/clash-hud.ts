@@ -1,8 +1,8 @@
 /**
  * The Clash's part of the Duel HUD, only while the local Duelist is locked
  * in one: "¡Clash!" punched onto the centre as it starts, and under the
- * reticle the pump prompt, an R2 trigger that pulses (and kicks on every
- * pump) over "¡Pulsa R2!", with a thin tug-of-war bar showing where the
+ * reticle the pump prompt, a △ button that pulses (and kicks on every
+ * pump) over "¡Pulsa △!", with a thin tug-of-war bar showing where the
  * meeting point stands between the two Wands. Reads the snapshot and events
  * and only touches the DOM when what it shows changes.
  */

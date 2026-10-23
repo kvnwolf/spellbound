@@ -1,7 +1,7 @@
 /*
  * The Clash HUD: "¡Clash!" in the centre as it starts (it rests invisible
- * and punches in), then the pump prompt under the reticle: a pulsing R2
- * trigger, its line, and the tug-of-war bar. Gold and fire on translucent ink.
+ * and punches in), then the pump prompt under the reticle: a pulsing △
+ * button, its line, and the tug-of-war bar. Gold and fire on translucent ink.
  */
 .clash-callout {
   position: absolute;
@@ -33,17 +33,17 @@
   display: none;
 }
 
-/* The R2 trigger: a rounded tab, like the DualSense's, breathing fire. */
+/* The △ button: a round face button, like the DualSense's, breathing fire. */
 .clash-trigger {
   display: grid;
   place-items: center;
-  width: 3.4rem;
-  height: 2.3rem;
+  width: 2.9rem;
+  height: 2.9rem;
   border: 2px solid var(--gold);
-  border-radius: 1.2rem 1.2rem 0.5rem 0.5rem;
+  border-radius: 50%;
   color: var(--parchment);
-  font-size: 1.15rem;
-  letter-spacing: 0.06em;
+  font-size: 1.6rem;
+  line-height: 1;
   background: var(--ink);
   animation: clash-breathe 0.42s ease-in-out infinite alternate;
 }

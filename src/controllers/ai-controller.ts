@@ -4,7 +4,7 @@
  * does: it turns its aim and presses R3 to Lock On, walks and strafes to keep
  * its distance, taps Stupefy and holds Confringo, raises the Shield, Dodges
  * and jumps at incoming Spells, ducks behind Cover, punishes a Staggered
- * opponent and pumps R2 in a Clash. Every reaction waits a human-like delay, and every choice is
+ * opponent and pumps in a Clash. Every reaction waits a human-like delay, and every choice is
  * rolled on a seeded random source, so a Duel replays exactly per seed.
  * Pure: no three.js, no DOM.
  */
@@ -821,7 +821,7 @@ export const createAiController = ({
   };
 
   /**
-   * Locked in a Clash, the AI mashes R2 at its Difficulty's rate: the first
+   * Locked in a Clash, the AI mashes the pump at its Difficulty's rate: the first
    * pump after a reaction, then one press (a tick down, then up) every
    * 1 / rate seconds, the rate picked afresh each time. Whatever it was
    * doing before the Clash is dropped.

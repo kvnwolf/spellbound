@@ -1,4 +1,5 @@
 import type { DualSenseSnapshot } from "../dualsense/input";
+import { clashOpponentOf } from "../duel/duel";
 import { idleIntent } from "../duel/intent";
 import type { TargetSwitch, Vec2 } from "../duel/intent";
 import { spellSlots } from "../duel/spell-slots";
@@ -186,8 +187,10 @@ const createStartGuard = () => {
  * - R2 (held): the Spell Slots' modifier. While it is held, pressing a face
  *   button casts from its Spell Slot instead of its usual action (R2 alone
  *   casts nothing); the right stick keeps turning the camera as usual.
- *   During a Clash every R2 pull is a pump instead (the simulation ignores
- *   the face buttons while the Duelist is rooted).
+ * - During a Clash every △ press is a pump (R2 pumps nothing). △ does
+ *   nothing else from the Clash on until it has been let go after the Clash
+ *   ends, so the △ that Charged the Confringo, or the one that pumped, never
+ *   starts a Charge. The simulation counts the presses, and only in a Clash.
  *
  * Everything advances once per Intent, which the Duel asks for every tick.
  */
@@ -203,9 +206,11 @@ export const createHumanController = (
   const startGuard = createStartGuard();
   let r3WasDown = false;
   let settleTicks = 0;
+  // △ is spoken for by the Clash (and what it leaves held) until let go.
+  let triangleSpoken = false;
 
   return {
-    intent: () => {
+    intent: ({ self, snapshot }) => {
       const raw = readPad();
 
       if (!raw) {
@@ -213,6 +218,7 @@ export const createHumanController = (
         slots.reset();
         startGuard.arm();
         r3WasDown = false;
+        triangleSpoken = false;
 
         return idleIntent;
       }
@@ -237,15 +243,21 @@ export const createHumanController = (
       const turn = aimResponse.step(stick, tickSeconds);
       const { face, held, press } = slots.read(pad);
 
+      if (clashOpponentOf(snapshot.clash, self) !== undefined) {
+        triangleSpoken = true;
+      } else if (!pad.buttons.triangle) {
+        triangleSpoken = false;
+      }
+
       return {
-        // R2 past its pull is also the Clash pump; the simulation counts the
-        // presses, and only during a Clash.
-        clashPump: held,
+        // △ is also the Clash pump; the simulation counts the presses, and
+        // only during a Clash, so a △ held into one is no press.
+        clashPump: pad.buttons.triangle,
         // Buttons are passed on as held; the simulation finds the presses
         // (and reads △'s hold over time to Charge Confringo). A face button
         // pressed while R2 is held went to its Spell Slot instead.
         dodge: face.circle,
-        heavySpell: face.triangle,
+        heavySpell: face.triangle && !triangleSpoken,
         jump: face.cross,
         lightSpell: face.square,
         lockOn,
@@ -255,7 +267,10 @@ export const createHumanController = (
         },
         move: pad.leftStick,
         shield: pad.buttons.l1,
-        spellSlots: { held, press },
+        spellSlots: {
+          held,
+          press: triangleSpoken && press === "triangle" ? null : press,
+        },
         sprint: pad.buttons.r1,
         switchTarget: settling ? 0 : flicks.read(stick),
       };
