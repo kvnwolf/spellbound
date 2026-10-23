@@ -944,9 +944,11 @@ export const tuning = {
         },
         calm: 0.35,
         counterTwist: 0.45,
+        // The run (R1, 5 m/s) is the sprint clip: the jog's high heel kicks
+        // skip like a cartoon; the jog only bridges the walk to it.
         crossovers: [
           [2.6, 3.4],
-          [5.6, 6.8],
+          [3.4, 4.2],
         ],
         gaitSharpness: 8,
         headLead: { max: 0.45, seconds: 0.18 },
