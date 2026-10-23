@@ -2,15 +2,13 @@ import { idleIntent } from "../duel/intent";
 import type { Controller } from "./controller";
 
 /**
- * A development rival in place of the AI (`?rival=casts`): a stationary
+ * Maniquí que lanza hechizos, a Training Dummy for Practice: a stationary
  * Duelist that keeps itself Locked On to its opponent (pressing Lock-on
  * whenever it has no Target, as any Controller would) and taps the Light
  * Spell every `intervalTicks` ticks, so incoming Spells, mid-air cancels and
  * taking hits can be tried on a predictable beat.
  */
-export const createDebugCasterController = (
-  intervalTicks: number
-): Controller => {
+export const createCasterDummy = (intervalTicks: number): Controller => {
   let tick = 0;
 
   return {

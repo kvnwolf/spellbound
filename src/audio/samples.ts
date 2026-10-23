@@ -259,7 +259,9 @@ export const musicFor = (screen: Screen): MusicState => {
 
   if (
     screen.kind === "connect" ||
+    screen.kind === "main" ||
     screen.kind === "difficulty" ||
+    screen.kind === "rivals" ||
     screen.kind === "result"
   ) {
     return { ambience: false, dimmed: false, theme: "menu-theme" };

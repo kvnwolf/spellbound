@@ -200,6 +200,11 @@ body {
   justify-content: center;
 }
 
+/* A Practice has no Rounds to score. */
+#hud.hud-practice .hud-score {
+  display: none;
+}
+
 .hud-pips {
   display: flex;
   gap: 0.35rem;
@@ -407,6 +412,7 @@ body {
 /* Menus share the overlay: a smaller heading, then a list with the gold marker on the highlighted entry. */
 #overlay:not(
     [data-screen="connect"],
+    [data-screen="main"],
     [data-screen="difficulty"],
     [data-screen="unsupported"]
   )
@@ -467,7 +473,12 @@ body {
   inset-inline-end: 0.9rem;
 }
 
-/* The WebHID hint is for the connect prompt and the Difficulty select, small and quiet under them. */
+/* An entry whose screen has not landed yet: listed, but dim and never highlighted. */
+#overlay li.disabled {
+  color: rgb(239 228 200 / 25%);
+}
+
+/* The WebHID hint is for the connect prompt and the root menus, small and quiet under them. */
 #overlay .overlay-effects {
   margin-top: 1.5rem;
   color: rgb(239 228 200 / 50%);
@@ -475,7 +486,11 @@ body {
   letter-spacing: 0.06em;
 }
 
-#overlay:not([data-screen="connect"], [data-screen="difficulty"])
+#overlay:not(
+    [data-screen="connect"],
+    [data-screen="main"],
+    [data-screen="difficulty"]
+  )
   .overlay-effects {
   display: none;
 }

@@ -43,6 +43,8 @@ export const createOverlay = (element: HTMLElement) => {
           const entry = document.createElement("li");
           entry.textContent = item.label;
           entry.className = item.selected ? "selected" : "";
+          entry.classList.toggle("disabled", item.disabled === true);
+          entry.ariaDisabled = item.disabled ? "true" : null;
 
           return entry;
         })

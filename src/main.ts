@@ -9,26 +9,23 @@ import { createActivationHint } from "./activation-hint";
 import { courtyard, courtyardSpawns } from "./arena/courtyard";
 import { createDuelAudio } from "./audio/audio";
 import { createClashHud } from "./clash-hud";
-import { createAiController } from "./controllers/ai-controller";
 import type { Controller } from "./controllers/controller";
-import { idleController } from "./controllers/controller";
-import { createDebugCasterController } from "./controllers/debug-caster";
-import { createDebugClashController } from "./controllers/debug-clash";
-import { createDebugDisarmsController } from "./controllers/debug-disarms";
 import { createHumanController } from "./controllers/human-controller";
 import { createRandom } from "./controllers/random";
+import { createRival } from "./controllers/rival";
 import { createDualSenseEffects } from "./dualsense-effects";
 import { createHapticsDirector } from "./dualsense/haptics";
 import { readDualSense, scanGamepads } from "./dualsense/input";
 import type { DualSenseSnapshot } from "./dualsense/input";
 import { createMenuInput } from "./dualsense/menu-input";
 import { chargeStage } from "./duel/charge";
-import type { Difficulty } from "./duel/difficulty";
 import { clashOpponentOf, createDuel } from "./duel/duel";
 import type { DuelEvent, DuelistId, DuelSnapshot } from "./duel/duel";
 import type { GroundPoint } from "./duel/geometry";
 import { idleIntent } from "./duel/intent";
 import type { Intent } from "./duel/intent";
+import { practiceRulesFor } from "./duel/practice";
+import type { PracticeRival } from "./duel/practice";
 import { createFixedStepClock } from "./game-loop";
 import { createHud } from "./hud";
 import { createOverlay } from "./overlay";
@@ -53,14 +50,14 @@ import { loadWizardAssets } from "./render/wizard-assets";
 import { createWorldHud } from "./render/world-hud";
 import {
   initialScreenState,
+  practiceOf,
   reduceScreens,
   showsDuel,
 } from "./screens/screens";
-import type { PadKind, ScreenEvent } from "./screens/screens";
+import type { DuelScreen, PadKind, ScreenEvent } from "./screens/screens";
 import { viewOf } from "./screens/view";
 import { createSpellSlotsHud } from "./spell-slots-hud";
 import { tuning } from "./tuning";
-import type { Tuning } from "./tuning";
 
 const localId: DuelistId = "local";
 const opponentId: DuelistId = "opponent";
@@ -111,73 +108,16 @@ const start = async () => {
   // frame's snapshot for every tick run during the frame.
   let pad: DualSenseSnapshot | undefined;
 
-  // The opponent is the AI at the chosen Difficulty. For testing,
-  // `?rival=casts` swaps in a stationary rival casting Stupefy on a beat,
-  // `?rival=clash` one that Charges and releases a Confringo with the player
-  // and pumps the Clash it leads to, `?rival=disarms` one that casts
-  // Expelliarmus at the player every few seconds (free of Focus and Cooldown,
-  // for every Duelist), and `?rival=idle` one that does nothing.
-  const rival = new URLSearchParams(window.location.search).get("rival");
+  /**
+   * What the screens ask for: a Duel against the AI at its Difficulty, or a
+   * Practice (same courtyard, Practice rules) against a Training Dummy or the AI.
+   */
+  type Match = Pick<DuelScreen, "difficulty" | "practice">;
 
-  const createRival = (difficulty: Difficulty): Controller => {
-    if (rival === "idle") {
-      return idleController;
-    }
+  // Behind the menus sits a fresh Duel (run 0), frozen at its start.
+  const waiting: Match = { difficulty: "duelista", practice: null };
 
-    if (rival === "casts") {
-      return createDebugCasterController(
-        Math.round(tuning.debug.rivalCastInterval * tuning.tickRate)
-      );
-    }
-
-    if (rival === "clash") {
-      return createDebugClashController({
-        fullSeconds: tuning.confringo.fullSeconds,
-        holdPastFullTicks: Math.round(
-          tuning.debug.rivalClashHoldPastFull * tuning.tickRate
-        ),
-        pumpEveryTicks: Math.round(
-          tuning.tickRate / tuning.debug.rivalClashPumpRate
-        ),
-      });
-    }
-
-    if (rival === "disarms") {
-      return createDebugDisarmsController({
-        firstCastTicks: Math.round(
-          tuning.debug.rivalDisarmsFirstCast * tuning.tickRate
-        ),
-        intervalTicks: Math.round(
-          tuning.debug.rivalDisarmsInterval * tuning.tickRate
-        ),
-        spellSlots: tuning,
-      });
-    }
-
-    // A fresh seed every Duel, so no two play out the same.
-    return createAiController({
-      arena: courtyard,
-      difficulty,
-      random: createRandom(Math.floor(Math.random() * 2 ** 31)),
-      tuning,
-    });
-  };
-
-  // `?rival=disarms` makes Expelliarmus free of Focus and Cooldown, so the
-  // rival can cast it without earning Focus; nothing else changes.
-  const duelTuning: Tuning =
-    rival === "disarms"
-      ? {
-          ...tuning,
-          expelliarmus: {
-            ...tuning.expelliarmus,
-            cooldownSeconds: 0,
-            segments: 0,
-          },
-        }
-      : tuning;
-
-  const createDuelFor = (difficulty: Difficulty) =>
+  const createDuelFor = ({ difficulty, practice }: Match) =>
     createDuel({
       arena: courtyard,
       difficulty,
@@ -185,19 +125,32 @@ const start = async () => {
         { id: localId, spawn: courtyardSpawns.near, team: "near" },
         { id: opponentId, spawn: courtyardSpawns.far, team: "far" },
       ],
-      tuning: duelTuning,
+      practice:
+        practice === null ? undefined : practiceRulesFor(practice, localId),
+      tuning,
     });
 
-  const createControllers = (difficulty: Difficulty) =>
-    new Map<DuelistId, Controller>([
-      [localId, createHumanController(() => pad)],
-      [opponentId, createRival(difficulty)],
-    ]);
+  const createControllers = ({ difficulty, practice }: Match) => {
+    const rival: PracticeRival = practice ?? "ai";
 
-  // Behind the connect prompt and the Difficulty select sits a fresh Duel (run 0),
-  // frozen at its start; every Duel the screens start is a new run.
-  let duel = createDuelFor("duelista");
-  let controllers = createControllers("duelista");
+    return new Map<DuelistId, Controller>([
+      [localId, createHumanController(() => pad)],
+      [
+        opponentId,
+        // A fresh seed every Duel, so no two play out the same.
+        createRival(rival, {
+          arena: courtyard,
+          difficulty,
+          random: createRandom(Math.floor(Math.random() * 2 ** 31)),
+          tuning,
+        }),
+      ],
+    ]);
+  };
+
+  // Every Duel or Practice the screens start is a new run.
+  let duel = createDuelFor(waiting);
+  let controllers = createControllers(waiting);
   let activeRun = 0;
 
   const shake = createCameraShake(tuning.cameraShake);
@@ -450,11 +403,11 @@ const start = async () => {
   let lastFrame: number | undefined;
 
   /** Swaps in a brand-new Duel, as the first or a restarted one. */
-  const startRun = (run: number, difficulty: Difficulty) => {
+  const startRun = (run: number, match: Match) => {
     // Hide any Spell still flying from the old Duel before its ids repeat.
     vfx.update(current.spells, [], 0, 0);
-    duel = createDuelFor(difficulty);
-    controllers = createControllers(difficulty);
+    duel = createDuelFor(match);
+    controllers = createControllers(match);
     clock = createFixedStepClock(tuning.tickRate);
     previous = duel.snapshot();
     current = previous;
@@ -488,8 +441,8 @@ const start = async () => {
 
   /**
    * Tells the screens what the controller did this frame, then builds a new
-   * Duel if they now call for one: a Duel they just started is a new
-   * simulation, and the connect prompt and the Difficulty select show a fresh one
+   * Duel if they now call for one: a Duel or Practice they just started is a
+   * new simulation, and the connect prompt and the menus show a fresh one
    * waiting at its start.
    */
   const syncScreens = (padKind: PadKind, seconds: number) => {
@@ -507,12 +460,15 @@ const start = async () => {
     const { screen } = screens;
 
     if (screen.kind === "duel" && screen.run !== activeRun) {
-      startRun(screen.run, screen.difficulty);
+      startRun(screen.run, screen);
     } else if (
-      (screen.kind === "connect" || screen.kind === "difficulty") &&
+      (screen.kind === "connect" ||
+        screen.kind === "main" ||
+        screen.kind === "difficulty" ||
+        screen.kind === "rivals") &&
       activeRun !== 0
     ) {
-      startRun(0, "duelista");
+      startRun(0, waiting);
     }
 
     return screen;
@@ -693,6 +649,8 @@ const start = async () => {
     hudElement.hidden = !inDuel;
     // Behind the pause the Round's call-out would fight the menu for the centre.
     hudElement.classList.toggle("hud-held", inDuel && !playing);
+    // A Practice has no Rounds: no score at the top.
+    hudElement.classList.toggle("hud-practice", practiceOf(screen) !== null);
 
     const timeScale =
       current.round.phase === "knockout" ? tuning.round.knockout.timeScale : 1;

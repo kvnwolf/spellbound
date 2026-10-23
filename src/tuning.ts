@@ -703,24 +703,6 @@ export const tuning = {
     windowRadiance: 2.6,
   },
 
-  /** Development aids, switched on from the URL (see `main.ts`). */
-  debug: {
-    /** With `?rival=casts`, the stationary opponent presses Stupefy this often. */
-    rivalCastInterval: 0.6,
-    /** With `?rival=clash`, when the player overcharges, the rival lets go this many seconds past full (before the Backfire, `confringo.backfire.delaySeconds`). */
-    rivalClashHoldPastFull: 0.05,
-    /**
-     * With `?rival=clash`, the rival pumps the Clash this many presses per
-     * second: well under a person mashing △ (about 6 to 9), so pumping
-     * faster wins and not pumping loses.
-     */
-    rivalClashPumpRate: 4,
-    /** With `?rival=disarms`, the first Expelliarmus comes this many seconds after "¡Duelo!". */
-    rivalDisarmsFirstCast: 2,
-    /** With `?rival=disarms`, the rival casts Expelliarmus at the player this often (seconds). */
-    rivalDisarmsInterval: 8,
-  },
-
   /**
    * Defence: the Dodge (○), the Shield and its Parry (L1), the jump (✕) and
    * the sprint (R1, held), all paid for from the shared Stamina pool.
@@ -1567,6 +1549,39 @@ export const tuning = {
     swiftness: { charges: 1, seconds: 8, speedScale: 1.3 },
     /** Restores `healShare` of the full Health at once. */
     wiggenweld: { charges: 2, healShare: 0.35 },
+  },
+
+  /**
+   * Practice: a Duel with nothing at stake against a Training Dummy or the
+   * AI. There is never a Knockout or a Round end.
+   */
+  practice: {
+    /** The Training Dummies' rhythms. */
+    dummies: {
+      /** Maniquí que lanza hechizos presses Stupefy this often (seconds). */
+      castInterval: 0.6,
+      /** Maniquí de Clash, when the player overcharges, lets go this many seconds past full (before the Backfire, `confringo.backfire.delaySeconds`). */
+      clashHoldPastFull: 0.05,
+      /**
+       * Maniquí de Clash pumps the Clash this many presses per second: well
+       * under a person mashing △ (about 6 to 9), so pumping faster wins and
+       * not pumping loses.
+       */
+      clashPumpRate: 4,
+      /** Maniquí desarmador's first Expelliarmus comes this many seconds into the Practice. */
+      disarmsFirstCast: 2,
+      /** Maniquí desarmador casts Expelliarmus at the player this often (seconds). */
+      disarmsInterval: 8,
+    },
+    /** The rival's Health, once at zero, comes back full after this many seconds. */
+    recoverySeconds: 2.5,
+    /**
+     * The practising Duelist's Health, Stamina and Focus each come back full
+     * once they have not dropped for this many seconds, so the HUD still
+     * shows them being spent and Spell costs still bite. Health and Stamina
+     * reaching zero come back full at once: they never run out.
+     */
+    refillSeconds: 1.5,
   },
 
   /**

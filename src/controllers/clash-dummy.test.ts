@@ -1,5 +1,5 @@
 /**
- * The debug Clash rival through the Duel seam: a scripted player Charges and
+ * Maniquí de Clash through the Duel seam: a scripted player Charges and
  * releases a Confringo, and the rival is expected to mirror it into a Clash.
  */
 import { describe, expect, it } from "vitest";
@@ -9,15 +9,15 @@ import type { DuelEvent, DuelSnapshot } from "../duel/duel";
 import { idleIntent } from "../duel/intent";
 import type { Intent } from "../duel/intent";
 import { tuning } from "../tuning";
-import { createDebugClashController } from "./debug-clash";
+import { createClashDummy } from "./clash-dummy";
 
 const ticksOf = (seconds: number) => Math.round(seconds * tuning.tickRate);
 
 const rivalController = () =>
-  createDebugClashController({
+  createClashDummy({
     fullSeconds: tuning.confringo.fullSeconds,
-    holdPastFullTicks: ticksOf(tuning.debug.rivalClashHoldPastFull),
-    pumpEveryTicks: ticksOf(1 / tuning.debug.rivalClashPumpRate),
+    holdPastFullTicks: ticksOf(tuning.practice.dummies.clashHoldPastFull),
+    pumpEveryTicks: ticksOf(1 / tuning.practice.dummies.clashPumpRate),
   });
 
 /**
@@ -93,7 +93,7 @@ const tickOfCast = (
     )
   );
 
-describe("the Clash debug rival", () => {
+describe("Maniquí de Clash", () => {
   it("releases a full Charge as the player releases theirs, and the two Clash", () => {
     const perTick = play({ holdSeconds: 0.5, seconds: 2 });
 

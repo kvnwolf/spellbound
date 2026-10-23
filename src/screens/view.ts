@@ -1,12 +1,18 @@
 /**
  * What each screen shows, as plain data: the heading, an optional line, the
- * menu items with the highlighted one marked and a hint of the controls.
- * The overlay draws it; the Duel screen itself shows nothing here, since the
- * Duel and its HUD are the picture.
+ * menu items with the highlighted one marked (and any not available yet
+ * greyed out) and a hint of the controls. The overlay draws it; the Duel
+ * screen itself shows nothing here, since the Duel and its HUD are the picture.
  */
 import { difficulties } from "../duel/difficulty";
+import { practiceRivals } from "../duel/practice";
 import { text } from "../text";
-import { pauseOptions, resultOptions } from "./screens";
+import {
+  mainMenuOptions,
+  pauseOptionsFor,
+  resultOptions,
+  unavailableMainMenuOptions,
+} from "./screens";
 import type { Screen } from "./screens";
 
 export interface ScreenView {
@@ -16,19 +22,25 @@ export interface ScreenView {
   readonly items?: readonly {
     readonly label: string;
     readonly selected: boolean;
+    /** Listed but not available yet: greyed out, never highlighted. */
+    readonly disabled?: true;
   }[];
   readonly hint?: string;
 }
 
+type MenuItem = NonNullable<ScreenView["items"]>[number];
+
 const menu = <T extends string>(
   options: readonly T[],
   selected: T,
-  label: (option: T) => string
+  label: (option: T) => string,
+  unavailable: ReadonlySet<T> = new Set()
 ) =>
-  options.map((option) => ({
-    label: label(option),
-    selected: option === selected,
-  }));
+  options.map((option): MenuItem => {
+    const item = { label: label(option), selected: option === selected };
+
+    return unavailable.has(option) ? { ...item, disabled: true } : item;
+  });
 
 const padBodies = {
   none: text.connectDualSense,
@@ -52,10 +64,24 @@ export const viewOf = (screen: Screen): ScreenView | undefined => {
     };
   }
 
+  if (screen.kind === "main") {
+    return {
+      heading: text.title,
+      hint: text.menu.hint,
+      items: menu(
+        mainMenuOptions,
+        screen.selected,
+        (option) => text.mainMenu[option],
+        unavailableMainMenuOptions
+      ),
+      screen: screen.kind,
+    };
+  }
+
   if (screen.kind === "difficulty") {
     return {
       body: text.difficulty.heading,
-      heading: text.title,
+      heading: screen.practice ? text.practice.heading : text.title,
       hint: text.menu.hint,
       items: menu(
         difficulties,
@@ -66,14 +92,30 @@ export const viewOf = (screen: Screen): ScreenView | undefined => {
     };
   }
 
+  if (screen.kind === "rivals") {
+    return {
+      body: text.practice.rivals,
+      heading: text.practice.heading,
+      hint: text.menu.hint,
+      items: menu(
+        practiceRivals,
+        screen.selected,
+        (option) => text.practice[option]
+      ),
+      screen: screen.kind,
+    };
+  }
+
   if (screen.kind === "pause") {
+    const practice = screen.duel.practice !== null;
+
     return {
       heading: text.pause.heading,
       hint: text.menu.hint,
-      items: menu(
-        pauseOptions,
-        screen.selected,
-        (option) => text.pause[option]
+      items: menu(pauseOptionsFor(screen.duel), screen.selected, (option) =>
+        option === "quit" && practice
+          ? text.pause.quitToMenu
+          : text.pause[option]
       ),
       screen: screen.kind,
     };

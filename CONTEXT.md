@@ -18,6 +18,10 @@ _Avoid_: Set, life
 A Duelist reaching zero Health, which ends their participation in the current Round.
 _Avoid_: Death, kill
 
+**Practice**:
+A Duel with nothing at stake, for learning: no Knockout and no Round end, the practising Duelist's Health, Stamina and Focus are refilled, and the rival's Health comes back a moment after reaching zero; Cooldowns and Spell costs still apply.
+_Avoid_: Sandbox, free play
+
 ### Participants
 
 **Duelist**:
@@ -31,6 +35,10 @@ _Avoid_: Faction, side
 **Controller**:
 The source of a Duelist's intent: either a human holding a gamepad or the AI.
 _Avoid_: Input, brain, agent
+
+**Training Dummy**:
+A scripted Controller a Practice can be fought against, each built to practise one thing: standing still, casting Light Spells on a beat, meeting a Charge in a Clash, or Disarming.
+_Avoid_: Bot, target, debug rival
 
 **Difficulty**:
 The tuning profile of an AI Controller (reaction time, accuracy, aggression), chosen before the Duel.

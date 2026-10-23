@@ -5,7 +5,7 @@ import type { Controller } from "./controller";
 /** Charge time is a whole number of ticks; this absorbs the float error of comparing it with `fullSeconds`. */
 const slack = 1e-6;
 
-export interface DebugClashSettings {
+export interface ClashDummySettings {
   /** Seconds of holding that fill a Confringo's Charge. */
   readonly fullSeconds: number;
   /** Ticks past full it holds when the player overcharges, short of the Backfire. */
@@ -15,7 +15,7 @@ export interface DebugClashSettings {
 }
 
 /**
- * A development rival in place of the AI (`?rival=clash`), for trying the
+ * Maniquí de Clash, a Training Dummy for Practice, for trying the
  * Clash by hand: a stationary Duelist that keeps itself Locked On to its
  * opponent and mirrors their Confringo. When the opponent starts Charging it
  * does too, and it lets go of a full Charge as they let go (a tick behind,
@@ -23,9 +23,7 @@ export interface DebugClashSettings {
  * it never Backfires; the two Confringos meet head-on. Once locked in a
  * Clash it pumps at a steady rate, so the player wins by pumping faster.
  */
-export const createDebugClashController = (
-  settings: DebugClashSettings
-): Controller => {
+export const createClashDummy = (settings: ClashDummySettings): Controller => {
   // Released this Charge: no new one until the opponent lets go of theirs.
   let spent = false;
   let sinceFull = 0;

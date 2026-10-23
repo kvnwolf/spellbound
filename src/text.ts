@@ -48,11 +48,22 @@ export const text = {
   /** The fan-game disclaimer at the foot of the menus. */
   legal:
     "Spellbound es un fan game gratuito y sin fines de lucro, no afiliado, respaldado ni patrocinado por Warner Bros. Entertainment Inc., J.K. Rowling ni Wizarding World. Los nombres de hechizos y pociones del universo de Harry Potter son marcas y propiedad de sus respectivos dueños y se usan como homenaje.",
+  /** The main menu, the root once a DualSense is connected. */
+  mainMenu: {
+    controls: "Controles",
+    duel: "Duelo",
+    practice: "Práctica",
+    training: "Entrenamiento",
+  },
   menu: { hint: "✕ Confirmar     ○ Atrás" },
   pause: {
+    /** In a Practice: back to the rival picker. */
+    changeRival: "Cambiar rival",
     continue: "Continuar",
     heading: "Pausa",
     quit: "Salir",
+    /** In a Practice, Salir names where it goes. */
+    quitToMenu: "Salir al menú",
     restart: "Reiniciar",
   },
   /**
@@ -72,6 +83,16 @@ export const text = {
     strength: "Fuerza",
     swiftness: "Celeridad",
     wiggenweld: "Wiggenweld",
+  },
+  /** The Practice rival picker: the Training Dummies and the AI. */
+  practice: {
+    ai: "Rival real",
+    casts: "Maniquí que lanza hechizos",
+    clash: "Maniquí de Clash",
+    disarms: "Maniquí desarmador",
+    heading: "Práctica",
+    idle: "Maniquí quieto",
+    rivals: "Elige tu rival",
   },
   requiresDualSense: "Spellbound requiere un mando DualSense",
   result: {

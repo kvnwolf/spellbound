@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { text } from "../text";
-import type { Screen } from "./screens";
+import type { DuelScreen, Screen } from "./screens";
 import { viewOf } from "./view";
 
 const result = (won: boolean): Screen => ({
@@ -11,11 +11,23 @@ const result = (won: boolean): Screen => ({
   won,
 });
 
+const duel: DuelScreen = {
+  difficulty: "novato",
+  kind: "duel",
+  over: null,
+  practice: null,
+  run: 1,
+};
+
+const practice: DuelScreen = { ...duel, practice: "casts" };
+
+const labels = (screen: Screen) =>
+  viewOf(screen)?.items?.map((item) => item.label);
+
 describe("what each screen shows", () => {
-  it("shows nothing over the Duel itself", () => {
-    expect(
-      viewOf({ difficulty: "novato", kind: "duel", over: null, run: 1 })
-    ).toBeUndefined();
+  it("shows nothing over the Duel itself, nor over a Practice", () => {
+    expect(viewOf(duel)).toBeUndefined();
+    expect(viewOf(practice)).toBeUndefined();
   });
 
   it("asks to connect a DualSense, or says one is required, under the game's name", () => {
@@ -29,20 +41,58 @@ describe("what each screen shows", () => {
     );
   });
 
-  it("names the game over the Difficulty select", () => {
-    expect(viewOf({ kind: "difficulty", selected: "novato" })).toMatchObject({
+  it("names the game over the main menu and lists Duelo, Práctica, Entrenamiento and Controles, the last two greyed out", () => {
+    const view = viewOf({ kind: "main", selected: "practice" });
+
+    expect(view?.heading).toBe(text.title);
+    expect(view?.items).toStrictEqual([
+      { label: "Duelo", selected: false },
+      { label: "Práctica", selected: true },
+      { disabled: true, label: "Entrenamiento", selected: false },
+      { disabled: true, label: "Controles", selected: false },
+    ]);
+  });
+
+  it("names the game over the Difficulty select of a Duel, and Práctica over that of a Practice", () => {
+    expect(
+      viewOf({ kind: "difficulty", practice: false, selected: "novato" })
+    ).toMatchObject({
       body: text.difficulty.heading,
       heading: text.title,
+    });
+
+    expect(
+      viewOf({ kind: "difficulty", practice: true, selected: "novato" })
+    ).toMatchObject({
+      body: text.difficulty.heading,
+      heading: "Práctica",
     });
   });
 
   it("lists the three Difficulties with the highlighted one marked", () => {
     expect(
-      viewOf({ kind: "difficulty", selected: "duelista" })?.items
+      viewOf({ kind: "difficulty", practice: false, selected: "duelista" })
+        ?.items
     ).toStrictEqual([
       { label: "Novato", selected: false },
       { label: "Duelista", selected: true },
       { label: "Maestro", selected: false },
+    ]);
+  });
+
+  it("lists the four Training Dummies and Rival real in the rival picker", () => {
+    const view = viewOf({ kind: "rivals", selected: "clash" });
+
+    expect(view).toMatchObject({
+      body: text.practice.rivals,
+      heading: "Práctica",
+    });
+    expect(view?.items).toStrictEqual([
+      { label: "Maniquí quieto", selected: false },
+      { label: "Maniquí que lanza hechizos", selected: false },
+      { label: "Maniquí de Clash", selected: true },
+      { label: "Maniquí desarmador", selected: false },
+      { label: "Rival real", selected: false },
     ]);
   });
 
@@ -55,29 +105,19 @@ describe("what each screen shows", () => {
     ]);
   });
 
-  it("offers Continuar, Reiniciar and Salir when paused", () => {
-    const duel = {
-      difficulty: "novato",
-      kind: "duel",
-      over: null,
-      run: 1,
-    } as const;
+  it("offers Continuar, Reiniciar and Salir when a Duel is paused", () => {
+    expect(labels({ duel, kind: "pause", selected: "continue" })).toStrictEqual(
+      ["Continuar", "Reiniciar", "Salir"]
+    );
+  });
 
+  it("offers Continuar, Cambiar rival and Salir al menú when a Practice is paused", () => {
     expect(
-      viewOf({ duel, kind: "pause", selected: "continue" })?.items?.map(
-        (item) => item.label
-      )
-    ).toStrictEqual(["Continuar", "Reiniciar", "Salir"]);
+      labels({ duel: practice, kind: "pause", selected: "continue" })
+    ).toStrictEqual(["Continuar", "Cambiar rival", "Salir al menú"]);
   });
 
   it("asks to reconnect, then for a button press", () => {
-    const duel = {
-      difficulty: "novato",
-      kind: "duel",
-      over: null,
-      run: 1,
-    } as const;
-
     const lost = viewOf({
       kind: "disconnected",
       reconnected: false,

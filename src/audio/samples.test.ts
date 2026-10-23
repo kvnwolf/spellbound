@@ -125,6 +125,7 @@ describe("the music the screens call for", () => {
     difficulty: "duelista",
     kind: "duel",
     over: null,
+    practice: null,
     run: 1,
   };
 
@@ -135,10 +136,12 @@ describe("the music the screens call for", () => {
 
   const paused: Screen = { duel, kind: "pause", selected: "continue" };
 
-  it("loops the menu theme on the connect, Difficulty and result screens, without the courtyard", () => {
+  it("loops the menu theme on the connect prompt, the menus and the result screen, without the courtyard", () => {
     const menus: Screen[] = [
       { kind: "connect", pad: "none" },
-      { kind: "difficulty", selected: "novato" },
+      { kind: "main", selected: "duel" },
+      { kind: "difficulty", practice: false, selected: "novato" },
+      { kind: "rivals", selected: "idle" },
       {
         difficulty: "maestro",
         kind: "result",

@@ -35,6 +35,8 @@ import { idleIntent } from "./intent";
 import type { Intent, Vec2 } from "./intent";
 import { fullCharges, potionIn } from "./potions";
 import type { LastingPotion, PotionKind, PotionSlot } from "./potions";
+import { createPracticeKeeper } from "./practice";
+import type { PracticeRules } from "./practice";
 import {
   boundTo,
   focusCost,
@@ -79,6 +81,12 @@ export interface DuelConfig {
   /** Carried for the AI Controller to read; the simulation itself ignores it. */
   readonly difficulty?: Difficulty;
   readonly duelists: readonly DuelistSetup[];
+  /**
+   * Set for a Practice (see `practice.ts`): no Round intro, no Knockout and
+   * no Round end, the learner's meters refilled and the rival's Health
+   * recovered.
+   */
+  readonly practice?: PracticeRules;
   readonly tuning: Tuning;
 }
 
@@ -1416,16 +1424,22 @@ export const createDuel = (config: DuelConfig): Duel => {
   };
 
   let nextSpellId = 1;
+
+  const { practice } = config;
+  const practiceKeeper = practice && createPracticeKeeper(practice, tuning);
+  // A Practice skips the Round intro: it is fought from the first tick.
+  const introSeconds = practice ? 0 : rounds.introSeconds;
+
   // Ticks until the current Round phase ends; 0 for phases without a clock.
-  let phaseTicks = ticksOf(rounds.introSeconds);
+  let phaseTicks = ticksOf(introSeconds);
 
   let current: DuelSnapshot = {
     clash: null,
     duelists: lineUp(),
     round: {
       number: 1,
-      phase: "intro",
-      phaseSecondsLeft: rounds.introSeconds,
+      phase: practice ? "fighting" : "intro",
+      phaseSecondsLeft: introSeconds,
       winner: null,
     },
     score: Object.fromEntries(config.duelists.map(({ team }) => [team, 0])),
@@ -2628,11 +2642,11 @@ export const createDuel = (config: DuelConfig): Duel => {
     return damage;
   };
 
-  /** Health drops by the damage taken; zero Health is a Knockout. */
+  /** Health drops by the damage taken; zero Health is a Knockout, except in a Practice. */
   const applyDamage = (draft: Draft, damage: Map<DuelistId, number>) => {
     draft.duelists = draft.duelists.map((self) => {
       const health = Math.max(self.health - (damage.get(self.id) ?? 0), 0);
-      const knockedOut = self.knockedOut || health === 0;
+      const knockedOut = !practice && (self.knockedOut || health === 0);
 
       if (knockedOut && !self.knockedOut) {
         draft.events.push({
@@ -2826,6 +2840,12 @@ export const createDuel = (config: DuelConfig): Duel => {
     petrificus: book.cooldownTicks.petrificus * tickSeconds,
   });
 
+  /** A Practice rival that casts Special Spells free of Focus and Cooldown. */
+  const castsFree = (self: DuelistState) =>
+    practice !== undefined &&
+    practice.rivalsCastFree &&
+    self.id !== practice.learner;
+
   /**
    * Whether a Special Spell pressed from its slot leaves the Wand: only on
    * the floor, free to cast (not Dodging or behind the Shield), not in the
@@ -2840,11 +2860,12 @@ export const createDuel = (config: DuelConfig): Duel => {
     guard.canCast &&
     !guard.airborne &&
     book.chargeTicks === 0 &&
-    readiness(
-      kind,
-      { cooldowns: cooldownsOf(book), focus: self.focus },
-      tuning
-    ) === "ready";
+    (castsFree(self) ||
+      readiness(
+        kind,
+        { cooldowns: cooldownsOf(book), focus: self.focus },
+        tuning
+      ) === "ready");
 
   /**
    * The Special Spell a Duelist free to act casts this tick: the one bound
@@ -2862,6 +2883,10 @@ export const createDuel = (config: DuelConfig): Duel => {
 
     if (kind === null || !canCastSpecial(self, book, guard, kind)) {
       return undefined;
+    }
+
+    if (castsFree(self)) {
+      return { cost: 0, kind };
     }
 
     book.cooldownTicks[kind] = ticksOf(tuning[kind].cooldownSeconds);
@@ -3571,6 +3596,11 @@ export const createDuel = (config: DuelConfig): Duel => {
     applyDamage(draft, draft.blasts);
     decideRound(draft);
     gainFocus(draft);
+
+    // A Practice keeps the learner's meters up and brings the rival's Health back.
+    if (practiceKeeper) {
+      draft.duelists = practiceKeeper.tend(current.duelists, draft.duelists);
+    }
 
     // The beam follows the Wands wherever the Duelists ended the tick.
     const { clash } = draft;

@@ -9,7 +9,12 @@ import type {
   DuelSnapshot,
   SpellState,
 } from "../duel/duel";
-import type { MenuInput, Screen, ScreenEvent } from "../screens/screens";
+import type {
+  DuelScreen,
+  MenuInput,
+  Screen,
+  ScreenEvent,
+} from "../screens/screens";
 import { tuning } from "../tuning";
 import { cuesFor, loopsFor, menuSoundFor } from "./cues";
 
@@ -101,6 +106,7 @@ const chargeSounds = (before: number, after: number) =>
 
 const select = (selected: Difficulty): Screen => ({
   kind: "difficulty",
+  practice: false,
   selected,
 });
 
@@ -597,10 +603,11 @@ describe(cuesFor, () => {
 });
 
 describe(menuSoundFor, () => {
-  const duel: Screen = {
+  const duel: DuelScreen = {
     difficulty: "duelista",
     kind: "duel",
     over: null,
+    practice: null,
     run: 1,
   };
 

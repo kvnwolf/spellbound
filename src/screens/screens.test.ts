@@ -24,15 +24,32 @@ const anyButton = { type: "press" } as const;
 const tick = (seconds: number) => ({ seconds, type: "tick" }) as const;
 
 const onConnect = () => initialScreenState(true);
-const onSelect = () => play(onConnect(), padFound);
+const onMain = () => play(onConnect(), padFound);
+
+/** Duelo, from the main menu. */
+const onSelect = () => play(onMain(), press("confirm"));
+
+/** Práctica, from the main menu. */
+const onRivals = () => play(onMain(), press("down"), press("confirm"));
 
 const inDuel = (...moves: ScreenEvent[]) =>
   play(onSelect(), press("confirm"), ...moves);
 
+/** A Practice against the Training Dummy `steps` down the rival picker. */
+const inPractice = (steps: number, ...moves: ScreenEvent[]) =>
+  play(
+    onRivals(),
+    ...Array.from({ length: steps }, () => press("down")),
+    press("confirm"),
+    ...moves
+  );
+
 const afterDuel = (won: boolean) =>
   inDuel({ type: "duel-ended", won }, tick(3));
 
+const atMain = (...moves: ScreenEvent[]) => play(onMain(), ...moves).screen;
 const atSelect = (...moves: ScreenEvent[]) => play(onSelect(), ...moves).screen;
+const atRivals = (...moves: ScreenEvent[]) => play(onRivals(), ...moves).screen;
 const paused = () => inDuel(press("options"));
 const disconnected = () => inDuel(padLost);
 
@@ -62,19 +79,19 @@ describe("connect prompt", () => {
     ).toBe("connect");
   });
 
-  it("goes straight to the Difficulty select once a DualSense is detected", () => {
-    expect(onSelect().screen.kind).toBe("difficulty");
+  it("goes straight to the main menu once a DualSense is detected", () => {
+    expect(onMain().screen.kind).toBe("main");
 
     expect(
       play(onConnect(), { pad: "unsupported", type: "pad" }, padFound).screen
         .kind
-    ).toBe("difficulty");
+    ).toBe("main");
   });
 
-  it("does not pick a Difficulty with the press that woke the pad", () => {
+  it("does not pick an entry with the press that woke the pad", () => {
     expect(play(onConnect(), padFound, anyButton).screen).toStrictEqual({
-      kind: "difficulty",
-      selected: "duelista",
+      kind: "main",
+      selected: "duel",
     });
   });
 
@@ -88,14 +105,54 @@ describe("connect prompt", () => {
   });
 });
 
-describe("Difficulty select", () => {
-  it("highlights Duelista first", () => {
+describe("main menu", () => {
+  it("highlights Duelo first", () => {
+    expect(onMain().screen).toStrictEqual({ kind: "main", selected: "duel" });
+  });
+
+  it("moves between Duelo and Práctica, skipping Entrenamiento and Controles until they land", () => {
+    expect(atMain(press("down"))).toMatchObject({ selected: "practice" });
+    expect(atMain(press("down"), press("down"))).toMatchObject({
+      selected: "practice",
+    });
+    expect(atMain(press("down"), press("up"))).toMatchObject({
+      selected: "duel",
+    });
+    expect(atMain(press("up"))).toMatchObject({ selected: "duel" });
+  });
+
+  it("opens the Difficulty select on Duelo", () => {
     expect(onSelect().screen).toStrictEqual({
       kind: "difficulty",
+      practice: false,
       selected: "duelista",
     });
   });
 
+  it("opens the rival picker on Práctica, with Maniquí quieto highlighted", () => {
+    expect(onRivals().screen).toStrictEqual({
+      kind: "rivals",
+      selected: "idle",
+    });
+  });
+
+  it("is the root: ○ does nothing", () => {
+    expect(play(onMain(), press("back"))).toStrictEqual(onMain());
+  });
+
+  it("ignores time and Options", () => {
+    expect(play(onMain(), tick(10), press("options"))).toStrictEqual(onMain());
+  });
+
+  it("shows the connect prompt if the controller goes away, and comes back once it returns", () => {
+    const unplugged = play(onMain(), press("down"), padLost);
+
+    expect(unplugged.screen).toStrictEqual({ kind: "connect", pad: "none" });
+    expect(play(unplugged, padFound).screen.kind).toBe("main");
+  });
+});
+
+describe("Difficulty select", () => {
   it("moves with up and down and stops at the ends", () => {
     expect(atSelect(press("up"))).toMatchObject({ selected: "novato" });
     expect(atSelect(press("up"), press("up"))).toMatchObject({
@@ -110,18 +167,23 @@ describe("Difficulty select", () => {
   it("starts the Duel with the highlighted Difficulty", () => {
     const state = play(onSelect(), press("up"), press("confirm"));
 
-    expect(state.screen).toMatchObject({
+    expect(state.screen).toStrictEqual({
       difficulty: "novato",
       kind: "duel",
       over: null,
+      practice: null,
+      run: 1,
     });
   });
 
-  it("is the root: ○ does nothing", () => {
-    expect(play(onSelect(), press("back"))).toStrictEqual(onSelect());
+  it("goes back to the main menu on ○, with Duelo highlighted", () => {
+    expect(atSelect(press("down"), press("back"))).toStrictEqual({
+      kind: "main",
+      selected: "duel",
+    });
   });
 
-  it("shows the connect prompt if the controller goes away, and comes back once it returns", () => {
+  it("shows the connect prompt if the controller goes away, and the main menu once it is back", () => {
     const unplugged = play(onSelect(), press("down"), padLost);
 
     expect(unplugged.screen).toStrictEqual({ kind: "connect", pad: "none" });
@@ -130,13 +192,162 @@ describe("Difficulty select", () => {
       "connect"
     );
 
-    expect(play(unplugged, padFound, anyButton).screen.kind).toBe("difficulty");
+    expect(play(unplugged, padFound, anyButton).screen.kind).toBe("main");
   });
 
   it("asks for a DualSense if what is left is another pad", () => {
     expect(
       play(onSelect(), { pad: "unsupported", type: "pad" }).screen
     ).toStrictEqual({ kind: "connect", pad: "unsupported" });
+  });
+});
+
+describe("Practice rival picker", () => {
+  it("lists the Training Dummies then Rival real, stopping at the ends", () => {
+    expect(atRivals(press("up"))).toMatchObject({ selected: "idle" });
+    expect(atRivals(press("down"))).toMatchObject({ selected: "casts" });
+    expect(atRivals(press("down"), press("down"))).toMatchObject({
+      selected: "clash",
+    });
+    expect(atRivals(press("down"), press("down"), press("down"))).toMatchObject(
+      { selected: "disarms" }
+    );
+    expect(
+      atRivals(...Array.from({ length: 6 }, () => press("down")))
+    ).toMatchObject({ selected: "ai" });
+  });
+
+  it("starts a Practice at once against a Training Dummy", () => {
+    expect(inPractice(0).screen).toStrictEqual({
+      difficulty: "duelista",
+      kind: "duel",
+      over: null,
+      practice: "idle",
+      run: 1,
+    });
+    expect(inPractice(1).screen).toMatchObject({ practice: "casts" });
+    expect(inPractice(2).screen).toMatchObject({ practice: "clash" });
+    expect(inPractice(3).screen).toMatchObject({ practice: "disarms" });
+  });
+
+  it("asks for the Difficulty of Rival real, then starts a Practice against the AI", () => {
+    const select = play(
+      onRivals(),
+      ...Array.from({ length: 4 }, () => press("down")),
+      press("confirm")
+    );
+
+    expect(select.screen).toStrictEqual({
+      kind: "difficulty",
+      practice: true,
+      selected: "duelista",
+    });
+
+    expect(play(select, press("down"), press("confirm")).screen).toStrictEqual({
+      difficulty: "maestro",
+      kind: "duel",
+      over: null,
+      practice: "ai",
+      run: 1,
+    });
+  });
+
+  it("goes back from the Difficulty of Rival real to the picker, on Rival real", () => {
+    expect(
+      play(
+        onRivals(),
+        ...Array.from({ length: 4 }, () => press("down")),
+        press("confirm"),
+        press("back")
+      ).screen
+    ).toStrictEqual({ kind: "rivals", selected: "ai" });
+  });
+
+  it("goes back to the main menu on ○, with Práctica highlighted", () => {
+    expect(atRivals(press("down"), press("back"))).toStrictEqual({
+      kind: "main",
+      selected: "practice",
+    });
+  });
+
+  it("shows the connect prompt if the controller goes away", () => {
+    expect(play(onRivals(), padLost).screen).toStrictEqual({
+      kind: "connect",
+      pad: "none",
+    });
+  });
+});
+
+describe("Practice", () => {
+  it("ignores menu input while it runs", () => {
+    const before = inPractice(1);
+
+    expect(
+      play(before, press("down"), press("confirm"), press("back"))
+    ).toStrictEqual(before);
+  });
+
+  it("never ends: a Duel ending is not heard, and time changes nothing", () => {
+    const before = inPractice(1);
+
+    expect(
+      play(before, { type: "duel-ended", won: true }, tick(10))
+    ).toStrictEqual(before);
+  });
+
+  it("pauses on Options with Continuar, Cambiar rival and Salir al menú", () => {
+    const pause = inPractice(1, press("options"));
+
+    expect(pause.screen).toMatchObject({ kind: "pause", selected: "continue" });
+    expect(play(pause, press("down")).screen).toMatchObject({
+      selected: "changeRival",
+    });
+    expect(
+      play(pause, press("down"), press("down"), press("down")).screen
+    ).toMatchObject({ selected: "quit" });
+  });
+
+  it("continues on Continuar, Options or ○", () => {
+    const practice = inPractice(1).screen;
+    const pause = inPractice(1, press("options"));
+
+    expect(play(pause, press("confirm")).screen).toStrictEqual(practice);
+    expect(play(pause, press("options")).screen).toStrictEqual(practice);
+    expect(play(pause, press("back")).screen).toStrictEqual(practice);
+  });
+
+  it("goes to the rival picker on Cambiar rival, on the current rival, and the next pick is a new run", () => {
+    const picker = play(
+      inPractice(2, press("options")),
+      press("down"),
+      press("confirm")
+    );
+
+    expect(picker.screen).toStrictEqual({ kind: "rivals", selected: "clash" });
+    expect(play(picker, press("down"), press("confirm")).screen).toMatchObject({
+      kind: "duel",
+      practice: "disarms",
+      run: 2,
+    });
+  });
+
+  it("leaves for the main menu on Salir al menú, with Práctica highlighted", () => {
+    expect(
+      play(
+        inPractice(1, press("options")),
+        press("down"),
+        press("down"),
+        press("confirm")
+      ).screen
+    ).toStrictEqual({ kind: "main", selected: "practice" });
+  });
+
+  it("pauses for a disconnect and resumes the same Practice after reconnecting", () => {
+    const practice = inPractice(3).screen;
+
+    expect(
+      play(inPractice(3), padLost, padFound, anyButton).screen
+    ).toStrictEqual(practice);
   });
 });
 
@@ -228,6 +439,7 @@ describe("pause", () => {
       difficulty: "maestro",
       kind: "duel",
       over: null,
+      practice: null,
       run: 2,
     });
   });
@@ -235,7 +447,11 @@ describe("pause", () => {
   it("leaves for the Difficulty select with Salir, keeping the current choice", () => {
     expect(
       play(paused(), press("down"), press("down"), press("confirm")).screen
-    ).toStrictEqual({ kind: "difficulty", selected: "duelista" });
+    ).toStrictEqual({
+      kind: "difficulty",
+      practice: false,
+      selected: "duelista",
+    });
   });
 
   it("stops at the ends of the list", () => {
@@ -331,6 +547,7 @@ describe("result", () => {
       difficulty: "duelista",
       kind: "duel",
       over: null,
+      practice: null,
       run: 2,
     });
   });
@@ -338,7 +555,11 @@ describe("result", () => {
   it("goes to the Difficulty select on Cambiar dificultad, keeping the current choice", () => {
     expect(
       play(afterDuel(true), press("down"), press("confirm")).screen
-    ).toStrictEqual({ kind: "difficulty", selected: "duelista" });
+    ).toStrictEqual({
+      kind: "difficulty",
+      practice: false,
+      selected: "duelista",
+    });
   });
 
   it("starts the next Duel after a change of Difficulty with the new Difficulty", () => {
@@ -360,23 +581,25 @@ describe("result", () => {
   it("goes to the Difficulty select on ○", () => {
     expect(play(afterDuel(true), press("back")).screen).toStrictEqual({
       kind: "difficulty",
+      practice: false,
       selected: "duelista",
     });
   });
 
-  it("shows the connect prompt if the controller goes away, and returns to the select once it is back", () => {
+  it("shows the connect prompt if the controller goes away, and returns to the main menu once it is back", () => {
     const unplugged = play(afterDuel(true), padLost);
 
     expect(unplugged.screen).toStrictEqual({ kind: "connect", pad: "none" });
-    expect(play(unplugged, padFound, anyButton).screen.kind).toBe("difficulty");
+    expect(play(unplugged, padFound, anyButton).screen.kind).toBe("main");
   });
 });
 
 describe("a whole session", () => {
-  it("connect, select, Duel, result, Revancha, result, then back to the select", () => {
+  it("connect, Duelo, select, Duel, result, Revancha, result, then back to the select", () => {
     const state = play(
       onConnect(),
       padFound,
+      press("confirm"),
       press("down"),
       press("confirm"),
       { type: "duel-ended", won: false },
@@ -389,7 +612,42 @@ describe("a whole session", () => {
 
     expect(state.screen).toStrictEqual({
       kind: "difficulty",
+      practice: false,
       selected: "maestro",
+    });
+  });
+
+  it("connect, Práctica, a Training Dummy, a change of rival, then out to the main menu and into a Duel", () => {
+    const state = play(
+      onConnect(),
+      padFound,
+      press("down"),
+      press("confirm"),
+      press("down"),
+      press("confirm"),
+      press("options"),
+      press("down"),
+      press("confirm"),
+      press("up"),
+      press("confirm"),
+      press("options"),
+      press("down"),
+      press("down"),
+      press("confirm"),
+      press("up"),
+      press("confirm"),
+      press("confirm")
+    );
+
+    expect(state).toStrictEqual({
+      runs: 3,
+      screen: {
+        difficulty: "duelista",
+        kind: "duel",
+        over: null,
+        practice: null,
+        run: 3,
+      },
     });
   });
 });

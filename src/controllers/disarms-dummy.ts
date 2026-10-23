@@ -4,7 +4,7 @@ import type { SpellSlot } from "../duel/spell-slots";
 import type { Tuning } from "../tuning";
 import type { Controller } from "./controller";
 
-export interface DebugDisarmsSettings {
+export interface DisarmsDummySettings {
   /** Ticks of the Round's fight before the first cast. */
   readonly firstCastTicks: number;
   /** Ticks between two casts. */
@@ -14,15 +14,15 @@ export interface DebugDisarmsSettings {
 }
 
 /**
- * A development rival in place of the AI (`?rival=disarms`), for trying
+ * Maniquí desarmador, a Training Dummy for Practice, for trying
  * being Disarmed by hand: a stationary Duelist that keeps itself Locked On to
  * its opponent and casts Expelliarmus at them on a slow beat, but only while
  * they hold their Wand (never while they are Disarmed, so the Wand can be
  * walked over or left to fly home). Free Focus and no Cooldown for it come
- * from the Duel's tuning (see `main.ts`), not from this Controller.
+ * from the Practice rules (see `duel/practice.ts`), not from this Controller.
  */
-export const createDebugDisarmsController = (
-  settings: DebugDisarmsSettings
+export const createDisarmsDummy = (
+  settings: DisarmsDummySettings
 ): Controller => {
   const slot: SpellSlot =
     spellSlots.find(

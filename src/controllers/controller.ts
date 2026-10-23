@@ -22,7 +22,7 @@ export interface Controller {
   readonly suspend?: () => void;
 }
 
-/** A Controller that never does anything: a dummy opponent for testing (`?rival=idle`). */
+/** A Controller that never does anything: Maniquí quieto, the Training Dummy that just stands there. */
 export const idleController: Controller = {
   intent: () => idleIntent,
 };
