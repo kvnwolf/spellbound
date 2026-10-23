@@ -87,8 +87,10 @@ export interface DuelistState {
   readonly team: TeamId;
   readonly position: GroundPoint;
   /**
-   * Unit vector the Duelist faces: where their aim looks (the camera's
-   * horizontal direction, for a human), or toward their Target while Locked On.
+   * Unit vector the Duelist faces. Locked On, toward their Target. Free-aiming,
+   * it turns toward where they walk and stays put while they stand still, so
+   * the camera can orbit round to their face; casting, Charging or Shielding
+   * turns it quickly to the aim (see `tuning.facing`).
    */
   readonly facing: GroundPoint;
   /**
@@ -589,6 +591,44 @@ const walk = (
   };
 };
 
+/**
+ * The ground direction a free-aiming Duelist walks for the stick `move`,
+ * relative to where they look (`yaw`, the camera); undefined standing still.
+ */
+const walkHeading = (yaw: number, move: Vec2): GroundPoint | undefined => {
+  if (Math.hypot(move.x, move.y) === 0) {
+    return undefined;
+  }
+
+  const ahead = forwardOf(yaw);
+  const side = rightOf(ahead);
+
+  return direction(
+    { x: 0, z: 0 },
+    {
+      x: ahead.x * move.y + side.x * move.x,
+      z: ahead.z * move.y + side.z * move.x,
+    }
+  );
+};
+
+/**
+ * `facing` turned toward the unit ground vector `toward` by at most
+ * `maxTurn` radians, the short way round (a half turn always the same way).
+ */
+const turnToward = (
+  facing: GroundPoint,
+  toward: GroundPoint,
+  maxTurn: number
+): GroundPoint => {
+  const from = yawOf(facing);
+  const left = wrapAngle(yawOf(toward) - from);
+
+  return Math.abs(left) <= maxTurn
+    ? toward
+    : forwardOf(from + Math.sign(left) * maxTurn);
+};
+
 /** Scales `vector` down to length `max` when it is longer. */
 const clampLength = (vector: Vec2, max: number): Vec2 => {
   const length = Math.hypot(vector.x, vector.y);
@@ -864,6 +904,39 @@ export const createDuel = (config: DuelConfig): Duel => {
 
   const { eye } = tuning.aim;
 
+  // Facing turns per tick: fast enough to the aim to finish a half turn in
+  // `aimTurnSeconds`, at `moveTurnRate` toward a walk.
+  const aimTurn = (Math.PI / tuning.facing.aimTurnSeconds) * tickSeconds;
+  const walkTurn = tuning.facing.moveTurnRate * tickSeconds;
+  const aimHoldTicks = ticksOf(tuning.facing.aimHoldSeconds);
+
+  /**
+   * Which way a free-aiming Duelist faces after this tick. `aiming` (casting,
+   * Charging, Shielding, or just after a cast) turns them to the aim, fast;
+   * otherwise a walk along `heading` turns them toward it, and standing still
+   * (or Dodging) keeps the facing. Locked On, `settleAim` faces them to the
+   * Target instead.
+   */
+  const turnFacing = (
+    self: DuelistState,
+    aiming: boolean,
+    heading: GroundPoint | undefined
+  ): GroundPoint => {
+    if (self.targetId !== null) {
+      return self.facing;
+    }
+
+    if (aiming) {
+      return turnToward(self.facing, forwardOf(self.aim.yaw), aimTurn);
+    }
+
+    return heading ? turnToward(self.facing, heading, walkTurn) : self.facing;
+  };
+
+  /** Still facing the aim after a cast: a burst on the move never swings the Duelist about. */
+  const castRecently = (book: Bookkeeping) =>
+    book.ticksSinceCast < aimHoldTicks;
+
   /**
    * Whether a Locked On Duelist's lock holds after everyone moved this tick:
    * it breaks when the Target is Knocked Out, or once the Target has been
@@ -918,9 +991,10 @@ export const createDuel = (config: DuelConfig): Duel => {
    * Faces each Duelist and settles where their Spells go, once everyone has
    * moved this tick. Locked On: they face the Target and aim at its chest
    * (the framing nudge only turns the aim, i.e. the camera). Free-aiming:
-   * they face where they look, and their Spells go to the point under the
-   * crosshair, the first thing their aim ray reaches, other standing Duelists
-   * included. A lock that breaks leaves the aim exactly where it was.
+   * their Spells go to the point under the crosshair, the first thing their
+   * aim ray reaches, other standing Duelists included, and their facing is
+   * left as `act` turned it. A lock that breaks leaves the aim and the
+   * facing exactly where they were.
    */
   const settleAim = (
     duelists: readonly DuelistState[],
@@ -987,7 +1061,6 @@ export const createDuel = (config: DuelConfig): Duel => {
           arena,
           bodies
         ),
-        facing: forwardOf(aim.yaw),
         lockNudge: noNudge,
         targetHiddenSeconds: 0,
         targetId: null,
@@ -996,7 +1069,7 @@ export const createDuel = (config: DuelConfig): Duel => {
 
   /**
    * Everyone back at their spawn at full Health, as every Round starts, each
-   * looking at the nearest opponent's chest.
+   * looking at the nearest opponent's chest and facing the way they look.
    */
   const lineUp = (): DuelistState[] => {
     bookkeeping.clear();
@@ -1042,12 +1115,13 @@ export const createDuel = (config: DuelConfig): Duel => {
           spawned.filter((other) => other.team !== self.team)
         );
 
-        return opponent
-          ? {
-              ...self,
-              aim: aimAt(self.position, chestOf(opponent, tuning), arena, eye),
-            }
-          : self;
+        if (!opponent) {
+          return self;
+        }
+
+        const aim = aimAt(self.position, chestOf(opponent, tuning), arena, eye);
+
+        return { ...self, aim, facing: forwardOf(aim.yaw) };
       }),
       []
     );
@@ -2997,6 +3071,11 @@ export const createDuel = (config: DuelConfig): Duel => {
     return {
       ...defended,
       chargeSeconds: 0,
+      facing: turnFacing(
+        self,
+        castRecently(book),
+        walkHeading(self.aim.yaw, move)
+      ),
       health,
       knockbackSeconds: 0,
       position: collide(wanted, bodyRadius, obstacles, arena),
@@ -3006,6 +3085,27 @@ export const createDuel = (config: DuelConfig): Duel => {
       staggerSeconds: book.staggerTicks * tickSeconds,
     };
   };
+
+  /**
+   * Which way a free-aiming Duelist who acted this tick faces: casting,
+   * Charging and Shielding turn them to the aim, walking toward where they
+   * walk; a Dodge dashes without turning.
+   */
+  const faceAfterActing = (
+    self: DuelistState,
+    book: Bookkeeping,
+    guard: Guard,
+    release: Release | undefined,
+    move: Vec2
+  ): GroundPoint =>
+    turnFacing(
+      self,
+      release !== undefined ||
+        book.chargeTicks > 0 ||
+        guard.state.shielding ||
+        castRecently(book),
+      guard.dash ? undefined : walkHeading(self.aim.yaw, move)
+    );
 
   /**
    * Duelists aim, move and decide to cast. Looking around works during the
@@ -3155,6 +3255,7 @@ export const createDuel = (config: DuelConfig): Duel => {
       return status({
         ...defended,
         chargeSeconds,
+        facing: faceAfterActing(self, book, guard, release, move),
         focus: self.focus - (special?.cost ?? 0),
         knockbackSeconds: 0,
         position: collide(wanted, bodyRadius, obstacles, arena),
@@ -3309,7 +3410,15 @@ export const createDuel = (config: DuelConfig): Duel => {
 
       book.ticksSinceCast = 0;
 
-      const origin = wandTip(self, tuning);
+      // A cast turns a free-aiming Duelist to the aim (see `turnFacing`): the
+      // Spell leaves the Wand where that turn puts it, and Depulso's cone
+      // opens along the aim, even while the body is still coming round.
+      const caster =
+        self.targetId === null
+          ? { ...self, facing: forwardOf(self.aim.yaw) }
+          : self;
+
+      const origin = wandTip(caster, tuning);
 
       // Depulso does not fly: its cone lands on everyone in it at once.
       if (release.kind === "depulso") {
@@ -3323,12 +3432,12 @@ export const createDuel = (config: DuelConfig): Duel => {
           position: origin,
           strong: false,
           team: self.team,
-          velocity: { x: self.facing.x, y: 0, z: self.facing.z },
+          velocity: { x: caster.facing.x, y: 0, z: caster.facing.z },
         };
 
         nextSpellId += 1;
         draft.events.push({ spell, type: "spell-cast" });
-        blast(draft, self, spell);
+        blast(draft, caster, spell);
         continue;
       }
 

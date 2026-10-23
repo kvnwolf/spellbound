@@ -15,6 +15,7 @@ import type {
   DuelEvent,
   DuelistState,
 } from "./duel";
+import { wrapAngle } from "./geometry";
 import type { GroundPoint } from "./geometry";
 import { idleIntent } from "./intent";
 import type { Intent } from "./intent";
@@ -124,6 +125,22 @@ const lookDownTheArena = (duel: Duel) => {
           yaw: -yaw * tuning.tickRate,
         },
       }),
+    });
+  }
+};
+
+/** The hero turns round to look straight up the Arena (+z), behind them at the start. */
+const lookBehind = (duel: Duel) => {
+  for (let tick = 0; tick < 240; tick += 1) {
+    const { yaw } = duelist(duel, "hero").aim;
+    const left = wrapAngle(Math.PI - yaw);
+
+    if (Math.abs(left) < 1e-3) {
+      return;
+    }
+
+    run(duel, 1, {
+      hero: intent({ look: { pitch: 0, yaw: left * tuning.tickRate } }),
     });
   }
 };
@@ -270,6 +287,19 @@ describe("Depulso", () => {
 
     expect(farPush).toBeGreaterThan(1);
     expect(nearPush).toBeGreaterThan(farPush + 1);
+  });
+
+  it("blasts along the aim, turning a Duelist who faced the other way to it", () => {
+    const duel = ready({ rival: offFacing(2.5, 180) });
+    lookBehind(duel);
+    // The camera turned round to the rival; the hero still faces down the Arena.
+    expect(duelist(duel, "hero").facing.z).toBeCloseTo(-1);
+
+    const events = depulsoFrom(duel);
+    run(duel, secondsToTicks(tuning.facing.aimTurnSeconds));
+
+    expect(ofType(events, "spell-hit")).toMatchObject([{ targetId: "rival" }]);
+    expect(duelist(duel, "hero").facing.z).toBeCloseTo(1);
   });
 
   it("leaves an opponent behind Cover untouched", () => {

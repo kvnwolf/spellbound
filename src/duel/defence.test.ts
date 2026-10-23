@@ -376,12 +376,13 @@ describe("Shield", () => {
 
   it("lets a Spell from behind land", () => {
     const duel = fight();
-    // Turn round to look away from the rival, then raise the Shield.
+    // Turn round to look away from the rival, then raise the Shield, which
+    // turns the hero to the aim: their back to the rival.
     run(duel, secondsToTicks(1), {
       hero: intent({ look: { pitch: 0, yaw: Math.PI } }),
     });
+    run(duel, secondsToTicks(tuning.facing.aimTurnSeconds), { hero: raise });
     expect(duelist(duel, "hero").facing.z).toBeGreaterThan(0.9);
-    run(duel, 1, { hero: raise });
     rivalCasts(duel);
 
     const events = run(duel, secondsToTicks(1), { hero: raise });

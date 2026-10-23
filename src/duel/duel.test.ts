@@ -4,8 +4,8 @@ import { tuning } from "../tuning";
 import type { Tuning } from "../tuning";
 import { createDuel } from "./duel";
 import type { ArenaLayout, Duel, DuelEvent, DuelistState } from "./duel";
-import { rightOf } from "./geometry";
-import type { Aim, Point3 } from "./geometry";
+import { forwardOf, rightOf, wrapAngle, yawOf } from "./geometry";
+import type { Aim, GroundPoint, Point3 } from "./geometry";
 import { idleIntent } from "./intent";
 import type { Intent } from "./intent";
 
@@ -167,7 +167,7 @@ describe("Free aim", () => {
     expect(hero.aimPoint.z).toBeCloseTo(-5 + tuning.duelist.bodyRadius, 1);
   });
 
-  it("turns the aim at the look rates and always faces where it looks", () => {
+  it("turns the aim at the look rates", () => {
     const duel = fight(openArena, withoutAimAssist);
     const before = duelist(duel, "hero");
 
@@ -176,9 +176,6 @@ describe("Free aim", () => {
     const hero = duelist(duel, "hero");
     expect(hero.aim.yaw - before.aim.yaw).toBeCloseTo(Math.PI / 2);
     expect(hero.aim.pitch - before.aim.pitch).toBeCloseTo(0.2);
-    // A quarter turn right: now facing what was on the right.
-    expect(hero.facing.x).toBeCloseTo(rightOf(before.facing).x);
-    expect(hero.facing.z).toBeCloseTo(rightOf(before.facing).z);
   });
 
   it("keeps the pitch within its limits", () => {
@@ -193,7 +190,7 @@ describe("Free aim", () => {
     expect(down).toBeCloseTo(tuning.aim.pitch.min);
   });
 
-  it("walks where the camera looks and strafes sideways without turning", () => {
+  it("walks relative to the camera: forward where it looks, sideways to its right", () => {
     const duel = fight(openArena, withoutAimAssist);
     turn(duel, { pitch: 0, yaw: Math.PI / 2 });
     const start = duelist(duel, "hero");
@@ -204,20 +201,177 @@ describe("Free aim", () => {
     const strafed = duelist(duel, "hero");
 
     const stride = tuning.duelist.walkSpeed * 0.5;
-    const right = rightOf(start.facing);
-    expect(walked.position.x - start.position.x).toBeCloseTo(
-      start.facing.x * stride
-    );
-    expect(walked.position.z - start.position.z).toBeCloseTo(
-      start.facing.z * stride
-    );
+    const ahead = forwardOf(start.aim.yaw);
+    const right = rightOf(ahead);
+    expect(walked.position.x - start.position.x).toBeCloseTo(ahead.x * stride);
+    expect(walked.position.z - start.position.z).toBeCloseTo(ahead.z * stride);
     expect(strafed.position.x - walked.position.x).toBeCloseTo(
       right.x * stride
     );
     expect(strafed.position.z - walked.position.z).toBeCloseTo(
       right.z * stride
     );
-    expect(strafed.facing).toStrictEqual(start.facing);
+  });
+});
+
+/** The angle, radians, from `facing` round to the ground direction `along`: 0 when they agree. */
+const angleOff = (facing: GroundPoint, along: GroundPoint) =>
+  Math.abs(wrapAngle(yawOf(along) - yawOf(facing)));
+
+/** Where the hero's aim (the camera) looks, on the floor. */
+const aimForward = (duel: Duel) => forwardOf(duelist(duel, "hero").aim.yaw);
+
+const walkBack = intent({ move: { x: 0, y: -1 } });
+
+/**
+ * The hero walks toward the camera until they face it, their back to the
+ * rival, and stops; the camera still looks down the Arena at the rival.
+ */
+const faceTheCamera = (duel: Duel) => hold(duel, walkBack, 0.5);
+
+const { facing: facingTuning } = tuning;
+
+describe("Facing while free-aiming", () => {
+  it("turns toward where it walks at the tuned turn rate, the camera staying put", () => {
+    const duel = fightLookingDownTheArena();
+    const before = duelist(duel, "hero");
+
+    run(duel, 1, { hero: walkBack });
+    const firstTick = duelist(duel, "hero");
+    faceTheCamera(duel);
+    const turned = duelist(duel, "hero");
+
+    expect(
+      Math.abs(wrapAngle(yawOf(firstTick.facing) - yawOf(before.facing)))
+    ).toBeCloseTo(facingTuning.moveTurnRate / tuning.tickRate);
+    // Walking toward the camera: facing it, which shows the face.
+    expect(angleOff(turned.facing, { x: 0, z: 1 })).toBeCloseTo(0);
+    expect(turned.aim.yaw).toBeCloseTo(before.aim.yaw);
+    expect(turned.position.z).toBeGreaterThan(before.position.z);
+  });
+
+  it("turns toward a sideways walk, facing where it goes", () => {
+    const duel = fightLookingDownTheArena();
+
+    hold(duel, intent({ move: { x: 1, y: 0 } }), 0.5);
+
+    expect(
+      angleOff(duelist(duel, "hero").facing, rightOf(aimForward(duel)))
+    ).toBeCloseTo(0);
+  });
+
+  it("keeps its facing while standing still, however far the camera orbits round it", () => {
+    const duel = fight(openArena, withoutAimAssist);
+    const before = duelist(duel, "hero");
+
+    turn(duel, { pitch: 0, yaw: Math.PI });
+    turn(duel, { pitch: 0, yaw: Math.PI * 0.75 });
+
+    const after = duelist(duel, "hero");
+    expect(Math.abs(wrapAngle(after.aim.yaw - before.aim.yaw))).toBeCloseTo(
+      Math.PI * 0.25
+    );
+    expect(after.facing).toStrictEqual(before.facing);
+  });
+
+  it("turns to the aim within the tuned time on a Light Spell, which flies to the point under the crosshair", () => {
+    const duel = fightLookingDownTheArena();
+    faceTheCamera(duel);
+    // Look down at the floor a few metres ahead, past the hero's back.
+    turn(duel, { pitch: -0.35, yaw: 0 });
+    const { aimPoint } = duelist(duel, "hero");
+
+    const cast = run(duel, 1, { hero: castLight });
+    const castTick = angleOff(duelist(duel, "hero").facing, aimForward(duel));
+    const turning = run(duel, secondsToTicks(facingTuning.aimTurnSeconds) - 1);
+
+    // A quick turn, not a snap: still turning after the cast's tick, done in time.
+    expect(castTick).toBeGreaterThan(0.5);
+    expect(
+      angleOff(duelist(duel, "hero").facing, aimForward(duel))
+    ).toBeCloseTo(0);
+
+    const [stopped] = ofType(
+      [...cast, ...turning, ...settle(duel)],
+      "spell-stopped"
+    );
+
+    expect(stopped?.by).toBe("floor");
+    expect(stopped?.position.x).toBeCloseTo(aimPoint.x, 1);
+    expect(stopped?.position.z).toBeCloseTo(aimPoint.z, 1);
+  });
+
+  it("turns to the aim while Charging, and keeps facing it as the camera turns", () => {
+    const duel = fightLookingDownTheArena();
+    faceTheCamera(duel);
+
+    hold(duel, chargeHeavy, facingTuning.aimTurnSeconds);
+    expect(
+      angleOff(duelist(duel, "hero").facing, aimForward(duel))
+    ).toBeCloseTo(0);
+
+    hold(duel, intent({ heavySpell: true, look: { pitch: 0, yaw: 1.5 } }), 0.2);
+    expect(duelist(duel, "hero").chargeSeconds).toBeGreaterThan(0);
+    expect(
+      angleOff(duelist(duel, "hero").facing, aimForward(duel))
+    ).toBeCloseTo(0);
+  });
+
+  it("keeps facing the aim for a moment after a cast on the move, then turns back to where it walks", () => {
+    const duel = fightLookingDownTheArena();
+    const strafe = intent({ move: { x: 1, y: 0 } });
+    hold(duel, strafe, 0.5);
+
+    run(duel, 1, { hero: intent({ lightSpell: true, move: { x: 1, y: 0 } }) });
+    hold(duel, strafe, facingTuning.aimHoldSeconds - 0.1);
+    expect(
+      angleOff(duelist(duel, "hero").facing, aimForward(duel))
+    ).toBeCloseTo(0);
+
+    hold(duel, strafe, 0.1 + Math.PI / 2 / facingTuning.moveTurnRate + 0.1);
+    expect(
+      angleOff(duelist(duel, "hero").facing, rightOf(aimForward(duel)))
+    ).toBeCloseTo(0);
+  });
+
+  describe("the Shield", () => {
+    const shieldUp = intent({ shield: true });
+
+    /** The rival casts a Stupefy at the hero, who holds the Shield up until it lands. */
+    const rivalCastsAtShield = (duel: Duel) => [
+      ...run(duel, 1, { hero: shieldUp, rival: castLight }),
+      ...run(duel, secondsToTicks(1.5), { hero: shieldUp }),
+    ];
+
+    it("turns the Duelist to the aim when it goes up, and blocks a Spell from the aim side", () => {
+      const duel = fightLookingDownTheArena();
+      faceTheCamera(duel);
+
+      hold(duel, shieldUp, facingTuning.aimTurnSeconds);
+      expect(
+        angleOff(duelist(duel, "hero").facing, aimForward(duel))
+      ).toBeCloseTo(0);
+
+      const events = rivalCastsAtShield(duel);
+
+      expect(ofType(events, "spell-blocked")).toHaveLength(1);
+      expect(ofType(events, "spell-hit")).toStrictEqual([]);
+    });
+
+    it("follows the aim while held, leaving the side the camera turned from open", () => {
+      const duel = fightLookingDownTheArena();
+
+      // Shield up facing the rival, then the camera turns right round.
+      hold(duel, intent({ look: { pitch: 0, yaw: Math.PI }, shield: true }), 1);
+      expect(
+        angleOff(duelist(duel, "hero").facing, aimForward(duel))
+      ).toBeCloseTo(0);
+
+      const events = rivalCastsAtShield(duel);
+
+      expect(ofType(events, "spell-blocked")).toStrictEqual([]);
+      expect(ofType(events, "spell-hit")).toMatchObject([{ targetId: "hero" }]);
+    });
   });
 });
 
@@ -450,7 +604,9 @@ describe("The Wand", () => {
               ];
 
         const [cast] = ofType(events, "spell-cast");
-        const tip = wandTipOf(duelist(duel, "hero"));
+        // The Wand of a Duelist turned to their aim, as every cast turns them.
+        const hero = duelist(duel, "hero");
+        const tip = wandTipOf({ ...hero, facing: forwardOf(hero.aim.yaw) });
 
         expect(cast?.spell.kind).toBe(kind);
         expect(cast?.spell.position.x).toBeCloseTo(tip.x);
@@ -833,6 +989,20 @@ describe("Lock-on", () => {
     toggleLock(duel);
 
     expect(duelist(duel, "hero").targetId).toBeNull();
+  });
+
+  it("still faces the Target walking away from it", () => {
+    const duel = fight();
+    toggleLock(duel);
+
+    hold(duel, intent({ move: { x: 0, y: -1 } }), 0.5);
+
+    const { facing, position } = duelist(duel, "hero");
+    const rival = duelist(duel, "rival").position;
+    const distance = Math.hypot(rival.x - position.x, rival.z - position.z);
+    expect(position.z).toBeGreaterThan(5);
+    expect(facing.x).toBeCloseTo((rival.x - position.x) / distance);
+    expect(facing.z).toBeCloseTo((rival.z - position.z) / distance);
   });
 
   it("strafes round the Target at a constant distance, still facing it", () => {

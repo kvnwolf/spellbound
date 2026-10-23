@@ -1275,6 +1275,18 @@ export const tuning = {
   },
 
   /**
+   * Which way a free-aiming Duelist faces (Locked On, they always face the
+   * Target). Walking turns them toward where they walk, at `moveTurnRate`
+   * radians per second, so running toward the camera shows their face;
+   * standing still keeps the facing, so the camera can orbit round them.
+   * Casting, Charging or raising the Shield turns them to the aim fast
+   * enough to finish even a half turn within `aimTurnSeconds`; they keep
+   * facing the aim while Charging or Shielding and for `aimHoldSeconds`
+   * after a cast, so a burst of casts on the move never swings them about.
+   */
+  facing: { aimHoldSeconds: 0.5, aimTurnSeconds: 0.1, moveTurnRate: 12 },
+
+  /**
    * Focus: the three-segment meter a Duelist builds through skilful play and
    * spends on Special Spells. It starts empty every Round and never decays.
    * Points; a Special Spell costs whole segments.
