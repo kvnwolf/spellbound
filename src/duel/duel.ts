@@ -150,6 +150,12 @@ export interface DuelistState {
   /** Running at sprint speed this tick, draining Stamina. */
   readonly sprinting: boolean;
   /**
+   * Ground velocity over the last tick, m/s. Walking eases it toward what
+   * the stick asks (see `tuning.movement`), so starting, stopping and
+   * turning take a moment, as a body's do; a Dodge dashes at once.
+   */
+  readonly velocity: GroundPoint;
+  /**
    * Focus points, between 0 and `tuning.focus.max` (three segments of
    * `tuning.focus.segment`). Built by landing Light Spells, Parrying, Perfect
    * Dodging and taking damage; spent on Special Spells. Empty every Round,
@@ -620,6 +626,10 @@ const walkHeading = (yaw: number, move: Vec2): GroundPoint | undefined => {
   );
 };
 
+/** How much of `vector` lies along the unit ground vector `axis`. */
+const alongAxis = (vector: GroundPoint, axis: GroundPoint) =>
+  vector.x * axis.x + vector.z * axis.z;
+
 /**
  * `facing` turned toward the unit ground vector `toward` by at most
  * `maxTurn` radians, the short way round (a half turn always the same way).
@@ -937,6 +947,126 @@ export const createDuel = (config: DuelConfig): Duel => {
     return heading ? turnToward(self.facing, heading, walkTurn) : self.facing;
   };
 
+  /**
+   * `velocity` (m/s) turned by how far round `target` the Duelist moved
+   * with it last tick, so it keeps its bearing to the Target.
+   */
+  const orbitTurned = (
+    velocity: GroundPoint,
+    position: GroundPoint,
+    target: GroundPoint
+  ): GroundPoint => {
+    const before = {
+      x: position.x - velocity.x * tickSeconds,
+      z: position.z - velocity.z * tickSeconds,
+    };
+
+    const turn = wrapAngle(
+      yawOf(direction(position, target)) - yawOf(direction(before, target))
+    );
+
+    const cos = Math.cos(turn);
+    const sin = Math.sin(turn);
+
+    // Turned the way `forwardOf` turns as the yaw grows.
+    return {
+      x: velocity.x * cos - velocity.z * sin,
+      z: velocity.z * cos + velocity.x * sin,
+    };
+  };
+
+  /**
+   * Where a walk toward `wanted` (this tick's step at the stick's full
+   * pace) actually takes the Duelist: their velocity eases toward that
+   * step's at `tuning.movement.acceleration` per second, or at
+   * `deceleration` when slowing, from what they last moved (no faster
+   * than a run). Locked On, the eased step is taken round the Target, so
+   * strafing keeps orbiting at a constant distance.
+   */
+  const easeStep = (
+    self: DuelistState,
+    wanted: GroundPoint,
+    swift: number,
+    target: GroundPoint | undefined
+  ): GroundPoint => {
+    const top =
+      tuning.duelist.walkSpeed * tuning.defence.sprint.speedScale * swift;
+
+    // Locked On, last tick's velocity turns with the Duelist round the
+    // Target (an orbit carries no outward drift).
+    const carried = target
+      ? orbitTurned(self.velocity, self.position, target)
+      : self.velocity;
+
+    // As a stick-style vector: x across, y along z.
+    const capped = clampLength({ x: carried.x, y: carried.z }, top);
+    const now = { x: capped.x, z: capped.y };
+
+    const asked = {
+      x: (wanted.x - self.position.x) / tickSeconds,
+      z: (wanted.z - self.position.z) / tickSeconds,
+    };
+
+    const speeding = Math.hypot(asked.x, asked.z) >= Math.hypot(now.x, now.z);
+
+    const share =
+      1 -
+      Math.exp(
+        -(speeding
+          ? tuning.movement.acceleration
+          : tuning.movement.deceleration) * tickSeconds
+      );
+
+    const ease = (from: number, to: number) => from + (to - from) * share;
+    const distance = target ? distanceBetween(self.position, target) : 0;
+
+    if (!target || distance < 1e-6) {
+      return {
+        x: self.position.x + ease(now.x, asked.x) * tickSeconds,
+        z: self.position.z + ease(now.z, asked.z) * tickSeconds,
+      };
+    }
+
+    // Round the Target, in its frame: toward it shortens the distance (by
+    // exactly what the walk asked), across it turns the Duelist round.
+    const toward = direction(self.position, target);
+    const across = rightOf(toward);
+
+    // How fast it last closed on the Target, from the distances themselves
+    // (a step round a circle is a chord, whose inward lean is not closing).
+    const before = {
+      x: self.position.x - self.velocity.x * tickSeconds,
+      z: self.position.z - self.velocity.z * tickSeconds,
+    };
+
+    const closing = Math.min(
+      Math.max(
+        (distanceBetween(before, target) - distance) / tickSeconds,
+        -top
+      ),
+      top
+    );
+
+    const closer =
+      ease(
+        closing,
+        (distance - distanceBetween(wanted, target)) / tickSeconds
+      ) * tickSeconds;
+
+    const sideways =
+      ease(alongAxis(now, across), alongAxis(asked, across)) * tickSeconds;
+
+    const reach = Math.max(distance - closer, 0);
+    const offsetX = self.position.x + across.x * sideways - target.x;
+    const offsetZ = self.position.z + across.z * sideways - target.z;
+    const offset = Math.hypot(offsetX, offsetZ);
+
+    return {
+      x: target.x + (offsetX / offset) * reach,
+      z: target.z + (offsetZ / offset) * reach,
+    };
+  };
+
   /** Still facing the aim after a cast: a burst on the move never swings the Duelist about. */
   const castRecently = (book: Bookkeeping) =>
     book.ticksSinceCast < aimHoldTicks;
@@ -1109,6 +1239,7 @@ export const createDuel = (config: DuelConfig): Duel => {
       targetHiddenSeconds: 0,
       targetId: null,
       team: setup.team,
+      velocity: { x: 0, z: 0 },
     }));
 
     return settleAim(
@@ -3080,13 +3211,15 @@ export const createDuel = (config: DuelConfig): Duel => {
     const move = clampLength(intent.move, 1);
     const speed = stride * tuning.potions.drink.moveScale * swiftScale(book);
 
-    const wanted = walk(
+    const stepTo = walk(
       self.position,
       self.aim.yaw,
       target?.position,
       move.x * speed,
       move.y * speed
     );
+
+    const wanted = easeStep(self, stepTo, swiftScale(book), target?.position);
 
     return {
       ...defended,
@@ -3183,6 +3316,8 @@ export const createDuel = (config: DuelConfig): Duel => {
       const target =
         self.targetId === null ? undefined : byId.get(self.targetId);
 
+      const targetAt = target?.position;
+
       // Drinking a Potion, the hands are full: no Dodge, jump, sprint or Shield.
       const canDefend = canAct && book.drink === undefined;
 
@@ -3258,18 +3393,24 @@ export const createDuel = (config: DuelConfig): Duel => {
           ? stride * confringo.chargeMoveScale
           : stride * guard.pace) * swiftScale(book);
 
-      // A Dodge dashes along its own line instead of walking.
+      // A Dodge dashes along its own line at once; a walk eases toward
+      // where the stick asks.
       const wanted = guard.dash
         ? {
             x: self.position.x + guard.dash.x,
             z: self.position.z + guard.dash.z,
           }
-        : walk(
-            self.position,
-            self.aim.yaw,
-            target?.position,
-            move.x * speed,
-            move.y * speed
+        : easeStep(
+            self,
+            walk(
+              self.position,
+              self.aim.yaw,
+              targetAt,
+              move.x * speed,
+              move.y * speed
+            ),
+            swiftScale(book),
+            targetAt
           );
 
       return status({
@@ -3283,7 +3424,29 @@ export const createDuel = (config: DuelConfig): Duel => {
       });
     });
 
-    draft.duelists = settleAim(acted, draft.events, draft.clash);
+    // Velocity is what each Duelist actually walked this tick, walls and
+    // all; a Dodge or a knock-back ends where it ends, carrying nothing on.
+    const moved = acted.map((each) => {
+      const before = byId.get(each.id) ?? each;
+
+      const thrown =
+        each.dodgeSeconds > 0 ||
+        before.dodgeSeconds > 0 ||
+        each.knockbackSeconds > 0 ||
+        before.knockbackSeconds > 0;
+
+      return {
+        ...each,
+        velocity: thrown
+          ? { x: 0, z: 0 }
+          : {
+              x: (each.position.x - before.position.x) / tickSeconds,
+              z: (each.position.z - before.position.z) / tickSeconds,
+            },
+      };
+    });
+
+    draft.duelists = settleAim(moved, draft.events, draft.clash);
 
     return releases;
   };

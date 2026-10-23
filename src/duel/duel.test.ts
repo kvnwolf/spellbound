@@ -77,6 +77,10 @@ const hold = (duel: Duel, heroIntent: Intent, seconds: number) => {
   return duel.snapshot();
 };
 
+/** A ground velocity's speed, m/s. */
+const speed = (velocity: { x: number; z: number }) =>
+  Math.hypot(velocity.x, velocity.z);
+
 /** Turns the hero's aim by `by` radians, spread over one second of look input. */
 const turn = (duel: Duel, by: Aim) => hold(duel, intent({ look: by }), 1);
 
@@ -190,6 +194,26 @@ describe("Free aim", () => {
     expect(down).toBeCloseTo(tuning.aim.pitch.min);
   });
 
+  it("eases into a walk and out of it rather than starting or stopping dead", () => {
+    const duel = fight();
+    const forward = intent({ move: { x: 0, y: 1 } });
+
+    run(duel, 1, { hero: forward });
+    const first = duelist(duel, "hero").velocity;
+    hold(duel, forward, 0.6);
+    const cruising = duelist(duel, "hero").velocity;
+    run(duel, 1, { hero: intent({}) });
+    const braking = duelist(duel, "hero").velocity;
+    hold(duel, intent({}), 0.6);
+    const stopped = duelist(duel, "hero").velocity;
+
+    expect(speed(first)).toBeGreaterThan(0);
+    expect(speed(first)).toBeLessThan(tuning.duelist.walkSpeed * 0.3);
+    expect(speed(cruising)).toBeCloseTo(tuning.duelist.walkSpeed, 1);
+    expect(speed(braking)).toBeGreaterThan(tuning.duelist.walkSpeed * 0.7);
+    expect(speed(stopped)).toBeLessThan(0.05);
+  });
+
   it("walks relative to the camera: forward where it looks, sideways to its right", () => {
     const duel = fight(openArena, withoutAimAssist);
     turn(duel, { pitch: 0, yaw: Math.PI / 2 });
@@ -203,13 +227,27 @@ describe("Free aim", () => {
     const stride = tuning.duelist.walkSpeed * 0.5;
     const ahead = forwardOf(start.aim.yaw);
     const right = rightOf(ahead);
-    expect(walked.position.x - start.position.x).toBeCloseTo(ahead.x * stride);
-    expect(walked.position.z - start.position.z).toBeCloseTo(ahead.z * stride);
-    expect(strafed.position.x - walked.position.x).toBeCloseTo(
-      right.x * stride
-    );
-    expect(strafed.position.z - walked.position.z).toBeCloseTo(
-      right.z * stride
+
+    const walkedBy = {
+      x: walked.position.x - start.position.x,
+      z: walked.position.z - start.position.z,
+    };
+
+    const walkedFar = Math.hypot(walkedBy.x, walkedBy.z);
+
+    const strafedBy = {
+      x: strafed.position.x - walked.position.x,
+      z: strafed.position.z - walked.position.z,
+    };
+
+    // Easing in from a stand, it covers most (not all) of a full-pace stride.
+    expect(walkedFar).toBeGreaterThan(stride * 0.7);
+    expect(walkedFar).toBeLessThan(stride);
+    expect(walkedBy.x / walkedFar).toBeCloseTo(ahead.x);
+    expect(walkedBy.z / walkedFar).toBeCloseTo(ahead.z);
+    // Turning from forward to sideways curves: it ends up mostly to the right.
+    expect(strafedBy.x * right.x + strafedBy.z * right.z).toBeGreaterThan(
+      stride * 0.6
     );
   });
 });

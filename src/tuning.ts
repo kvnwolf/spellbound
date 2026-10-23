@@ -747,9 +747,9 @@ export const tuning = {
     },
     sprint: {
       /** Stamina drained every second spent sprinting (only while moving). */
-      drain: 20,
+      drain: 5,
       /** Running speed, as a multiple of the walking speed. */
-      speedScale: 2.5,
+      speedScale: 2,
     },
     stamina: {
       max: 100,
@@ -999,7 +999,7 @@ export const tuning = {
         rim: "#ffb36b",
       },
     },
-    walkSpeed: 1.9,
+    walkSpeed: 2.5,
     /**
      * The visible Wand and the right arm that holds it. At rest, walking or
      * running the arm hangs with the clips, the Wand held low. It rises (by
@@ -1475,6 +1475,15 @@ export const tuning = {
     /** It must come back inside this before it can step again: one tilt, one step. */
     stickRelease: 0.35,
   },
+
+  /**
+   * How a walking Duelist's velocity follows the stick: it closes
+   * `acceleration` of the gap to the stick's velocity per second (an
+   * exponential ease: about 95% in 3/acceleration seconds), `deceleration`
+   * when slowing or turning back, so a body never starts, stops or reverses
+   * in an instant.
+   */
+  movement: { acceleration: 9, deceleration: 12 },
 
   /**
    * Petrificus Totalus, a Special Spell: the Duelist it hits is Petrified,
