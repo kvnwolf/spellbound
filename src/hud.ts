@@ -14,6 +14,7 @@ import type { DuelEvent, DuelistId, DuelSnapshot, TeamId } from "./duel/duel";
 import { createHealthBar } from "./health-bar";
 import { createPotionSlotsHud } from "./potion-slots-hud";
 import { text } from "./text";
+import type { Tuning } from "./tuning";
 
 export interface HudSettings {
   readonly maxHealth: number;
@@ -35,6 +36,9 @@ export interface HudSettings {
   readonly slotsSpreadSeconds: number;
   /** How long a Spell's name stays up under the reticle. */
   readonly spellCalloutSeconds: number;
+  /** The Potions and their slots, for the Potion Slots and the active effects. */
+  readonly potions: Tuning["potions"];
+  readonly potionSlots: Tuning["potionSlots"];
 }
 
 export interface Hud {
@@ -145,6 +149,19 @@ type CalledSpell = keyof typeof text.spellCallouts;
 const isCalledSpell = (kind: string): kind is CalledSpell =>
   kind in text.spellCallouts;
 
+/** What punches in under the reticle: a Spell's name, or a Potion's (or its loss). */
+type CalledPotion = keyof typeof text.potionCallouts;
+
+type Called = CalledPotion | CalledSpell;
+
+const isCalledPotion = (called: Called): called is CalledPotion =>
+  called in text.potionCallouts;
+
+const calloutText = (called: Called): string =>
+  isCalledPotion(called)
+    ? text.potionCallouts[called]
+    : text.spellCallouts[called];
+
 /**
  * The name of the Spell the local Duelist just cast, just under the
  * reticle: big serif in the Spell's colour, a quick punch-in and fade.
@@ -153,13 +170,13 @@ const createSpellCallout = (parent: HTMLElement, settings: HudSettings) => {
   const root = create("div", "hud-spell-callout", parent);
 
   return {
-    show: (spell: CalledSpell) => {
+    show: (called: Called) => {
       for (const animation of root.getAnimations()) {
         animation.cancel();
       }
 
-      root.dataset.spell = spell;
-      root.textContent = text.spellCallouts[spell];
+      root.dataset.spell = called;
+      root.textContent = calloutText(called);
       root.animate(
         [
           { opacity: 0, transform: "scale(1.45)" },
@@ -177,18 +194,28 @@ const createSpellCallout = (parent: HTMLElement, settings: HudSettings) => {
 };
 
 /**
- * What the local Duelist cast this frame that earns a call-out: a Special
- * Spell, or Confringo released in the Perfect Release window (a plain
- * Confringo or a Stupefy earns none).
+ * What the local Duelist did this frame that earns a call-out: a Special
+ * Spell, Confringo released in the Perfect Release window (a plain
+ * Confringo or a Stupefy earns none), a Potion down, or one lost to a hit.
  */
 const calledOut = (
   events: readonly DuelEvent[],
   localId: DuelistId
-): CalledSpell | undefined => {
-  let called: CalledSpell | undefined;
+): Called | undefined => {
+  let called: Called | undefined;
 
   for (const event of events) {
-    if (event.type === "perfect-release" && event.duelistId === localId) {
+    if (event.type === "potion-drunk" && event.duelistId === localId) {
+      called = event.kind;
+    } else if (
+      event.type === "potion-interrupted" &&
+      event.duelistId === localId
+    ) {
+      called = "interrupted";
+    } else if (
+      event.type === "perfect-release" &&
+      event.duelistId === localId
+    ) {
       called = "confringo";
     } else if (
       event.type === "spell-cast" &&
@@ -217,8 +244,8 @@ export const createHud = (
   const localPips = createPips(score, settings);
   const rivalPips = createPips(score, settings);
   const vitals = create("div", "hud-vitals", root);
-  createPotionSlotsHud(vitals);
   const bars = create("div", "hud-bars", vitals);
+  const potionSlots = createPotionSlotsHud(vitals, bars, localId, settings);
   const health = createHealthBar(bars, "hud-health", settings);
   const stamina = createStaminaBar(bars, settings);
   const callout = createCallout(root);
@@ -317,6 +344,7 @@ export const createHud = (
 
       stamina.show(self?.stamina ?? 0, mine("stamina-short"), seconds);
       health.show(self?.health ?? 0, seconds);
+      potionSlots.show(snapshot);
       localPips.show(self ? (snapshot.score[self.team] ?? 0) : 0);
       rivalPips.show(opponent ? (snapshot.score[opponent.team] ?? 0) : 0);
 

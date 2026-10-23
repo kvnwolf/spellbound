@@ -3,7 +3,13 @@
  * display rate, so each frame blends the previous and current snapshots by
  * how far the clock is into the next tick (`alpha` in [0, 1]).
  */
-import type { DuelistId, DuelistState, SpellState } from "../duel/duel";
+import type {
+  Drinking,
+  DuelistId,
+  DuelistState,
+  LastingPotion,
+  SpellState,
+} from "../duel/duel";
 import { wrapAngle } from "../duel/geometry";
 import type { Aim, GroundPoint, Point3 } from "../duel/geometry";
 
@@ -31,6 +37,10 @@ export interface DuelistSample {
   readonly disarmed: boolean;
   /** Focus points, for the full-Focus aura on the Wand. */
   readonly focus: number;
+  /** The Potion being drunk and how long until it is down, for the vial at the lips. */
+  readonly drinking: Drinking | null;
+  /** Seconds left of each lasting Potion's effect, for its aura. */
+  readonly potionEffects: Readonly<Record<LastingPotion, number>>;
 }
 
 const lerp = (from: number, to: number, alpha: number) =>
@@ -67,6 +77,7 @@ export const sampleDuelist = (
   charging: current.chargeSeconds > 0,
   disarmed: current.looseWand !== null,
   dodging: current.dodgeSeconds > 0,
+  drinking: current.drinking,
   elevation: lerp(previous.elevation, current.elevation, alpha),
   facing: blendDirection(previous.facing, current.facing, alpha),
   focus: current.focus,
@@ -77,6 +88,7 @@ export const sampleDuelist = (
     x: lerp(previous.position.x, current.position.x, alpha),
     z: lerp(previous.position.z, current.position.z, alpha),
   },
+  potionEffects: current.potionEffects,
   shielding: current.shielding,
   // A Confringo knockback rocks the Duelist back like a Stagger.
   staggered: current.staggerSeconds > 0 || current.knockbackSeconds > 0,

@@ -269,6 +269,12 @@ const start = async () => {
   // The Wand's aura once the Focus is full.
   const wandAura = { ...tuning.wandAura, focusMax: tuning.focus.max };
 
+  // The vial at the lips while drinking, and a Potion's aura while it works.
+  const potionLook = {
+    ...tuning.potionLook,
+    drinkSeconds: tuning.potions.drink.seconds,
+  };
+
   const views = new Map([
     [
       localId,
@@ -278,7 +284,8 @@ const start = async () => {
         tuning.petrifiedLook,
         tuning.duelist,
         tuning.defence.dodge.seconds,
-        wandAura
+        wandAura,
+        potionLook
       ),
     ],
     [
@@ -289,7 +296,8 @@ const start = async () => {
         tuning.petrifiedLook,
         tuning.duelist,
         tuning.defence.dodge.seconds,
-        wandAura
+        wandAura,
+        potionLook
       ),
     ],
   ]);
@@ -399,6 +407,8 @@ const start = async () => {
     ...tuning.hud,
     maxHealth: tuning.duelist.health,
     maxStamina: tuning.defence.stamina.max,
+    potionSlots: tuning.potionSlots,
+    potions: tuning.potions,
     roundsToWin: tuning.round.roundsToWin,
   });
 
@@ -706,6 +716,8 @@ const start = async () => {
         views.get(event.duelistId)?.backfire();
       } else if (event.type === "dodge") {
         views.get(event.duelistId)?.dodge(event.direction);
+      } else if (event.type === "potion-drunk") {
+        views.get(event.duelistId)?.drunk(event.kind);
       }
     }
 

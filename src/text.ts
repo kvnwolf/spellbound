@@ -52,8 +52,24 @@ export const text = {
     quit: "Salir",
     restart: "Reiniciar",
   },
-  /** Accessible label of the Potion Slots, bottom-left. */
-  potions: "Pociones",
+  /**
+   * Punched onto the screen under the reticle, like a Spell's name, when the
+   * local Duelist's Potion is down, or lost to a hit.
+   */
+  potionCallouts: {
+    interrupted: "¡Poción perdida!",
+    strength: "¡Poción de Fuerza!",
+    swiftness: "¡Poción de Celeridad!",
+    wiggenweld: "¡Wiggenweld!",
+  },
+  /** The Potions, as the Potion Slots and the active effects in the HUD name them. */
+  potions: {
+    /** Accessible label of the Potion Slots, bottom-left. */
+    label: "Pociones",
+    strength: "Fuerza",
+    swiftness: "Celeridad",
+    wiggenweld: "Wiggenweld",
+  },
   requiresDualSense: "Spellbound requiere un mando DualSense",
   result: {
     changeDifficulty: "Cambiar dificultad",

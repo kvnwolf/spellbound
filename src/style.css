@@ -8,6 +8,10 @@
   --incendio: #ff8a52;
   --petrificus: #a9c0ff;
   --depulso: #d9ecf2;
+  /* Each Potion's colour, as its vial, its aura and its call-out tint it. */
+  --wiggenweld: #8fe07a;
+  --strength: #ff7466;
+  --swiftness: #6fe6d6;
   /* The Stamina bar: a calm magical blue, cool against the gold. */
   --stamina: #5f8fd8;
 
@@ -247,7 +251,9 @@ body {
   position: absolute;
   inset: auto auto clamp(1rem, 4vh, 2rem) clamp(1rem, 3vw, 1.5rem);
   display: flex;
-  gap: 0.9rem;
+
+  /* The Potion Slots' frame leaves room for the spread on both sides. */
+  gap: 0.6rem;
   align-items: center;
 }
 
@@ -336,6 +342,24 @@ body {
 
 .hud-spell-callout[data-spell="depulso"] {
   color: var(--depulso);
+}
+
+.hud-spell-callout[data-spell="wiggenweld"] {
+  color: var(--wiggenweld);
+}
+
+.hud-spell-callout[data-spell="strength"] {
+  color: var(--strength);
+}
+
+.hud-spell-callout[data-spell="swiftness"] {
+  color: var(--swiftness);
+}
+
+/* A Potion lost to a hit: a muted, smaller call-out. */
+.hud-spell-callout[data-spell="interrupted"] {
+  color: rgb(239 228 200 / 70%);
+  font-size: clamp(1.4rem, 3vw, 2.2rem);
 }
 
 .hud-callout {

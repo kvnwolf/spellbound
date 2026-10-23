@@ -10,7 +10,10 @@
  * Duelist's Lock-on Target, a fresnel rim glow traces its silhouette.
  * Petrified, it turns to grey stone with a cold, pale rim of light.
  * Disarmed, the hand is empty (the loose Wand is `loose-wand-view.ts`'s);
- * with the Focus full, the Wand in hand breathes a scarlet aura.
+ * with the Focus full, the Wand in hand breathes a scarlet aura. Drinking a
+ * Potion, the free hand raises a glowing vial to the lips and tips it as it
+ * goes down; a Potion down flashes the silhouette in its colour, and while a
+ * lasting Potion works a subtle aura in its colour breathes round it.
  */
 import {
   color,
@@ -22,7 +25,9 @@ import {
 } from "three/tsl";
 import {
   BoxGeometry,
+  Color,
   ConeGeometry,
+  CylinderGeometry,
   Group,
   Mesh,
   MeshStandardNodeMaterial,
@@ -32,7 +37,7 @@ import {
   Vector3,
 } from "three/webgpu";
 
-import type { SpellKind } from "../duel/duel";
+import type { PotionKind, SpellKind } from "../duel/duel";
 import type { GroundPoint, Point3 } from "../duel/geometry";
 import type { Tuning } from "../tuning";
 import type { DuelistSample } from "./interpolate";
@@ -47,6 +52,8 @@ export interface DuelistView {
   readonly backfire: () => void;
   /** The Duelist started a Dodge along `direction` (a unit vector on the floor): it rolls that way. */
   readonly dodge: (direction: GroundPoint) => void;
+  /** A Potion of `kind` is down: the silhouette flashes its colour. */
+  readonly drunk: (kind: PotionKind) => void;
   /**
    * Draws `sample`, easing poses over the `seconds` since the last frame.
    * `glow` is the rim glow it eases toward: 0 off, 1 the full lock mark of
@@ -130,6 +137,11 @@ export type WandAuraSettings = Tuning["wandAura"] & {
   readonly focusMax: number;
 };
 
+/** How Potions look on a Duelist, with how long one takes to drink. */
+export type PotionLookSettings = Tuning["potionLook"] & {
+  readonly drinkSeconds: number;
+};
+
 /** Fresnel: 1 where the surface turns away from the camera (the silhouette), sharper with `power`. */
 const silhouette = (power: number) =>
   normalView.dot(positionViewDirection).saturate().oneMinus().pow(power);
@@ -140,13 +152,17 @@ export const createDuelistView = (
   stone: Tuning["petrifiedLook"],
   duelist: Tuning["duelist"],
   dodgeSeconds: number,
-  aura: WandAuraSettings
+  aura: WandAuraSettings,
+  potion: PotionLookSettings
 ): DuelistView => {
   // The rim glow: brightest where the surface turns away from the camera
   // (the silhouette), scaled by a per-Duelist strength the view eases.
   const glowStrength = uniform(0);
   // How far the Duelist has turned to stone (Petrified): 0 flesh, 1 stone.
   const petrify = uniform(0);
+  // A Potion's aura round the silhouette: its colour and how strong it is.
+  const potionTint = uniform(new Color(potion.colors.wiggenweld));
+  const potionGlow = uniform(0);
 
   const rim = color(glow.color)
     .mul(silhouette(glow.power))
@@ -156,7 +172,9 @@ export const createDuelistView = (
       color(stone.rimColor)
         .mul(silhouette(stone.rimPower))
         .mul(petrify.mul(stone.rimRadiance))
-    );
+    )
+    // A Potion working (or just down): its colour breathing round the silhouette.
+    .add(potionTint.mul(silhouette(potion.power)).mul(potionGlow));
 
   const robeMaterial = new MeshStandardNodeMaterial({ roughness: 0.8 });
   const skin = new MeshStandardNodeMaterial({ roughness: 0.7 });
@@ -195,6 +213,103 @@ export const createDuelistView = (
     auraStrength.value +=
       (wantedAura - auraStrength.value) *
       (1 - Math.exp(-aura.fadeSharpness * seconds));
+  };
+
+  // The vial a drinker raises to the lips: glass glowing in the Potion's colour.
+  const vialTint = uniform(new Color(potion.colors.wiggenweld));
+  const glass = new MeshStandardNodeMaterial({ roughness: 0.2 });
+  glass.colorNode = vialTint.mul(0.4);
+  glass.emissiveNode = vialTint.mul(potion.vialRadiance);
+  const vial = new Group();
+
+  const flaskBody = new Mesh(
+    new CylinderGeometry(0.045, 0.06, 0.13, 12),
+    glass
+  );
+
+  const neck = new Mesh(new CylinderGeometry(0.018, 0.022, 0.06, 8), glass);
+  neck.position.y = 0.09;
+  const freeHand = new Mesh(new SphereGeometry(0.055, 12, 8), skin);
+  freeHand.position.y = -0.07;
+  vial.add(flaskBody, neck, freeHand);
+  vial.visible = false;
+
+  // The silhouette's flash as a Potion goes down: its colour and age.
+  let flashAge = Number.POSITIVE_INFINITY;
+  let flashKind: PotionKind = "wiggenweld";
+  let potionClock = 0;
+  const lastingTint = new Color();
+  const flashTint = new Color();
+
+  /**
+   * The Potion aura for this frame: a lasting Potion breathes its colour
+   * (both at once blend), and a Potion just down flashes over it.
+   */
+  const glowPotions = (sample: DuelistSample, seconds: number) => {
+    potionClock += seconds;
+    flashAge += seconds;
+    const { strength, swiftness } = sample.potionEffects;
+    const lasting = strength > 0 || swiftness > 0;
+
+    const breath =
+      potion.low +
+      (1 - potion.low) *
+        (0.5 + 0.5 * Math.sin(potionClock * potion.pulseSpeed * Math.PI * 2));
+
+    const wanted = lasting && !sample.knockedOut ? breath * potion.radiance : 0;
+
+    potionGlow.value +=
+      (wanted - potionGlow.value) *
+      (1 - Math.exp(-potion.fadeSharpness * seconds));
+
+    if (strength > 0 && swiftness > 0) {
+      lastingTint
+        .set(potion.colors.strength)
+        .lerp(flashTint.set(potion.colors.swiftness), 0.5);
+    } else if (lasting) {
+      lastingTint.set(potion.colors[strength > 0 ? "strength" : "swiftness"]);
+    }
+
+    if (lasting) {
+      potionTint.value.copy(lastingTint);
+    }
+
+    const flash =
+      flashAge < potion.flashSeconds
+        ? (1 - flashAge / potion.flashSeconds) ** 2
+        : 0;
+
+    if (flash > 0) {
+      potionTint.value.lerp(flashTint.set(potion.colors[flashKind]), flash);
+      potionGlow.value = Math.max(
+        potionGlow.value,
+        flash * potion.flashRadiance
+      );
+    }
+  };
+
+  /** Drinking: the free hand lifts the vial to the lips over the first quarter, then tips it back as it goes down. */
+  const raiseVial = (sample: DuelistSample) => {
+    const { drinking } = sample;
+    vial.visible = drinking !== null && !sample.knockedOut;
+
+    if (!drinking) {
+      return;
+    }
+
+    vialTint.value.set(potion.colors[drinking.kind]);
+
+    const share = Math.min(
+      Math.max(1 - drinking.secondsLeft / potion.drinkSeconds, 0),
+      1
+    );
+
+    const lift = smooth(Math.min(share / 0.25, 1));
+    // The model's left (+x) hand, from chest height up to the side of the
+    // mouth, where the camera behind the shoulder can still see it.
+    vial.position.set(0.3 - 0.08 * lift, 1.2 + 0.34 * lift, 0.3 - 0.12 * lift);
+    // Tipped toward the face, further as it empties.
+    vial.rotation.set(-(0.2 + 1.6 * smooth(share)) * lift, 0, 0.3 * lift);
   };
 
   const object = new Group();
@@ -242,7 +357,7 @@ export const createDuelistView = (
 
   // Everything that moves with the body, so a roll can turn it as one.
   const body = new Group();
-  body.add(robe, head, hat, shoulders, arm);
+  body.add(robe, head, hat, shoulders, arm, vial);
   object.add(body);
   // Heading first, then the tilt in the Duelist's own frame, so leaning and
   // falling are always backward whatever way they face.
@@ -302,6 +417,10 @@ export const createDuelistView = (
       rollAge = 0;
       rollWorld.x = direction.x;
       rollWorld.z = direction.z;
+    },
+    drunk: (kind) => {
+      flashAge = 0;
+      flashKind = kind;
     },
     object,
     show: (sample, seconds, wantedGlow) => {
@@ -462,6 +581,8 @@ export const createDuelistView = (
       // Disarmed, the hand is empty.
       stick.visible = !sample.disarmed;
       breathe(sample, seconds);
+      glowPotions(sample, seconds);
+      raiseVial(sample);
 
       const turn = 1 - Math.exp(-stone.fadeSharpness * seconds);
       petrify.value += ((sample.petrified ? 1 : 0) - petrify.value) * turn;

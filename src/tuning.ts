@@ -1158,7 +1158,7 @@ export const tuning = {
    */
   potionLook: {
     colors: {
-      strength: "#ff6a3a",
+      strength: "#ff4a3a",
       swiftness: "#5fe0d0",
       wiggenweld: "#7fe06a",
     },
