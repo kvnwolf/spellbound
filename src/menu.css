@@ -74,31 +74,92 @@
  * Loading and the connect prompt are the title alone: the logo and the
  * prompt under it centred together on the screen.
  */
-#menu:is([data-intro="loading"], :has(#overlay[data-screen="connect"])) {
+#menu:is(
+  [data-intro="loading"],
+  :has(#overlay:is([data-screen="title"], [data-screen="connect"]))
+) {
   /* ponytail: the prompt's height (two short lines) is estimated, 4.5rem. */
   --logo-top: calc(50vh - (var(--logo-height) + 1.25rem + 4.5rem) / 2);
 }
 
-/* A faint magic circle round the Clash point. */
-#menu::before {
+/* Registered so the glint can travel round the rune. */
+@property --rune-glint {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+
+/*
+ * The rune behind every menu, still at the screen's centre whatever the logo
+ * does: gold rings turning one way, the star and its inner rings the other,
+ * a glint of light running round both.
+ */
+.menu-rune {
   position: absolute;
-  top: var(--clash-y);
+  top: 50%;
   left: 50%;
   width: min(115vmin, 60rem);
   aspect-ratio: 1;
-  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' fill='none' stroke='%23d8b46a'%3E%3Ccircle cx='50' cy='50' r='49' stroke-width='.2'/%3E%3Ccircle cx='50' cy='50' r='46.6' stroke-width='1.4' stroke-dasharray='.2 1.6'/%3E%3Ccircle cx='50' cy='50' r='44' stroke-width='.25'/%3E%3Cpath d='M50 6L88.1 72H11.9ZM50 94L11.9 28H88.1Z' stroke-width='.18'/%3E%3Ccircle cx='50' cy='50' r='30' stroke-width='.2'/%3E%3Ccircle cx='50' cy='50' r='28.4' stroke-width='.8' stroke-dasharray='.2 3.3'/%3E%3Ccircle cx='50' cy='50' r='12' stroke-width='.2'/%3E%3C/svg%3E")
-    center / contain no-repeat;
-  opacity: 0.09;
+  opacity: 0.2;
+  filter: drop-shadow(0 0 0.4rem rgb(232 190 110 / 55%));
   translate: -50% -50%;
-  animation: menu-circle 240s linear infinite;
-  content: "";
   pointer-events: none;
 }
 
-/* It turns, too slowly to watch. */
-@keyframes menu-circle {
+.menu-rune span {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    160deg,
+    #f6dc9a,
+    #c9973f 45%,
+    #f2d48c 70%,
+    #a8782e
+  );
+  mask: var(--shape) center / contain no-repeat;
+}
+
+/* The glint: a bright arc sweeping round the gold. */
+.menu-rune span::after {
+  position: absolute;
+  inset: 0;
+  background: conic-gradient(
+    from var(--rune-glint),
+    transparent 0 78%,
+    rgb(255 246 214 / 90%) 86%,
+    transparent 94%
+  );
+  animation: menu-rune-glint 7s linear infinite;
+  content: "";
+}
+
+.menu-rune-rings {
+  --shape: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' fill='none' stroke='%23000'%3E%3Ccircle cx='50' cy='50' r='49' stroke-width='.25'/%3E%3Ccircle cx='50' cy='50' r='46.6' stroke-width='1.4' stroke-dasharray='.2 1.6'/%3E%3Ccircle cx='50' cy='50' r='44' stroke-width='.3'/%3E%3C/svg%3E");
+
+  animation: menu-rune-turn 240s linear infinite;
+}
+
+.menu-rune-star {
+  --shape: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' fill='none' stroke='%23000'%3E%3Cpath d='M50 6L88.1 72H11.9ZM50 94L11.9 28H88.1Z' stroke-width='.22'/%3E%3Ccircle cx='50' cy='50' r='30' stroke-width='.25'/%3E%3Ccircle cx='50' cy='50' r='28.4' stroke-width='.8' stroke-dasharray='.2 3.3'/%3E%3Ccircle cx='50' cy='50' r='12' stroke-width='.25'/%3E%3C/svg%3E");
+
+  animation: menu-rune-turn 160s linear infinite reverse;
+}
+
+.menu-rune-star::after {
+  animation-direction: reverse;
+  animation-duration: 5s;
+}
+
+/* They turn, too slowly to watch. */
+@keyframes menu-rune-turn {
   to {
     rotate: 1turn;
+  }
+}
+
+@keyframes menu-rune-glint {
+  to {
+    --rune-glint: 1turn;
   }
 }
 
@@ -303,7 +364,7 @@
   display: none;
 }
 
-/* The fan-game disclaimer: small, at the foot of the screen. */
+/* The fan-game disclaimer: small, at the foot of the title, fading out after it. */
 #overlay .overlay-legal {
   position: fixed;
   right: 0;
@@ -315,6 +376,39 @@
   color: rgb(239 228 200 / 40%);
   font-size: 0.7rem;
   line-height: 1.4;
+  transition:
+    opacity 700ms ease-out,
+    visibility 0s 700ms;
+}
+
+#overlay:not([data-screen="title"], [data-screen="connect"]) .overlay-legal {
+  visibility: hidden;
+  opacity: 0;
+}
+
+/* The title's one button: gilt, like a highlighted menu entry. */
+#overlay .overlay-action {
+  margin-top: 0.75rem;
+  padding: 0.7rem 2.6rem;
+  color: var(--gold);
+  border: 1px solid rgb(216 180 106 / 75%);
+  background: var(--ink);
+  box-shadow: 0 0 18px rgb(216 180 106 / 18%);
+  font: inherit;
+  font-size: clamp(1.1rem, 2.4vw, 1.5rem);
+  letter-spacing: 0.18em;
+  text-shadow: 0 0 12px rgb(216 180 106 / 45%);
+  text-transform: uppercase;
+  cursor: pointer;
+  transition:
+    box-shadow 160ms ease-out,
+    background 160ms ease-out;
+}
+
+#overlay .overlay-action:is(:hover, :focus-visible) {
+  outline: none;
+  background: rgb(216 180 106 / 14%);
+  box-shadow: 0 0 28px rgb(216 180 106 / 40%);
 }
 
 /*
@@ -335,7 +429,9 @@
   animation-delay: calc(var(--clash-delay) + 280ms);
 }
 
-#menu[data-intro="clash"] #overlay > :is(ul, .overlay-hint, .overlay-effects) {
+#menu[data-intro="clash"]
+  #overlay
+  > :is(ul, .overlay-action, .overlay-hint, .overlay-effects) {
   animation-delay: calc(var(--clash-delay) + 420ms);
 }
 
@@ -370,7 +466,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  #menu::before,
+  .menu-rune span,
+  .menu-rune span::after,
   #menu[data-intro="clash"]::after {
     animation: none;
   }

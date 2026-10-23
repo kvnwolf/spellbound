@@ -121,6 +121,8 @@ export const text = {
     incendio: "¡Incendio!",
     petrificus: "¡Petrificus Totalus!",
   },
+  /** The title's one button: clicking it also turns on the sound and the DualSense's effects. */
+  start: "Comenzar",
   title: "Spellbound",
   unsupportedBrowser: {
     body: "Spellbound necesita WebGPU. Ábrelo en una versión reciente de Chrome.",

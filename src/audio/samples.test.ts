@@ -136,8 +136,9 @@ describe("the music the screens call for", () => {
 
   const paused: Screen = { duel, kind: "pause", selected: "continue" };
 
-  it("loops the menu theme on the connect prompt, the menus and the result screen, without the courtyard", () => {
+  it("loops the menu theme on the title, the connect prompt, the menus and the result screen, without the courtyard", () => {
     const menus: Screen[] = [
+      { kind: "title", pad: "none" },
       { kind: "connect", pad: "none" },
       { kind: "main", selected: "duel" },
       { kind: "difficulty", practice: false, selected: "novato" },

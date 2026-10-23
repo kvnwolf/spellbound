@@ -1,9 +1,10 @@
 /**
  * The screen state machine: which screen the game is on, from the unsupported
- * browser and the connect prompt through the main menu (the root once a
+ * browser, the title and the connect prompt through the main menu (the root once a
  * DualSense is there), the Difficulty select and the Practice rival picker,
  * to the Duel or Practice, its pause and the result. Pure: it is fed events
- * (the controller coming and going, menu inputs, the Duel ending, time) and
+ * (the start click, the controller coming and going, menu inputs, the Duel
+ * ending, time) and
  * lands on the next screen. It owns no three.js, no DOM and no clock; the
  * game loop decides what to draw and whether the Duel simulation may advance
  * from the screen it reports.
@@ -74,7 +75,13 @@ export interface PauseScreen {
 export type Screen =
   /** WebGPU is missing: nothing else can happen. */
   | { readonly kind: "unsupported" }
-  /** No DualSense yet: asks for one. `pad` says whether nothing or some other pad is plugged in. */
+  /**
+   * The title, first: one start button, whose click is also what lets the
+   * sound and the DualSense's effects start. `pad` is whatever is plugged in
+   * meanwhile.
+   */
+  | { readonly kind: "title"; readonly pad: PadKind }
+  /** Started, but no DualSense yet: asks for one. `pad` says whether nothing or some other pad is plugged in. */
   | { readonly kind: "connect"; readonly pad: Exclude<PadKind, "dualsense"> }
   /** The root: Duelo, Práctica, Entrenamiento and Controles. */
   | { readonly kind: "main"; readonly selected: MainMenuOption }
@@ -111,6 +118,8 @@ export interface ScreenState {
 export type MenuInput = "back" | "confirm" | "down" | "options" | "up";
 
 export type ScreenEvent =
+  /** The title's start button was clicked. */
+  | { readonly type: "start" }
   /** What is plugged in changed. */
   | { readonly type: "pad"; readonly pad: PadKind }
   /** A menu input: a D-pad or left stick step, ✕, ○ or Options. */
@@ -130,9 +139,7 @@ const defaultDifficulty: Difficulty = "duelista";
 
 export const initialScreenState = (supported: boolean): ScreenState => ({
   runs: 0,
-  screen: supported
-    ? { kind: "connect", pad: "none" }
-    : { kind: "unsupported" },
+  screen: supported ? { kind: "title", pad: "none" } : { kind: "unsupported" },
 });
 
 /** The pause options for this Duel or Practice. */
@@ -209,9 +216,19 @@ const startDuel = (
   },
 });
 
+/** Off the title: to the main menu if a DualSense is already there, else to ask for one. */
+const onStart = (state: ScreenState, pad: PadKind): ScreenState =>
+  pad === "dualsense"
+    ? toMain(state, "duel")
+    : { ...state, screen: { kind: "connect", pad } };
+
 const onPad = (state: ScreenState, pad: PadKind): ScreenState => {
   const { screen } = state;
   const connected = pad === "dualsense";
+
+  if (screen.kind === "title") {
+    return { ...state, screen: { ...screen, pad } };
+  }
 
   // A DualSense showing up is all it takes to reach the main menu: the press
   // that woke it is not read as a menu input (the menu input reader skips
@@ -426,6 +443,10 @@ export const reduceScreens = (
   settings: ScreenSettings
 ): ScreenState => {
   const { screen } = state;
+
+  if (event.type === "start") {
+    return screen.kind === "title" ? onStart(state, screen.pad) : state;
+  }
 
   if (event.type === "pad") {
     return onPad(state, event.pad);

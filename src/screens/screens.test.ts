@@ -22,8 +22,10 @@ const padFound = { pad: "dualsense", type: "pad" } as const;
 const padLost = { pad: "none", type: "pad" } as const;
 const anyButton = { type: "press" } as const;
 const tick = (seconds: number) => ({ seconds, type: "tick" }) as const;
+const start = { type: "start" } as const;
 
-const onConnect = () => initialScreenState(true);
+const onTitle = () => initialScreenState(true);
+const onConnect = () => play(onTitle(), start);
 const onMain = () => play(onConnect(), padFound);
 
 /** Duelo, from the main menu. */
@@ -53,8 +55,37 @@ const atRivals = (...moves: ScreenEvent[]) => play(onRivals(), ...moves).screen;
 const paused = () => inDuel(press("options"));
 const disconnected = () => inDuel(padLost);
 
+describe("title", () => {
+  it("starts on the title, waiting for its start button", () => {
+    expect(onTitle().screen).toStrictEqual({ kind: "title", pad: "none" });
+  });
+
+  it("stays on the title whatever the pad does until the start button is clicked", () => {
+    expect(
+      play(onTitle(), padFound, press("confirm"), anyButton, tick(5)).screen
+    ).toStrictEqual({ kind: "title", pad: "dualsense" });
+  });
+
+  it("goes to the main menu on start if a DualSense is already there", () => {
+    expect(play(onTitle(), padFound, start).screen).toStrictEqual({
+      kind: "main",
+      selected: "duel",
+    });
+  });
+
+  it("asks for a DualSense on start if none is there yet", () => {
+    expect(
+      play(onTitle(), { pad: "unsupported", type: "pad" }, start).screen
+    ).toStrictEqual({ kind: "connect", pad: "unsupported" });
+  });
+
+  it("ignores the start button anywhere else", () => {
+    expect(play(onMain(), start)).toStrictEqual(onMain());
+  });
+});
+
 describe("connect prompt", () => {
-  it("starts on the connect prompt waiting for a controller", () => {
+  it("asks for a controller once started without one", () => {
     expect(onConnect().screen).toStrictEqual({ kind: "connect", pad: "none" });
   });
 

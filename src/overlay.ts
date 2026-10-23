@@ -15,17 +15,23 @@ export const createOverlay = (element: HTMLElement) => {
   const items = document.createElement("ul");
   const hint = document.createElement("p");
   hint.className = "overlay-hint";
-  // The fan-game disclaimer, at the foot of every menu.
+  const action = document.createElement("button");
+  action.className = "overlay-action";
+  // The fan-game disclaimer, at the foot of the title (menu.css).
   const legal = document.createElement("p");
   legal.className = "overlay-legal";
   legal.textContent = text.legal;
-  element.append(heading, body, items, hint, legal);
+  element.append(heading, body, items, action, hint, legal);
   let shown: string | undefined;
 
   return {
     hide: () => {
       menu.hidden = true;
       shown = undefined;
+    },
+    /** Calls `listener` when the screen's action button is clicked. */
+    onAction: (listener: () => void) => {
+      action.addEventListener("click", listener);
     },
     show: (view: ScreenView) => {
       const key = JSON.stringify(view);
@@ -43,6 +49,8 @@ export const createOverlay = (element: HTMLElement) => {
       body.hidden = view.body === undefined;
       hint.textContent = view.hint ?? "";
       hint.hidden = view.hint === undefined;
+      action.textContent = view.action ?? "";
+      action.hidden = view.action === undefined;
       items.replaceChildren(
         ...(view.items ?? []).map((item) => {
           const entry = document.createElement("li");

@@ -258,6 +258,7 @@ export const musicFor = (screen: Screen): MusicState => {
   }
 
   if (
+    screen.kind === "title" ||
     screen.kind === "connect" ||
     screen.kind === "main" ||
     screen.kind === "difficulty" ||

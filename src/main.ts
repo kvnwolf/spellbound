@@ -107,6 +107,10 @@ const start = async () => {
     screens = reduceScreens(screens, event, tuning.screens);
   };
 
+  overlay.onAction(() => {
+    send({ type: "start" });
+  });
+
   const menuInput = createMenuInput(tuning.menu);
   // Rumble, lightbar and player LEDs (ADR-0001): WebHID once granted, else dual-rumble.
   const activationHint = createActivationHint(element("#overlay", HTMLElement));

@@ -30,6 +30,14 @@ describe("what each screen shows", () => {
     expect(viewOf(practice)).toBeUndefined();
   });
 
+  it("offers one start button under the game's name on the title", () => {
+    expect(viewOf({ kind: "title", pad: "none" })).toStrictEqual({
+      action: text.start,
+      heading: text.title,
+      screen: "title",
+    });
+  });
+
   it("asks to connect a DualSense, or says one is required, under the game's name", () => {
     expect(viewOf({ kind: "connect", pad: "none" })).toMatchObject({
       body: text.connectDualSense,

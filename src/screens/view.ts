@@ -26,6 +26,8 @@ export interface ScreenView {
     readonly disabled?: true;
   }[];
   readonly hint?: string;
+  /** A button to click: the title's start. */
+  readonly action?: string;
 }
 
 type MenuItem = NonNullable<ScreenView["items"]>[number];
@@ -54,6 +56,10 @@ export const viewOf = (screen: Screen): ScreenView | undefined => {
       heading: text.unsupportedBrowser.heading,
       screen: screen.kind,
     };
+  }
+
+  if (screen.kind === "title") {
+    return { action: text.start, heading: text.title, screen: screen.kind };
   }
 
   if (screen.kind === "connect") {
