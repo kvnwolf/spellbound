@@ -1,8 +1,9 @@
 /**
  * A blockout Duelist: robe, head, pointed hat and a right arm holding a Wand
  * out in front, tinted by Team. The Wand tip is the simulation's own
- * (`tuning.duelist.wandTip`), where Spells leave it; a cast flicks the arm up
- * and Charging keeps it raised. It only reads presentation samples; the
+ * (`tuning.duelist.wandTip`), where Spells leave it. The arm acts out each
+ * Spell: Stupefy flicks it up, Charging a Confringo raises it overhead and
+ * the cast swings it down at the aim, a Backfire drops it. It only reads presentation samples; the
  * procedural wizard and its poses come later. While it is the local
  * Duelist's Lock-on Target, a fresnel rim glow traces its silhouette.
  * Petrified, it turns to grey stone with a cold, pale rim of light.
@@ -20,16 +21,24 @@ import {
   Group,
   Mesh,
   MeshStandardNodeMaterial,
+  Object3D,
   SphereGeometry,
+  Vector3,
 } from "three/webgpu";
 
+import type { SpellKind } from "../duel/duel";
+import type { Point3 } from "../duel/geometry";
 import type { Tuning } from "../tuning";
 import type { DuelistSample } from "./interpolate";
 
 export interface DuelistView {
   readonly object: Group;
-  /** The Duelist cast a Spell: the arm flicks up and settles. */
-  readonly flick: () => void;
+  /** Where the Wand tip is on screen right now, as last drawn: the raised arm moves it off the simulation's `wandTip`. */
+  readonly wandTipPosition: () => Point3;
+  /** The Duelist cast a Spell of `kind`: Stupefy flicks the arm up, Confringo swings it down at the aim. */
+  readonly cast: (kind: SpellKind) => void;
+  /** The Duelist's Charge Backfired: the arm drops back to rest. */
+  readonly backfire: () => void;
   /**
    * Draws `sample`, easing poses over the `seconds` since the last frame.
    * `glow` is the rim glow it eases toward: 0 off, 1 the full lock mark of
@@ -59,6 +68,18 @@ const flickLift = (progress: number) => {
     ? easeOut(progress / peak)
     : 1 - smooth((progress - peak) / (1 - peak));
 };
+
+/** A Confringo swing or a Backfire recoil in progress. */
+interface Drop {
+  /** Seconds since it began. */
+  age: number;
+  /** The arm's pitch when it began, radians up. */
+  readonly from: number;
+  readonly kind: "recoil" | "swing";
+}
+
+const dropSeconds = (drop: Drop, wand: Tuning["duelist"]["wand"]) =>
+  drop.kind === "swing" ? wand.swingSeconds : wand.recoilSeconds;
 
 const wood = new MeshStandardNodeMaterial({ color: "#8a6038", roughness: 0.5 });
 
@@ -136,10 +157,13 @@ export const createDuelistView = (
   const hand = new Mesh(new SphereGeometry(0.06, 12, 8), skin);
   hand.position.z = handAt;
 
-  const wand = new Mesh(new BoxGeometry(0.03, 0.03, length), wood);
-  wand.position.z = handAt + length / 2;
+  const stick = new Mesh(new BoxGeometry(0.03, 0.03, length), wood);
+  stick.position.z = handAt + length / 2;
 
-  arm.add(sleeve, hand, wand);
+  const tip = new Object3D();
+  tip.position.z = handAt + length;
+  const tipWorld = new Vector3();
+  arm.add(sleeve, hand, stick, tip);
 
   object.add(robe, head, hat, shoulders, arm);
   // Heading first, then the tilt in the Duelist's own frame, so leaning and
@@ -150,10 +174,25 @@ export const createDuelistView = (
   // current flick began.
   let chargeRaise = 0;
   let flickAge = Number.POSITIVE_INFINITY;
+  let drop: Drop | null = null;
+  // The arm's pitch last frame, radians up: where a swing or recoil starts.
+  let armPitch = 0;
 
   return {
-    flick: () => {
-      flickAge = 0;
+    backfire: () => {
+      drop = { age: 0, from: armPitch, kind: "recoil" };
+      flickAge = Number.POSITIVE_INFINITY;
+      chargeRaise = 0;
+    },
+    cast: (kind) => {
+      flickAge = Number.POSITIVE_INFINITY;
+
+      if (kind === "confringo") {
+        drop = { age: 0, from: armPitch, kind: "swing" };
+        chargeRaise = 0;
+      } else {
+        flickAge = 0;
+      }
     },
     object,
     show: (sample, seconds, wantedGlow) => {
@@ -176,28 +215,77 @@ export const createDuelistView = (
       tilt += (wanted - tilt) * (1 - Math.exp(-tiltSharpness * seconds));
       object.rotation.x = tilt;
 
-      const { flickInward, flickRaise, flickSeconds, poseSharpness } =
-        duelist.wand;
+      const { wand } = duelist;
 
-      chargeRaise +=
-        ((sample.charging ? duelist.wand.chargeRaise : 0) - chargeRaise) *
-        (1 - Math.exp(-poseSharpness * seconds));
+      let pitch: number;
+      let yaw: number;
 
-      flickAge += seconds;
+      if (drop && drop.age < dropSeconds(drop, wand)) {
+        // A swing strikes through the aim (the camera's pitch, which the
+        // Wand follows) and past it; a recoil drops below rest. Both then
+        // settle at rest.
+        const aimed = drop.kind === "swing";
 
-      const flick =
-        flickAge < flickSeconds ? flickLift(flickAge / flickSeconds) : 0;
+        const low = aimed
+          ? Math.max(-1, Math.min(1, sample.aim.pitch)) -
+            wand.swingFollowThrough
+          : -wand.recoilKick;
+
+        const share = aimed ? wand.swingStrikeShare : wand.recoilDropShare;
+        const progress = drop.age / dropSeconds(drop, wand);
+        const falling = progress < share;
+
+        const along = falling
+          ? progress / share
+          : (progress - share) / (1 - share);
+
+        const dropEase = aimed ? along * along : easeOut(along);
+
+        pitch = falling
+          ? drop.from + (low - drop.from) * dropEase
+          : low * (1 - smooth(along));
+
+        // The swing turns the tip toward the aim as it strikes, and lets go.
+        yaw = aimed
+          ? wand.swingInward * (falling ? along : 1 - smooth(along))
+          : 0;
+
+        drop.age += seconds;
+      } else {
+        drop = null;
+
+        chargeRaise +=
+          ((sample.charging ? wand.chargeRaise : 0) - chargeRaise) *
+          (1 - Math.exp(-wand.poseSharpness * seconds));
+
+        flickAge += seconds;
+
+        const flick =
+          flickAge < wand.flickSeconds
+            ? flickLift(flickAge / wand.flickSeconds)
+            : 0;
+
+        pitch = Math.max(chargeRaise, flick * wand.flickRaise);
+        yaw = flick * wand.flickInward;
+      }
 
       // Pitching up is a negative turn about the model's x axis; the inward
       // yaw swings the tip from the right hand toward the aim.
-      arm.rotation.x = -Math.max(chargeRaise, flick * flickRaise);
-      arm.rotation.y = flick * flickInward;
+      armPitch = pitch;
+      arm.rotation.x = -pitch;
+      arm.rotation.y = yaw;
 
       const fade = 1 - Math.exp(-glow.fadeSharpness * seconds);
       glowStrength.value += (wantedGlow - glowStrength.value) * fade;
 
       const turn = 1 - Math.exp(-stone.fadeSharpness * seconds);
       petrify.value += ((sample.petrified ? 1 : 0) - petrify.value) * turn;
+    },
+    wandTipPosition: () => {
+      tip.updateWorldMatrix(true, false);
+      tip.getWorldPosition(tipWorld);
+
+      return { x: tipWorld.x, y: tipWorld.y, z: tipWorld.z };
     },
   };
 };

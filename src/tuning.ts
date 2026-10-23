@@ -347,19 +347,32 @@ export const tuning = {
     walkSpeed: 4.5,
     /**
      * The visible Wand. Idle, a right hand holds it out level, its tip on
-     * `wandTip` below. A cast flicks the whole arm up by `flickRaise`
-     * radians and back over `flickSeconds` (a touch inward, by
-     * `flickInward`, toward the aim); Charging holds it raised by
-     * `chargeRaise`, easing there at `poseSharpness` per second.
+     * `wandTip` below. A Stupefy cast flicks the whole arm up by
+     * `flickRaise` radians and back over `flickSeconds` (a touch inward, by
+     * `flickInward`, toward the aim). Charging a Confringo raises the arm to
+     * `chargeRaise` radians (about overhead), easing there at
+     * `poseSharpness` per second; its cast then swings the arm down over
+     * `swingSeconds`, accelerating through pointing at the aim to
+     * `swingFollowThrough` radians below it (turned `swingInward` toward the
+     * aim) in the first `swingStrikeShare` of that time, then settling back
+     * to rest. A Backfire drops the arm to `recoilKick` radians below rest
+     * in the first `recoilDropShare` of `recoilSeconds` and settles it.
      */
     wand: {
-      chargeRaise: 0.18,
+      chargeRaise: 1.55,
       flickInward: 0.12,
       flickRaise: 0.55,
       flickSeconds: 0.2,
       /** How long the Wand is, from the hand to the tip. */
       length: 0.4,
       poseSharpness: 14,
+      recoilDropShare: 0.35,
+      recoilKick: 0.25,
+      recoilSeconds: 0.4,
+      swingFollowThrough: 0.22,
+      swingInward: 0.12,
+      swingSeconds: 0.24,
+      swingStrikeShare: 0.55,
     },
     /**
      * Where Spells leave the Wand, relative to the Duelist and their facing:

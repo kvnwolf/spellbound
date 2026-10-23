@@ -507,7 +507,9 @@ const start = async () => {
       current.spells,
       alpha,
       simSeconds,
-      chargingWands(current.duelists, tuning),
+      chargingWands(current.duelists, tuning, (id) =>
+        views.get(id)?.wandTipPosition()
+      ),
       // Embers rise off every Duelist with an Incendio Burn.
       current.duelists.flatMap((each) =>
         each.burnSeconds > 0
@@ -520,10 +522,13 @@ const start = async () => {
 
     showCharge(current, events, seconds, inDuel);
 
-    // A cast flicks the caster's Wand.
+    // A cast moves the caster's Wand arm the way its Spell calls for; a
+    // Backfire drops it.
     for (const event of events) {
       if (event.type === "spell-cast") {
-        views.get(event.spell.casterId)?.flick();
+        views.get(event.spell.casterId)?.cast(event.spell.kind);
+      } else if (event.type === "backfire") {
+        views.get(event.duelistId)?.backfire();
       }
     }
 
