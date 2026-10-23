@@ -803,7 +803,7 @@ describe("AI recovering its Wand", () => {
     "walks to its Wand and picks it up well before it would return on its own on %s",
     (difficulty) => {
       const recoveries = [openArena, courtyardLike].flatMap((arena) =>
-        seeds(16).map((seed) =>
+        seeds(24).map((seed) =>
           firstRecovery(
             play({
               arena,
@@ -831,6 +831,19 @@ describe("AI recovering its Wand", () => {
     }
   );
 });
+
+/** A Spell of the player's in the air, flying toward the AI. */
+const incoming = (snapshot: DuelSnapshot) => {
+  const ai = find(snapshot, "ai").position;
+
+  return snapshot.spells.some(
+    (spell) =>
+      spell.casterId === "player" &&
+      (ai.x - spell.position.x) * spell.velocity.x +
+        (ai.z - spell.position.z) * spell.velocity.z >
+        0
+  );
+};
 
 /** Depulso for free, so the AI can cast it without first earning Focus. */
 const freeDepulso: Tuning = {
@@ -969,7 +982,7 @@ const specialsOf = (difficulty: Difficulty) => {
   let casts = 0;
   let paid = 0;
 
-  for (const seed of seeds(10)) {
+  for (const seed of seeds(25)) {
     const { ticks } = play({
       difficulty,
       player: shieldsAndCasts(),
@@ -1014,7 +1027,7 @@ describe("AI Special Spells", () => {
             difficulty,
             gap: 5,
             player: chargingInClose(),
-            seconds: 4,
+            seconds: 6,
             seed,
             settings: onlyDepulso,
             sturdy: true,
@@ -1048,6 +1061,43 @@ describe("AI Special Spells", () => {
       }
     }
   );
+
+  it("leaves a human moment between a Light or Heavy Spell and a Special Spell, and casts no Special into a Spell on its way", () => {
+    // Per Special Spell cast: ticks since the AI's last Light or Heavy
+    // Spell, and whether it flew into a Spell on its way.
+    const specials: { since: number; intoIncoming: boolean }[] = [];
+
+    for (const seed of seeds(10)) {
+      const { ticks } = play({
+        difficulty: "maestro",
+        player: shieldsAndCasts(),
+        seconds: 30,
+        seed,
+        sturdy: true,
+      });
+
+      let lastCast = Number.NEGATIVE_INFINITY;
+
+      for (const [index, { events, seen }] of ticks.entries()) {
+        for (const { spell } of ofType(events, "spell-cast")) {
+          if (spell.casterId === "ai" && specialKinds.has(spell.kind)) {
+            specials.push({
+              intoIncoming: spell.kind !== "depulso" && incoming(seen),
+              since: index - lastCast,
+            });
+          } else if (spell.casterId === "ai") {
+            lastCast = index;
+          }
+        }
+      }
+    }
+
+    expect(specials.length).toBeGreaterThan(10);
+    expect(
+      Math.min(...specials.map((each) => each.since))
+    ).toBeGreaterThanOrEqual(ticksOf(tuning.ai.specials.afterCastSeconds));
+    expect(specials.map((each) => each.intoIncoming)).not.toContain(true);
+  });
 
   it("casts Special Spells far more often, and to far better effect, on Maestro than on Novato", () => {
     const novato = specialsOf("novato");
@@ -1134,19 +1184,6 @@ const drinksOf = ({ ticks }: Played, kind: string) =>
       .filter((event) => event.duelistId === "ai" && event.kind === kind)
       .map(() => seen)
   );
-
-/** A Spell of the player's in the air, flying toward the AI. */
-const incoming = (snapshot: DuelSnapshot) => {
-  const ai = find(snapshot, "ai").position;
-
-  return snapshot.spells.some(
-    (spell) =>
-      spell.casterId === "player" &&
-      (ai.x - spell.position.x) * spell.velocity.x +
-        (ai.z - spell.position.z) * spell.velocity.z >
-        0
-  );
-};
 
 describe("AI Potions", () => {
   it.each(["novato", "duelista", "maestro"] as const)(

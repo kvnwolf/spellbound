@@ -142,6 +142,8 @@ interface Memory {
   detour: { readonly side: -1 | 1; readonly until: number } | undefined;
   /** When the AI next looks for a Special Spell to cast. */
   specialLookAt: number;
+  /** When the AI last cast a Light or Heavy Spell. */
+  castAt: number;
   /** A Shield being baited before an Expelliarmus: until when, and whether the Shield went up. */
   bait: { readonly sawShield: boolean; readonly until: number } | undefined;
   /** The opponent was Charging or drinking within Depulso's reach last tick. */
@@ -156,6 +158,7 @@ const freshMemory = (): Memory => ({
   askedStride: 0,
   attack: undefined,
   bait: undefined,
+  castAt: Number.NEGATIVE_INFINITY,
   cover: undefined,
   defences: [],
   detour: undefined,
@@ -556,6 +559,7 @@ export const createAiController = ({
 
       memory.attack = undefined;
       memory.nextAttackAt = now + between(random, profile.attackPause);
+      memory.castAt = now;
 
       return none;
     }
@@ -579,6 +583,8 @@ export const createAiController = ({
     if (left === 0) {
       memory.nextAttackAt = now + between(random, profile.attackPause);
     }
+
+    memory.castAt = now;
 
     return { ...none, lightSpell: true };
   };
@@ -903,15 +909,28 @@ export const createAiController = ({
     return slotOf(kind, tuning);
   };
 
-  /** Baiting a Shield: Expelliarmus as soon as the Shield it drew drops, or once the bait has had its time. */
+  /**
+   * Baiting a Shield: Expelliarmus as soon as the Shield it drew drops, or
+   * once the bait has had its time; with a Spell `incoming` it holds the
+   * cast (given up once the bait's time is out).
+   */
   const baited = (
     self: DuelistState,
     opponent: DuelistState,
+    incoming: boolean,
     now: number
   ): SpellSlot | undefined => {
     const { bait } = memory;
 
     if (!bait || memory.attack) {
+      return undefined;
+    }
+
+    if (incoming) {
+      if (now >= bait.until) {
+        memory.bait = undefined;
+      }
+
       return undefined;
     }
 
@@ -943,19 +962,25 @@ export const createAiController = ({
    * and, on its Difficulty's `chance`, casts it: the fitting one on its
    * `sense`, else any it can pay for. Before an Expelliarmus it may first
    * bait a Shield with a Stupefy and cast as the Shield drops. Never while
-   * Charging.
+   * Charging, within `specials.afterCastSeconds` of its last cast, or (but
+   * Depulso) with a Spell `incoming`.
    */
   const specialFor = (
     self: DuelistState,
     opponent: DuelistState,
+    incoming: boolean,
     now: number
   ): SpellSlot | undefined => {
-    if (memory.attack?.kind === "heavy") {
+    // Not while Charging, nor on the heels of the last cast: hands take a moment.
+    if (
+      memory.attack?.kind === "heavy" ||
+      now < memory.castAt + ai.specials.afterCastSeconds
+    ) {
       return undefined;
     }
 
     if (memory.bait) {
-      return baited(self, opponent, now);
+      return baited(self, opponent, incoming, now);
     }
 
     if (now < memory.specialLookAt) {
@@ -964,7 +989,11 @@ export const createAiController = ({
 
     memory.specialLookAt = now + ai.specials.lookSeconds;
 
-    const plausible = plausibleSpecials(self, opponent, arena, tuning);
+    // With a Spell on its way, one cast now would only meet it in the air:
+    // only Depulso, which does not fly, still makes sense.
+    const plausible = plausibleSpecials(self, opponent, arena, tuning).filter(
+      (each) => !incoming || each === "depulso"
+    );
 
     if (plausible.length === 0 || random() >= profile.specials.chance) {
       return undefined;
@@ -981,7 +1010,7 @@ export const createAiController = ({
           })
         : plausible[Math.floor(random() * plausible.length)];
 
-    if (kind === undefined) {
+    if (kind === undefined || !plausible.includes(kind)) {
       return undefined;
     }
 
@@ -1008,7 +1037,7 @@ export const createAiController = ({
   const attackFor = (
     self: DuelistState,
     opponent: DuelistState,
-    busy: boolean,
+    { busy, incoming }: { readonly busy: boolean; readonly incoming: boolean },
     now: number
   ): Pick<Intent, "heavySpell" | "lightSpell" | "spellSlots"> => {
     const none = { ...idleSpells, heavySpell: false, lightSpell: false };
@@ -1035,7 +1064,7 @@ export const createAiController = ({
       return none;
     }
 
-    const special = specialFor(self, opponent, now);
+    const special = specialFor(self, opponent, incoming, now);
 
     if (special) {
       return { ...none, spellSlots: { held: true, press: special } };
@@ -1087,7 +1116,7 @@ export const createAiController = ({
   const potionFor = (
     self: DuelistState,
     opponent: DuelistState,
-    snapshot: DuelSnapshot,
+    incoming: boolean,
     busy: boolean,
     now: number
   ): PotionSlot | undefined => {
@@ -1108,15 +1137,6 @@ export const createAiController = ({
     }
 
     memory.potionLookAt = now + ai.potions.lookSeconds;
-
-    // On its way: flying at the AI, or still homing on it (which may yet
-    // bend a Spell that would pass by onto it).
-    const incoming = snapshot.spells.some(
-      (spell) =>
-        spell.team !== self.team &&
-        (spell.homing?.targetId === self.id ||
-          threatOf(self, spell) !== undefined)
-    );
 
     const safe = safeToDrink({
       arena,
@@ -1186,7 +1206,17 @@ export const createAiController = ({
       self.shielding ||
       self.dodgeSeconds > 0;
 
-    const potion = potionFor(self, opponent, snapshot, busy, now);
+    // A Spell on its way: an opponent's, flying toward the AI (it may yet
+    // home onto it, and a Spell cast back would meet it in the air).
+    const incoming = snapshot.spells.some(
+      (spell) =>
+        spell.team !== self.team &&
+        (self.position.x - spell.position.x) * spell.velocity.x +
+          (self.position.z - spell.position.z) * spell.velocity.z >
+          0
+    );
+
+    const potion = potionFor(self, opponent, incoming, busy, now);
 
     const intent = potion
       ? {
@@ -1197,7 +1227,7 @@ export const createAiController = ({
       : {
           ...idleIntent,
           ...walking,
-          ...attackFor(self, opponent, busy, now),
+          ...attackFor(self, opponent, { busy, incoming }, now),
           ...defending,
         };
 

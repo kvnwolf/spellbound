@@ -160,9 +160,11 @@ export const tuning = {
      * opponent within `cornered` metres of a wall, or whose body is within
      * `coverBlastShare` of Incendio's blast radius of a column, is worth an
      * Incendio. A Shield baited before an Expelliarmus has `baitSeconds` to
-     * go up and come down again.
+     * go up and come down again. No Special Spell follows a Light or Heavy
+     * Spell within `afterCastSeconds`: hands take a moment to move to R2.
      */
     specials: {
+      afterCastSeconds: 0.3,
       baitSeconds: 1.2,
       cornered: 2.5,
       coverBlastShare: 0.8,
