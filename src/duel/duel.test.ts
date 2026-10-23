@@ -899,18 +899,15 @@ const fightTwo = (settings: Tuning = tuning): Duel => {
 const rivalStrafes = intent({ move: { x: -1, y: 0 } });
 
 describe("Lock-on", () => {
-  it("locks on to the opponent with R3 and, standing still, faces them", () => {
+  it("locks on to the opponent with R3", () => {
     const duel = fight();
 
     const events = toggleLock(duel);
-    hold(duel, intent({}), 0.5);
 
     expect(ofType(events, "lock-on")).toStrictEqual([
       { duelistId: "hero", targetId: "rival", type: "lock-on" },
     ]);
     expect(duelist(duel, "hero").targetId).toBe("rival");
-    expect(duelist(duel, "hero").facing.x).toBeCloseTo(0);
-    expect(duelist(duel, "hero").facing.z).toBeCloseTo(-1);
   });
 
   it("locks on to the opponent nearest the crosshair", () => {
@@ -1004,7 +1001,7 @@ describe("Lock-on", () => {
     expect(facing.z).toBeGreaterThan(0.99);
   });
 
-  it("turns to the Target to cast while walking away, and back to it on stopping", () => {
+  it("turns to the Target to cast while walking away", () => {
     const duel = fight();
     toggleLock(duel);
     hold(duel, intent({ move: { x: 0, y: -1 } }), 0.5);
@@ -1023,10 +1020,6 @@ describe("Lock-on", () => {
     expect(Math.abs(Math.atan2(Math.sin(off), Math.cos(off)))).toBeLessThan(
       0.1
     );
-
-    hold(duel, intent({}), 1);
-    const stopped = duelist(duel, "hero");
-    expect(stopped.facing.z).toBeLessThan(-0.99);
   });
 
   it("strafes round the Target at a constant distance, facing the way it runs", () => {

@@ -1169,10 +1169,9 @@ export const createDuelistView = (
   };
 
   /**
-   * The head looks where the Duelist means to: the facing, glancing
-   * `glance` of the way toward a Locked On Target, or the aim while the
-   * Wand is up, whatever the clips and the spine left it at (a cast clip
-   * turns it toward the Wand hand).
+   * The head looks where the Duelist means to: the facing, or the aim
+   * while the Wand is up, whatever the clips and the spine left it at (a
+   * cast clip turns it toward the Wand hand).
    */
   const lookAhead = (sample: DuelistSample) => {
     if (
@@ -1183,13 +1182,9 @@ export const createDuelistView = (
       return;
     }
 
-    const toward = Math.max(
-      weight.lock,
-      sample.targetId === null ? 0 : gait.glance
-    );
-
     const wanted =
-      object.rotation.y + wrap(wandYaw(sample) - object.rotation.y) * toward;
+      object.rotation.y +
+      wrap(wandYaw(sample) - object.rotation.y) * weight.lock;
 
     joints.head.updateWorldMatrix(true, false);
     const e = joints.head.matrixWorld.elements;

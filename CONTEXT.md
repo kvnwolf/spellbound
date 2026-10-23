@@ -49,7 +49,7 @@ The opposing Duelist a Duelist is Locked On to.
 _Avoid_: Enemy, lock
 
 **Lock-on**:
-The state in which a Duelist's camera and aim hold on their Target and they cast at it; their body still faces where they walk, turning to the Target to cast, Charge or Shield and when standing still. The player toggles it, and it breaks when the Target is Knocked Out or stays out of sight behind Cover.
+The state in which a Duelist's camera and aim hold on their Target and they cast at it; their body still faces where they walk, turning to the aim only to cast, Charge or Shield. The player toggles it, and it breaks when the Target is Knocked Out or stays out of sight behind Cover.
 _Avoid_: Target lock, Z-targeting, soft lock
 
 **Aim Assist**:

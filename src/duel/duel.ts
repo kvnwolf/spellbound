@@ -922,27 +922,19 @@ export const createDuel = (config: DuelConfig): Duel => {
    * Which way a Duelist faces after this tick, Locked On or not (the lock
    * holds the camera and the aim, not the body). `aiming` (casting,
    * Charging, Shielding, or just after a cast) turns them to the aim, fast;
-   * otherwise a walk along `heading` turns them toward it. Standing still
-   * (or Dodging) keeps the facing, except that Locked On they turn to the
-   * Target, standing at `target`.
+   * otherwise a walk along `heading` turns them toward it, and standing
+   * still (or Dodging) keeps the facing.
    */
   const turnFacing = (
     self: DuelistState,
     aiming: boolean,
-    heading: GroundPoint | undefined,
-    target: GroundPoint | undefined
+    heading: GroundPoint | undefined
   ): GroundPoint => {
     if (aiming) {
       return turnToward(self.facing, forwardOf(self.aim.yaw), aimTurn);
     }
 
-    if (heading) {
-      return turnToward(self.facing, heading, walkTurn);
-    }
-
-    return target
-      ? turnToward(self.facing, direction(self.position, target), walkTurn)
-      : self.facing;
+    return heading ? turnToward(self.facing, heading, walkTurn) : self.facing;
   };
 
   /** Still facing the aim after a cast: a burst on the move never swings the Duelist about. */
@@ -3102,8 +3094,7 @@ export const createDuel = (config: DuelConfig): Duel => {
       facing: turnFacing(
         self,
         castRecently(book),
-        walkHeading(self.aim.yaw, move),
-        target?.position
+        walkHeading(self.aim.yaw, move)
       ),
       health,
       knockbackSeconds: 0,
@@ -3125,8 +3116,7 @@ export const createDuel = (config: DuelConfig): Duel => {
     book: Bookkeeping,
     guard: Guard,
     release: Release | undefined,
-    move: Vec2,
-    target: GroundPoint | undefined
+    move: Vec2
   ): GroundPoint =>
     turnFacing(
       self,
@@ -3134,8 +3124,7 @@ export const createDuel = (config: DuelConfig): Duel => {
         book.chargeTicks > 0 ||
         guard.state.shielding ||
         castRecently(book),
-      guard.dash ? undefined : walkHeading(self.aim.yaw, move),
-      target
+      guard.dash ? undefined : walkHeading(self.aim.yaw, move)
     );
 
   /**
@@ -3193,8 +3182,6 @@ export const createDuel = (config: DuelConfig): Duel => {
 
       const target =
         self.targetId === null ? undefined : byId.get(self.targetId);
-
-      const targetAt = target?.position;
 
       // Drinking a Potion, the hands are full: no Dodge, jump, sprint or Shield.
       const canDefend = canAct && book.drink === undefined;
@@ -3280,7 +3267,7 @@ export const createDuel = (config: DuelConfig): Duel => {
         : walk(
             self.position,
             self.aim.yaw,
-            targetAt,
+            target?.position,
             move.x * speed,
             move.y * speed
           );
@@ -3288,7 +3275,7 @@ export const createDuel = (config: DuelConfig): Duel => {
       return status({
         ...defended,
         chargeSeconds,
-        facing: faceAfterActing(self, book, guard, release, move, targetAt),
+        facing: faceAfterActing(self, book, guard, release, move),
         focus: self.focus - (special?.cost ?? 0),
         knockbackSeconds: 0,
         position: collide(wanted, bodyRadius, obstacles, arena),
