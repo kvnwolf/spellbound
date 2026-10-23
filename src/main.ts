@@ -13,6 +13,7 @@ import { createAiController } from "./controllers/ai-controller";
 import type { Controller } from "./controllers/controller";
 import { idleController } from "./controllers/controller";
 import { createDebugCasterController } from "./controllers/debug-caster";
+import { createDebugClashController } from "./controllers/debug-clash";
 import { createHumanController } from "./controllers/human-controller";
 import { createRandom } from "./controllers/random";
 import { createDualSenseEffects } from "./dualsense-effects";
@@ -118,8 +119,9 @@ const start = async () => {
   let pad: DualSenseSnapshot | undefined;
 
   // The opponent is the AI at the chosen Difficulty. For testing,
-  // `?rival=casts` swaps in a stationary rival casting Stupefy on a beat, and
-  // `?rival=idle` one that does nothing at all.
+  // `?rival=casts` swaps in a stationary rival casting Stupefy on a beat,
+  // `?rival=clash` one that Charges and releases a Confringo with the player
+  // and pumps the Clash it leads to, and `?rival=idle` one that does nothing.
   const rival = new URLSearchParams(window.location.search).get("rival");
 
   const createRival = (difficulty: Difficulty): Controller => {
@@ -131,6 +133,18 @@ const start = async () => {
       return createDebugCasterController(
         Math.round(tuning.debug.rivalCastInterval * tuning.tickRate)
       );
+    }
+
+    if (rival === "clash") {
+      return createDebugClashController({
+        fullSeconds: tuning.confringo.fullSeconds,
+        holdPastFullTicks: Math.round(
+          tuning.debug.rivalClashHoldPastFull * tuning.tickRate
+        ),
+        pumpEveryTicks: Math.round(
+          tuning.tickRate / tuning.debug.rivalClashPumpRate
+        ),
+      });
     }
 
     // A fresh seed every Duel, so no two play out the same.

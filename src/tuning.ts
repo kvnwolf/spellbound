@@ -612,6 +612,14 @@ export const tuning = {
   debug: {
     /** With `?rival=casts`, the stationary opponent presses Stupefy this often. */
     rivalCastInterval: 0.6,
+    /** With `?rival=clash`, when the player overcharges, the rival lets go this many seconds past full (before the Backfire, `confringo.backfire.delaySeconds`). */
+    rivalClashHoldPastFull: 0.05,
+    /**
+     * With `?rival=clash`, the rival pumps the Clash this many presses per
+     * second: well under a person mashing R2 (about 6 to 9), so pumping
+     * faster wins and not pumping loses.
+     */
+    rivalClashPumpRate: 4,
   },
 
   /**
