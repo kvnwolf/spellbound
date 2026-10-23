@@ -39,6 +39,7 @@ import { createClashVfx } from "./render/clash-vfx";
 import { createCourtyardScene, torchSpots } from "./render/courtyard-view";
 import { createDefenceVfx } from "./render/defence-vfx";
 import { createDuelistView } from "./render/duelist-view";
+import { createFrameProbe, perfRequested } from "./render/frame-probe";
 import { sampleDuelist } from "./render/interpolate";
 import type { DuelistSample } from "./render/interpolate";
 import { createLooseWandView } from "./render/loose-wand-view";
@@ -628,7 +629,13 @@ const start = async () => {
     return samples;
   };
 
+  // `?perf`: frame, CPU and per-pass GPU timings in the corner.
+  const probe = perfRequested()
+    ? createFrameProbe(renderer, frame.gpuTimer)
+    : undefined;
+
   void renderer.setAnimationLoop((now: number) => {
+    probe?.begin(now);
     const seconds = lastFrame === undefined ? 0 : (now - lastFrame) / 1000;
     lastFrame = now;
 
@@ -730,6 +737,8 @@ const start = async () => {
     if (hasArea) {
       frame.render();
     }
+
+    probe?.end(frame.scale());
   });
 };
 
