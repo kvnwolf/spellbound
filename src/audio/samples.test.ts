@@ -41,6 +41,10 @@ const blastAt = (charge: number) =>
 const everySound: EverySound = {
   backfire: [{ kind: "backfire" }],
   "charge-ready": [{ kind: "charge-ready" }],
+  "clash-explode": [{ kind: "clash-explode" }],
+  "clash-pump": [{ kind: "clash-pump" }],
+  "clash-start": [{ kind: "clash-start" }],
+  "clash-win": [{ kind: "clash-win" }],
   "confringo-blast": [
     { charge: 0, empowered: false, kind: "confringo-blast" },
     { charge: 1, empowered: true, kind: "confringo-blast" },
@@ -104,7 +108,12 @@ const menuSounds: MenuSound[] = [
   { kind: "menu-move" },
 ];
 
-const loopKinds: LoopSound["kind"][] = ["burn", "charge", "shield"];
+const loopKinds: LoopSound["kind"][] = [
+  "burn",
+  "charge",
+  "clash-beam",
+  "shield",
+];
 
 describe("the music the screens call for", () => {
   const duel: DuelScreen = {

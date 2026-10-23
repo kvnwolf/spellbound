@@ -74,10 +74,17 @@ export interface Intent {
   readonly sprint: boolean;
   /** The Spell Slots: the modifier held, and a slot pressed this tick. */
   readonly spellSlots: SlotsIntent;
+  /**
+   * The Clash pump (R2, for a human) is down this tick. Only a Duelist locked
+   * in a Clash reads it: each press, not the hold, pushes the meeting point
+   * toward the opponent. Outside a Clash it does nothing.
+   */
+  readonly clashPump: boolean;
 }
 
 /** The Intent of a Controller that does nothing. */
 export const idleIntent: Intent = {
+  clashPump: false,
   dodge: false,
   heavySpell: false,
   jump: false,

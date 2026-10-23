@@ -586,3 +586,123 @@ describe("AI Disarmed", () => {
     }
   });
 });
+
+/**
+ * Locks the AI ("ai") and a scripted player into a Clash (both release a
+ * full Confringo at once, head-on), then lets an AI of `difficulty` drive
+ * for `seconds` while the player pumps only on the ticks `playerPumps`
+ * says. Returns the events from the moment the Clash started.
+ */
+const clashFor = ({
+  difficulty,
+  playerPumps = () => false,
+  seconds,
+  seed,
+}: {
+  readonly difficulty: Difficulty;
+  readonly playerPumps?: (tick: number) => boolean;
+  readonly seconds: number;
+  readonly seed: number;
+}): DuelEvent[] => {
+  const duel = createDuel({
+    arena: openArena,
+    difficulty,
+    duelists: [
+      { id: "player", spawn: { x: 0, z: 5 }, team: "near" },
+      { id: "ai", spawn: { x: 0, z: -5 }, team: "far" },
+    ],
+    tuning,
+  });
+
+  while (duel.snapshot().round.phase === "intro") {
+    duel.step({});
+  }
+
+  const charge = { ...idleIntent, heavySpell: true };
+  const full = ticksOf(tuning.confringo.fullSeconds);
+
+  for (let tick = 0; tick < full + 1; tick += 1) {
+    const held = tick < full ? charge : idleIntent;
+    duel.step({ ai: held, player: held });
+  }
+
+  while (duel.snapshot().clash === null) {
+    duel.step({});
+  }
+
+  const ai = createAiController({
+    arena: openArena,
+    difficulty,
+    random: createRandom(seed),
+    tuning,
+  });
+
+  const events: DuelEvent[] = [];
+
+  for (let tick = 0; tick < ticksOf(seconds); tick += 1) {
+    const snapshot = duel.snapshot();
+
+    events.push(
+      ...duel.step({
+        ai: ai.intent({ self: "ai", snapshot }),
+        player: { ...idleIntent, clashPump: playerPumps(tick) },
+      }).events
+    );
+  }
+
+  return events;
+};
+
+/** How many times the AI pumped. */
+const aiPumps = (events: readonly DuelEvent[]) =>
+  ofType(events, "clash-pump").filter((event) => event.duelistId === "ai")
+    .length;
+
+/** The AI's pumps in the first second of a Clash, averaged over 10 seeds. */
+const pumpRate = (difficulty: Difficulty) =>
+  seeds(10).reduce(
+    (sum, seed) => sum + aiPumps(clashFor({ difficulty, seconds: 1, seed })),
+    0
+  ) / 10;
+
+/** A player pressing R2 every 12 ticks: 5 pumps a second. */
+const steadyPumps = (tick: number) => tick % 12 < 6;
+
+/** Who wins a Clash between the AI and a player pumping 5 times a second. */
+const clashWinner = (difficulty: Difficulty, seed: number) =>
+  ofType(
+    clashFor({ difficulty, playerPumps: steadyPumps, seconds: 7, seed }),
+    "clash-end"
+  )[0]?.winnerId;
+
+describe("AI in a Clash", () => {
+  it.each(["novato", "duelista", "maestro"] as const)(
+    "pumps on %s and wins against an opponent who does not",
+    (difficulty) => {
+      for (const seed of seeds(5)) {
+        const events = clashFor({
+          difficulty,
+          seconds: tuning.clash.seconds,
+          seed,
+        });
+
+        expect(ofType(events, "clash-end")).toMatchObject([
+          { outcome: "won", winnerId: "ai" },
+        ]);
+      }
+    }
+  );
+
+  it("pumps far faster on Maestro than on Novato", () => {
+    expect(pumpRate("maestro")).toBeGreaterThan(pumpRate("duelista"));
+    expect(pumpRate("duelista")).toBeGreaterThan(pumpRate("novato"));
+    expect(pumpRate("maestro")).toBeGreaterThan(pumpRate("novato") * 1.8);
+  });
+
+  it("beats a player pumping 5 times a second on Maestro, and loses to them on Novato", () => {
+    for (const seed of seeds(5)) {
+      expect(clashWinner("maestro", seed)).toBe("ai");
+      expect(clashWinner("novato", seed)).toBe("player");
+    }
+  });
+});

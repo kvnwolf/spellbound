@@ -186,6 +186,8 @@ const createStartGuard = () => {
  * - R2 (held): the Spell Slots' modifier. While it is held, pressing a face
  *   button casts from its Spell Slot instead of its usual action (R2 alone
  *   casts nothing); the right stick keeps turning the camera as usual.
+ *   During a Clash every R2 pull is a pump instead (the simulation ignores
+ *   the face buttons while the Duelist is rooted).
  *
  * Everything advances once per Intent, which the Duel asks for every tick.
  */
@@ -236,6 +238,9 @@ export const createHumanController = (
       const { face, held, press } = slots.read(pad);
 
       return {
+        // R2 past its pull is also the Clash pump; the simulation counts the
+        // presses, and only during a Clash.
+        clashPump: held,
         // Buttons are passed on as held; the simulation finds the presses
         // (and reads △'s hold over time to Charge Confringo). A face button
         // pressed while R2 is held went to its Spell Slot instead.

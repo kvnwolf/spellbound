@@ -3,13 +3,14 @@
  * reads the Duel snapshot and produces the same Intent a human's DualSense
  * does: it turns its aim and presses R3 to Lock On, walks and strafes to keep
  * its distance, taps Stupefy and holds Confringo, raises the Shield, Dodges
- * and jumps at incoming Spells, ducks behind Cover and punishes a Staggered
- * opponent. Every reaction waits a human-like delay, and every choice is
+ * and jumps at incoming Spells, ducks behind Cover, punishes a Staggered
+ * opponent and pumps R2 in a Clash. Every reaction waits a human-like delay, and every choice is
  * rolled on a seeded random source, so a Duel replays exactly per seed.
  * Pure: no three.js, no DOM.
  */
 import { aimAt, sightBlocked } from "../duel/aim";
 import type { Difficulty } from "../duel/difficulty";
+import { clashOpponentOf } from "../duel/duel";
 import type {
   ArenaLayout,
   DuelistState,
@@ -88,7 +89,9 @@ interface Memory {
   seen: Set<number>;
   previous: DuelSnapshot | undefined;
   /** What was pressed last tick: a press needs the button up the tick before. */
-  pressed: { dodge: boolean; jump: boolean; light: boolean };
+  pressed: { dodge: boolean; jump: boolean; light: boolean; pump: boolean };
+  /** In a Clash, when the next pump is due; undefined outside one. */
+  pumpAt: number | undefined;
   /** How far the AI asked to walk last tick, in metres, to tell when it is stuck. */
   askedStride: number;
 }
@@ -101,8 +104,9 @@ const freshMemory = (): Memory => ({
   lockReadyAt: 0,
   nextAttackAt: 0,
   opponentWasStaggered: false,
-  pressed: { dodge: false, jump: false, light: false },
+  pressed: { dodge: false, jump: false, light: false, pump: false },
   previous: undefined,
+  pumpAt: undefined,
   punishAt: undefined,
   round: 0,
   seen: new Set(),
@@ -816,6 +820,31 @@ export const createAiController = ({
     return intent;
   };
 
+  /**
+   * Locked in a Clash, the AI mashes R2 at its Difficulty's rate: the first
+   * pump after a reaction, then one press (a tick down, then up) every
+   * 1 / rate seconds, the rate picked afresh each time. Whatever it was
+   * doing before the Clash is dropped.
+   */
+  const pumpFor = (now: number): boolean => {
+    memory.attack = undefined;
+    memory.defences = [];
+
+    if (memory.pumpAt === undefined) {
+      memory.pumpAt = now + reaction();
+
+      return false;
+    }
+
+    if (memory.pressed.pump || now < memory.pumpAt) {
+      return false;
+    }
+
+    memory.pumpAt = now + 1 / between(random, profile.clashPumpRate);
+
+    return true;
+  };
+
   const decide = (snapshot: DuelSnapshot, selfId: string): Intent => {
     const now = snapshot.tick * tickSeconds;
     const self = find(snapshot, selfId);
@@ -835,6 +864,12 @@ export const createAiController = ({
     ) {
       return idleIntent;
     }
+
+    if (clashOpponentOf(snapshot.clash, selfId) !== undefined) {
+      return { ...idleIntent, clashPump: pumpFor(now) };
+    }
+
+    memory.pumpAt = undefined;
 
     const aiming = aimAndLock(self, opponent, now);
 
@@ -871,6 +906,7 @@ export const createAiController = ({
         dodge: intent.dodge,
         jump: intent.jump,
         light: intent.lightSpell,
+        pump: intent.clashPump,
       };
 
       return intent;

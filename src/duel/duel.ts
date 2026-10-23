@@ -230,11 +230,41 @@ export interface RoundState {
   readonly winner: TeamId | null;
 }
 
+/** One side of a Clash: a Duelist and the Confringo they hold in the beam. */
+export interface ClashSide {
+  readonly duelistId: DuelistId;
+  /** Their Confringo, out of the air while the Clash lasts. */
+  readonly spell: SpellState;
+  /** Their Wand tip, where their half of the beam starts. */
+  readonly wand: Point3;
+}
+
+/**
+ * A Clash in progress: two fully Charged Confringos locked in a beam
+ * between their casters' Wands, both Duelists rooted, each pump pushing the
+ * meeting point toward the opponent.
+ */
+export interface ClashState {
+  readonly sides: readonly [ClashSide, ClashSide];
+  /**
+   * Where the meeting point sits along the beam: 0 at the first side's
+   * Wand, 1 at the second's. The first side's pumps push it up, the
+   * second's down; reaching a Wand wins the Clash for the other side.
+   */
+  readonly along: number;
+  /** The meeting point itself, on the beam. */
+  readonly point: Point3;
+  /** Seconds before the Clash explodes if nobody wins it. */
+  readonly secondsLeft: number;
+}
+
 /** A read-only picture of the Duel after a tick. A new object every tick. */
 export interface DuelSnapshot {
   readonly tick: number;
   readonly duelists: readonly DuelistState[];
   readonly spells: readonly SpellState[];
+  /** The Clash being fought, or null. */
+  readonly clash: ClashState | null;
   readonly round: RoundState;
   /** Rounds won by each Team. */
   readonly score: Readonly<Record<TeamId, number>>;
@@ -393,6 +423,27 @@ export type DuelEvent =
       readonly type: "stamina-short";
       readonly duelistId: DuelistId;
       readonly action: DefenceAction;
+    }
+  /** Two fully Charged Confringos met head-on and locked into a Clash. */
+  | { readonly type: "clash-start"; readonly clash: ClashState }
+  /** A Duelist in a Clash pumped, pushing the meeting point to where `clash` shows it. */
+  | {
+      readonly type: "clash-pump";
+      readonly duelistId: DuelistId;
+      readonly clash: ClashState;
+    }
+  /**
+   * A Clash ended at `position`: `won` by `winnerId`, whose Confringo hits
+   * the loser empowered (reported as its own Spell hit); `exploded` when
+   * nobody won in time, knocking both Duelists back; or `interrupted` when
+   * the Round stopped being fought (a Knockout) before either.
+   */
+  | {
+      readonly type: "clash-end";
+      readonly outcome: "exploded" | "interrupted" | "won";
+      readonly winnerId: DuelistId | null;
+      readonly clash: ClashState;
+      readonly position: Point3;
     };
 
 /** The defences paid for with Stamina. */
@@ -595,6 +646,8 @@ interface Bookkeeping {
   petrifiedTicks: number;
   /** The Wand knocked loose by Expelliarmus, while Disarmed. */
   wand: LostWand | undefined;
+  /** The Clash pump was down last tick: a Clash counts presses, not the hold. */
+  pumpHeld: boolean;
 }
 
 /** A Wand knocked loose: where it left the hand, where it lands, and how many ticks since. */
@@ -627,6 +680,7 @@ const freshBookkeeping = (): Bookkeeping => ({
   hiddenTicks: 0,
   knockback: undefined,
   petrifiedTicks: 0,
+  pumpHeld: false,
   queued: false,
   recentreTicks: 0,
   recoveryTicks: 0,
@@ -647,6 +701,24 @@ interface SpecialCast {
   readonly kind: SpecialSpellKind;
   readonly cost: number;
 }
+
+/** The Duelist `id` is locked in a Clash with, or undefined when they are in none. */
+export const clashOpponentOf = (
+  clash: ClashState | null,
+  id: DuelistId
+): DuelistId | undefined => {
+  if (!clash) {
+    return undefined;
+  }
+
+  const [first, second] = clash.sides;
+
+  if (first.duelistId === id) {
+    return second.duelistId;
+  }
+
+  return second.duelistId === id ? first.duelistId : undefined;
+};
 
 /** Where a Duelist's Spells leave the Wand. */
 export const wandTip = (self: DuelistState, tuning: Tuning): Point3 => {
@@ -791,11 +863,29 @@ export const createDuel = (config: DuelConfig): Duel => {
    */
   const settleAim = (
     duelists: readonly DuelistState[],
-    events: DuelEvent[]
+    events: DuelEvent[],
+    clash: ClashState | null = null
   ): DuelistState[] =>
     duelists.map((self) => {
       if (self.knockedOut) {
         return self;
+      }
+
+      // Locked in a Clash, a Duelist faces their opponent down the beam,
+      // whatever the lock or the stick says.
+      const foeId = clashOpponentOf(clash, self.id);
+      const foe = duelists.find((other) => other.id === foeId);
+
+      if (foe) {
+        const chest = chestOf(foe, tuning);
+
+        return {
+          ...self,
+          aim: aimAt(self.position, chest, arena, eye),
+          aimPoint: chest,
+          facing: direction(self.position, foe.position),
+          lockNudge: noNudge,
+        };
       }
 
       const target = keepLock(self, duelists, events);
@@ -1190,6 +1280,7 @@ export const createDuel = (config: DuelConfig): Duel => {
   let phaseTicks = ticksOf(rounds.introSeconds);
 
   let current: DuelSnapshot = {
+    clash: null,
     duelists: lineUp(),
     round: {
       number: 1,
@@ -1208,6 +1299,7 @@ export const createDuel = (config: DuelConfig): Duel => {
 
   /** The tick being built: stages below read and replace its fields in order. */
   interface Draft {
+    clash: ClashState | null;
     duelists: readonly DuelistState[];
     round: RoundState;
     score: Readonly<Record<TeamId, number>>;
@@ -1654,6 +1746,7 @@ export const createDuel = (config: DuelConfig): Duel => {
     } else if (round.phase === "result") {
       draft.duelists = lineUp();
       draft.spells = [];
+      draft.clash = null;
       draft.round = {
         number: round.number + 1,
         phase: "intro",
@@ -1923,10 +2016,341 @@ export const createDuel = (config: DuelConfig): Duel => {
   };
 
   /**
+   * A Spell landing on a Duelist at `position`: its damage (added to
+   * `damage`), the Stagger, Petrified or knockback it brings, and the hit
+   * reported.
+   */
+  const strike = (
+    draft: Draft,
+    damage: Map<DuelistId, number>,
+    spell: SpellState,
+    targetId: DuelistId,
+    position: Point3
+  ) => {
+    const { amount, knockback } = impactOf(spell);
+    damage.set(targetId, (damage.get(targetId) ?? 0) + amount);
+
+    // The strong Stupefy Staggers: no moving or casting for a moment.
+    if (spell.strong) {
+      books(targetId).staggerTicks = ticksOf(stupefy.staggerSeconds);
+    }
+
+    // Petrificus Totalus freezes the Duelist it hits.
+    if (spell.kind === "petrificus") {
+      books(targetId).petrifiedTicks = ticksOf(petrificus.petrifiedSeconds);
+    }
+
+    // Expelliarmus knocks the Wand out of the hand it hits.
+    const struck = draft.duelists.find((each) => each.id === targetId);
+
+    if (spell.kind === "expelliarmus" && struck) {
+      disarm(draft, struck, spell);
+    }
+
+    // Confringo knocks the Duelist it hits back along its flight.
+    if (knockback > 0) {
+      const ticks = ticksOf(confringo.knockback.seconds);
+
+      books(targetId).knockback = {
+        direction: direction(
+          { x: 0, z: 0 },
+          { x: spell.velocity.x, z: spell.velocity.z }
+        ),
+        distance: knockback,
+        ticks,
+        ticksLeft: ticks,
+      };
+    }
+
+    draft.events.push({
+      damage: amount,
+      position,
+      spell,
+      staggered: spell.strong,
+      targetId,
+      type: "spell-hit",
+    });
+  };
+
+  const cancel = (
+    draft: Draft,
+    spells: readonly [SpellState, SpellState],
+    position: Point3
+  ) => draft.events.push({ position, spells, type: "spells-cancelled" });
+
+  /** Ticks left before the Clash in progress explodes. */
+  let clashTicks = 0;
+
+  /**
+   * Whether two opposing Spells meeting in the air lock into a Clash: both
+   * Confringos at a full Charge, flying at each other roughly head-on, while
+   * the Round is fought and no other Clash is on.
+   */
+  const locksIntoClash = (draft: Draft) => (a: SpellState, b: SpellState) =>
+    draft.round.phase === "fighting" &&
+    draft.clash === null &&
+    a.kind === "confringo" &&
+    b.kind === "confringo" &&
+    a.charge >= 1 &&
+    b.charge >= 1 &&
+    angleBetween(unit3(a.velocity), unit3(scale(b.velocity, -1))) <=
+      tuning.clash.maxAngle;
+
+  /**
+   * A Clash as the snapshot shows it: each side's Wand tip with the
+   * Duelists facing each other down the beam, and the meeting point
+   * `along` it (held between the Wands).
+   */
+  const placeClash = (
+    sides: readonly [Omit<ClashSide, "wand">, Omit<ClashSide, "wand">],
+    along: number,
+    duelists: readonly DuelistState[]
+  ): ClashState | null => {
+    const [first, second] = sides.map((side) =>
+      duelists.find((each) => each.id === side.duelistId)
+    );
+
+    if (!first || !second) {
+      return null;
+    }
+
+    const tipOf = (self: DuelistState, foe: DuelistState) =>
+      wandTip(
+        { ...self, facing: direction(self.position, foe.position) },
+        tuning
+      );
+
+    const from = tipOf(first, second);
+    const to = tipOf(second, first);
+    const share = clamp(along, 0, 1);
+
+    return {
+      along,
+      point: {
+        x: from.x + (to.x - from.x) * share,
+        y: from.y + (to.y - from.y) * share,
+        z: from.z + (to.z - from.z) * share,
+      },
+      secondsLeft: clashTicks * tickSeconds,
+      sides: [
+        { ...sides[0], wand: from },
+        { ...sides[1], wand: to },
+      ],
+    };
+  };
+
+  /**
+   * Two Confringos lock into a Clash where they met: their casters are
+   * rooted, the beam joins their Wands and the meeting point starts where
+   * the Spells met (kept off either end). A Clash that cannot start (a
+   * caster gone, another Clash on) is a plain mid-air cancel instead.
+   */
+  const startClash = (
+    draft: Draft,
+    spells: readonly [SpellState, SpellState],
+    position: Point3
+  ) => {
+    const [a, b] = spells;
+
+    const casters = spells.map((spell) =>
+      draft.duelists.find(
+        (each) => each.id === spell.casterId && !each.knockedOut
+      )
+    );
+
+    const [first, second] = casters;
+
+    if (draft.clash !== null || !first || !second || first.id === second.id) {
+      cancel(draft, spells, position);
+
+      return;
+    }
+
+    clashTicks = ticksOf(tuning.clash.seconds);
+
+    const sides = [
+      { duelistId: first.id, spell: a },
+      { duelistId: second.id, spell: b },
+    ] as const;
+
+    const placed = placeClash(sides, 0, draft.duelists);
+
+    if (!placed) {
+      return;
+    }
+
+    // How far along the beam they met, from the first side's Wand.
+    const [{ wand: from }, { wand: to }] = placed.sides;
+    const beam = { x: to.x - from.x, y: to.y - from.y, z: to.z - from.z };
+    const length = Math.hypot(beam.x, beam.y, beam.z) || 1;
+
+    const met =
+      ((position.x - from.x) * beam.x +
+        (position.y - from.y) * beam.y +
+        (position.z - from.z) * beam.z) /
+      (length * length);
+
+    const { max, min } = tuning.clash.start;
+    draft.clash = placeClash(sides, clamp(met, min, max), draft.duelists);
+
+    if (draft.clash) {
+      draft.events.push({ clash: draft.clash, type: "clash-start" });
+    }
+  };
+
+  /** The Clash ends: nobody is rooted any more. */
+  const endClash = (
+    draft: Draft,
+    clash: ClashState,
+    outcome: "exploded" | "interrupted" | "won",
+    winnerId: DuelistId | null,
+    position: Point3
+  ) => {
+    draft.clash = null;
+    draft.events.push({
+      clash,
+      outcome,
+      position,
+      type: "clash-end",
+      winnerId,
+    });
+  };
+
+  /**
+   * The winner pushed the meeting point all the way: their Confringo hits
+   * the loser at once, empowered, as a full Charge.
+   */
+  const winClash = (
+    draft: Draft,
+    damage: Map<DuelistId, number>,
+    clash: ClashState,
+    winner: ClashSide,
+    loser: ClashSide
+  ) => {
+    const target = draft.duelists.find((each) => each.id === loser.duelistId);
+    const contact = target ? chestOf(target, tuning) : loser.wand;
+
+    endClash(draft, clash, "won", winner.duelistId, contact);
+    strike(
+      draft,
+      damage,
+      { ...winner.spell, charge: 1, empowered: true, position: contact },
+      loser.duelistId,
+      contact
+    );
+  };
+
+  /** Nobody won in time: the beam blows up and knocks both Duelists back, away from it. */
+  const explodeClash = (draft: Draft, clash: ClashState) => {
+    const { knockback, seconds } = tuning.clash.explosion;
+    const ticks = ticksOf(seconds);
+
+    for (const side of clash.sides) {
+      const self = draft.duelists.find((each) => each.id === side.duelistId);
+
+      if (self) {
+        books(self.id).knockback = {
+          direction: direction(
+            { x: clash.point.x, z: clash.point.z },
+            self.position
+          ),
+          distance: knockback,
+          ticks,
+          ticksLeft: ticks,
+        };
+      }
+    }
+
+    endClash(draft, clash, "exploded", null, clash.point);
+  };
+
+  /**
+   * One tick of the Clash in progress: every pump (a press of the Clash
+   * pump, never the hold) pushes the meeting point toward the pumping
+   * Duelist's opponent. Reaching a Wand wins it; running out of time blows
+   * it up; the Round stopping (a Knockout) ends it with neither. Presses are
+   * tracked for everyone, so a pump held into a Clash is no press.
+   */
+  const struggle = (
+    draft: Draft,
+    intentOf: (id: DuelistId) => Intent,
+    damage: Map<DuelistId, number>
+  ) => {
+    const pumped = new Set<DuelistId>();
+
+    for (const self of draft.duelists) {
+      const book = books(self.id);
+      const down = intentOf(self.id).clashPump;
+
+      if (down && !book.pumpHeld) {
+        pumped.add(self.id);
+      }
+
+      book.pumpHeld = down;
+    }
+
+    const { clash } = draft;
+
+    if (!clash) {
+      return;
+    }
+
+    const [first, second] = clash.sides;
+
+    const standing = (side: ClashSide) =>
+      draft.duelists.some(
+        (each) => each.id === side.duelistId && !each.knockedOut
+      );
+
+    if (
+      draft.round.phase !== "fighting" ||
+      !standing(first) ||
+      !standing(second)
+    ) {
+      endClash(draft, clash, "interrupted", null, clash.point);
+
+      return;
+    }
+
+    let latest = clash;
+
+    for (const [side, push] of [
+      [first, 1],
+      [second, -1],
+    ] as const) {
+      if (pumped.has(side.duelistId)) {
+        latest =
+          placeClash(
+            latest.sides,
+            latest.along + push * tuning.clash.pumpShare,
+            draft.duelists
+          ) ?? latest;
+        draft.events.push({
+          clash: latest,
+          duelistId: side.duelistId,
+          type: "clash-pump",
+        });
+      }
+    }
+
+    clashTicks = Math.max(clashTicks - 1, 0);
+    draft.clash = latest;
+
+    if (latest.along >= 1) {
+      winClash(draft, damage, latest, first, second);
+    } else if (latest.along <= 0) {
+      winClash(draft, damage, latest, second, first);
+    } else if (clashTicks === 0) {
+      explodeClash(draft, latest);
+    }
+  };
+
+  /**
    * Spells in flight travel against where everyone stood at the start of the
    * tick. Duelists can only be hit while the Round is being fought, so a
-   * Spell still in the air after a Knockout flies over the fallen. Returns
-   * the damage each Duelist took.
+   * Spell still in the air after a Knockout flies over the fallen. Two full
+   * Confringos meeting head-on lock into a Clash. Returns the damage each
+   * Duelist took.
    */
   const flySpells = (draft: Draft): Map<DuelistId, number> => {
     const flight = fly(
@@ -1935,6 +2359,7 @@ export const createDuel = (config: DuelConfig): Duel => {
         arena,
         bodyHeight: tuning.duelist.height,
         bodyRadius,
+        clash: { locks: locksIntoClash(draft), reach: tuning.clash.reach },
         radiusOf: spellRadius,
         // A Dodging Duelist cannot be hit: Spells fly straight through.
         targets:
@@ -1963,62 +2388,24 @@ export const createDuel = (config: DuelConfig): Duel => {
           : "hit";
 
       if (outcome.kind === "hit" && met === "hit") {
-        const { spell, targetId } = outcome;
-        const { amount, knockback } = impactOf(spell);
-        damage.set(targetId, (damage.get(targetId) ?? 0) + amount);
-
-        // The strong Stupefy Staggers: no moving or casting for a moment.
-        if (spell.strong) {
-          books(targetId).staggerTicks = ticksOf(stupefy.staggerSeconds);
-        }
-
-        // Petrificus Totalus freezes the Duelist it hits.
-        if (spell.kind === "petrificus") {
-          books(targetId).petrifiedTicks = ticksOf(petrificus.petrifiedSeconds);
-        }
-
-        // Expelliarmus knocks the Wand out of the hand it hits.
-        if (spell.kind === "expelliarmus" && struck) {
-          disarm(draft, struck, spell);
-        }
-
-        // Confringo knocks the Duelist it hits back along its flight.
-        if (knockback > 0) {
-          const ticks = ticksOf(confringo.knockback.seconds);
-
-          books(targetId).knockback = {
-            direction: direction(
-              { x: 0, z: 0 },
-              { x: spell.velocity.x, z: spell.velocity.z }
-            ),
-            distance: knockback,
-            ticks,
-            ticksLeft: ticks,
-          };
-        }
-
-        draft.events.push({
-          damage: amount,
-          position: outcome.position,
-          spell,
-          staggered: spell.strong,
-          targetId,
-          type: "spell-hit",
-        });
+        strike(
+          draft,
+          damage,
+          outcome.spell,
+          outcome.targetId,
+          outcome.position
+        );
       } else if (outcome.kind === "stopped") {
         draft.events.push({ ...outcome, type: "spell-stopped" });
       } else if (outcome.kind === "cancelled") {
-        draft.events.push({
-          position: outcome.position,
-          spells: outcome.spells,
-          type: "spells-cancelled",
-        });
+        cancel(draft, outcome.spells, outcome.position);
+      } else if (outcome.kind === "clashed") {
+        startClash(draft, outcome.spells, outcome.position);
       }
 
       // Incendio explodes wherever it ends, Shield or not; only a Parry,
       // which sends it back, keeps it flying.
-      const ended =
-        outcome.kind === "cancelled" ? outcome.spells : [outcome.spell];
+      const ended = "spells" in outcome ? outcome.spells : [outcome.spell];
 
       for (const spell of ended) {
         if (spell.kind === "incendio" && met !== "parried") {
@@ -2296,12 +2683,17 @@ export const createDuel = (config: DuelConfig): Duel => {
     return { cost: focusCost(kind, tuning), kind };
   };
 
-  /** Whether a standing Duelist is free to act: not Staggered, Petrified or knocked back. */
-  const free = (self: DuelistState, book: Bookkeeping) =>
+  /** Whether a standing Duelist is free to act: not Staggered, Petrified, knocked back or rooted in a Clash. */
+  const free = (
+    self: DuelistState,
+    book: Bookkeeping,
+    clash: ClashState | null
+  ) =>
     !self.knockedOut &&
     book.staggerTicks === 0 &&
     book.petrifiedTicks === 0 &&
-    book.knockback === undefined;
+    book.knockback === undefined &&
+    clashOpponentOf(clash, self.id) === undefined;
 
   /** Whether a standing Duelist is only sliding back behind their Shield from a Depulso, mid-fight: they can keep it up. */
   const guardedSlide = (
@@ -2347,14 +2739,20 @@ export const createDuel = (config: DuelConfig): Duel => {
       const pressed = intent.lightSpell && !book.held;
       const heavyPressed = intent.heavySpell && !book.heavyHeld;
 
+      // Locked in a Clash, a Duelist is rooted: no moving, turning, casting
+      // or defending, only pumping.
+      const rooted = clashOpponentOf(draft.clash, standing.id) !== undefined;
+
       const canLook =
-        (phase === "fighting" || phase === "intro") && !standing.knockedOut;
+        (phase === "fighting" || phase === "intro") &&
+        !standing.knockedOut &&
+        !rooted;
 
       const self = canLook
         ? steer(standing, intent, draft.duelists, draft.events)
         : standing;
 
-      const canAct = phase === "fighting" && free(self, book);
+      const canAct = phase === "fighting" && free(self, book, draft.clash);
 
       book.held = intent.lightSpell;
       book.heavyHeld = intent.heavySpell;
@@ -2366,6 +2764,7 @@ export const createDuel = (config: DuelConfig): Duel => {
         burnSeconds: book.burnTicks * tickSeconds,
         cooldowns: cooldownsOf(book),
         petrifiedSeconds: book.petrifiedTicks * tickSeconds,
+        // In a Clash, R2 is the pump, not the Spell Slots' modifier.
         spellSlotsHeld: canLook && intent.spellSlots.held,
       });
 
@@ -2454,7 +2853,7 @@ export const createDuel = (config: DuelConfig): Duel => {
       });
     });
 
-    draft.duelists = settleAim(acted, draft.events);
+    draft.duelists = settleAim(acted, draft.events, draft.clash);
 
     return releases;
   };
@@ -2706,6 +3105,8 @@ export const createDuel = (config: DuelConfig): Duel => {
         add(event.duelistId, gain.parry);
       } else if (event.type === "perfect-dodge") {
         add(event.duelistId, gain.perfectDodge);
+      } else if (event.type === "clash-end" && event.winnerId !== null) {
+        add(event.winnerId, gain.clashWin);
       }
     }
 
@@ -2725,11 +3126,17 @@ export const createDuel = (config: DuelConfig): Duel => {
       events: [],
     };
 
+    const intentOf = (id: DuelistId) => intents[id] ?? idleIntent;
+
     advanceClock(draft);
-    applyDamage(draft, burn(draft, flySpells(draft)));
+
+    const damage = flySpells(draft);
+
+    struggle(draft, intentOf, damage);
+    applyDamage(draft, burn(draft, damage));
     decideRound(draft);
 
-    const releases = act(draft, (id) => intents[id] ?? idleIntent);
+    const releases = act(draft, intentOf);
 
     // A Backfire hurts its caster like any hit, and can Knock them Out.
     applyDamage(draft, draft.backfires);
@@ -2741,7 +3148,11 @@ export const createDuel = (config: DuelConfig): Duel => {
     decideRound(draft);
     gainFocus(draft);
 
+    // The beam follows the Wands wherever the Duelists ended the tick.
+    const { clash } = draft;
+
     current = {
+      clash: clash && placeClash(clash.sides, clash.along, draft.duelists),
       duelists: draft.duelists,
       round: { ...draft.round, phaseSecondsLeft: phaseTicks * tickSeconds },
       score: draft.score,

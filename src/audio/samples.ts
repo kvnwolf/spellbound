@@ -89,6 +89,10 @@ const charged = (
 const sampleOfSound: SampleTable = {
   backfire: just("backfire"),
   "charge-ready": just("confringo-ready"),
+  "clash-explode": just("clash-explode"),
+  "clash-pump": just("clash-pump"),
+  "clash-start": just("clash-start"),
+  "clash-win": just("clash-win"),
   "confringo-blast": charged("confringo-blast"),
   "confringo-cast": charged("confringo-cast"),
   countdown: just("countdown-beat"),
@@ -208,6 +212,7 @@ const menuSamples: readonly MenuSound["kind"][] = [
 export const loopSampleOf: Readonly<Record<LoopSound["kind"], SampleId>> = {
   burn: "burn-loop",
   charge: "confringo-charge",
+  "clash-beam": "clash-beam",
   shield: "shield-hum",
 };
 

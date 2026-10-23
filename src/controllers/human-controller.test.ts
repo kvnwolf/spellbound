@@ -388,6 +388,7 @@ describe(createHumanController, () => {
     });
 
     expect(intent).toStrictEqual({
+      clashPump: false,
       dodge: false,
       heavySpell: false,
       jump: false,
@@ -499,6 +500,18 @@ describe(createHumanController, () => {
       expect(
         [light, held, easing, letGo].map((each) => each.spellSlots.held)
       ).toStrictEqual([false, true, true, false]);
+    });
+
+    it("pumps the Clash with R2: down past the pull, up again once nearly released", () => {
+      const { pad, tick } = holding([0, 0, 0, 0]);
+      const pumps: boolean[] = [];
+
+      for (const travel of [0, hold * 0.8, 1, (hold + release) / 2, 0, 1]) {
+        pull(pad, travel);
+        pumps.push(tick().clashPump);
+      }
+
+      expect(pumps).toStrictEqual([false, false, true, true, false, true]);
     });
 
     it("keeps turning the camera with the right stick while R2 is held", () => {

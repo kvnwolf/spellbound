@@ -79,7 +79,15 @@ export type Sound =
   /** A Disarmed Duelist grabbing their Wand off the floor. */
   | { readonly kind: "wand-pickup" }
   /** A loose Wand flying back into its owner's hand on its own. */
-  | { readonly kind: "wand-return" };
+  | { readonly kind: "wand-return" }
+  /** Two full Confringos locking into a Clash. */
+  | { readonly kind: "clash-start" }
+  /** A pump pushing the Clash's meeting point. */
+  | { readonly kind: "clash-pump" }
+  /** A Clash won: the beam drives through. */
+  | { readonly kind: "clash-win" }
+  /** A Clash nobody won blowing up. */
+  | { readonly kind: "clash-explode" };
 
 /** How a Round ended for the local Duelist. */
 export type RoundOutcome = "draw" | "lost" | "won";
@@ -253,6 +261,23 @@ const ownControl = (
 const eventSounds: EventSounds = {
   backfire: (event, _frame, place) => [
     place.by(event.duelistId, { kind: "backfire" }, event.position),
+  ],
+  "clash-end": (event, _frame, place) => {
+    if (event.outcome === "interrupted") {
+      return [];
+    }
+
+    return [
+      place.world(event.position, {
+        kind: event.outcome === "won" ? "clash-win" : "clash-explode",
+      }),
+    ];
+  },
+  "clash-pump": (event, _frame, place) => [
+    place.by(event.duelistId, { kind: "clash-pump" }, event.clash.point),
+  ],
+  "clash-start": (event, _frame, place) => [
+    place.world(event.clash.point, { kind: "clash-start" }),
   ],
   // The Wand snapping out of the hand, as loud whoever cast it.
   disarm: (event, _frame, place) => [
@@ -465,7 +490,9 @@ export type LoopSound =
   /** A raised Shield. */
   | { readonly kind: "shield" }
   /** An Incendio Burn. */
-  | { readonly kind: "burn" };
+  | { readonly kind: "burn" }
+  /** The beam of a Clash, roaring at its meeting point while it lasts. */
+  | { readonly kind: "clash-beam" };
 
 /** A held sound, and where it comes from. */
 export interface Loop {
@@ -509,13 +536,27 @@ export const loopsFor = (
 ): Loop[] => {
   const place = placer({ after: snapshot, localId, settings });
 
-  return snapshot.duelists.flatMap((self) =>
-    self.knockedOut
-      ? []
-      : loopSounds(self, settings).map((sound) => ({
-          ...place.origin(self.id),
-          key: `${sound.kind}:${self.id}`,
-          sound,
-        }))
-  );
+  const beam: Loop[] = snapshot.clash
+    ? [
+        {
+          at: snapshot.clash.point,
+          key: "clash-beam",
+          opponent: false,
+          sound: { kind: "clash-beam" },
+        },
+      ]
+    : [];
+
+  return [
+    ...beam,
+    ...snapshot.duelists.flatMap((self) =>
+      self.knockedOut
+        ? []
+        : loopSounds(self, settings).map((sound) => ({
+            ...place.origin(self.id),
+            key: `${sound.kind}:${self.id}`,
+            sound,
+          }))
+    ),
+  ];
 };

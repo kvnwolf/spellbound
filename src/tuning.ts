@@ -47,6 +47,7 @@ export const tuning = {
         band: { max: 12, min: 7 },
         burst: { max: 3, min: 1 },
         chargeHold: { mean: 0.5, spread: 0.035 },
+        clashPumpRate: { max: 5.5, min: 4 },
         coverChance: 0.2,
         defences: { dodge: 0.3, jump: 0.15, shield: 0.55 },
         defendChance: 0.65,
@@ -64,6 +65,7 @@ export const tuning = {
         band: { max: 12, min: 7 },
         burst: { max: 3, min: 2 },
         chargeHold: { mean: 0.51, spread: 0.015 },
+        clashPumpRate: { max: 9.5, min: 7.5 },
         coverChance: 0.3,
         defences: { dodge: 0.3, jump: 0.1, shield: 0.6 },
         defendChance: 0.88,
@@ -85,6 +87,8 @@ export const tuning = {
         burst: { max: 2, min: 1 },
         /** How long it holds a Charge before releasing (seconds since the press): a normal spread around `mean`. */
         chargeHold: { mean: 0.47, spread: 0.07 },
+        /** Presses per second it pumps in a Clash, picked afresh for every press: a person mashing R2 manages about 6 to 9. */
+        clashPumpRate: { max: 3, min: 2.4 },
         /** Chance to take Cover after being hit. */
         coverChance: 0.08,
         /** How it defends, by weight. */
@@ -457,6 +461,32 @@ export const tuning = {
   },
 
   /**
+   * The Clash: two fully Charged Confringos from opposing Duelists meeting
+   * roughly head-on lock into a beam between their Wands. Both Duelists are
+   * rooted; every pump (R2) pushes the meeting point along the beam toward
+   * the opponent. Reaching their Wand wins: the winner's Confringo hits them
+   * empowered. Nobody winning within `seconds` blows it up.
+   */
+  clash: {
+    /** The blast of a Clash nobody won knocks both Duelists back this many metres, sliding to a stop over `seconds`. */
+    explosion: { knockback: 3, seconds: 0.45 },
+    /** Head-on: one flight at most this many radians off exactly opposite the other (about 34 degrees, generous). */
+    maxAngle: 0.6,
+    /** Each pump pushes the meeting point this share of the beam (Wand to Wand) toward the opponent. */
+    pumpShare: 0.05,
+    /**
+     * Two eligible Confringos lock when their centres come within this many
+     * metres: generous next to the plain meeting of their spheres (their
+     * radii summed), so near misses still Clash.
+     */
+    reach: 1.4,
+    /** The cap: nobody won after this long and it explodes. */
+    seconds: 6,
+    /** Where the meeting point starts, as a share of the beam from one Wand to the other, kept within this range so a late cast is never all but lost. */
+    start: { max: 0.65, min: 0.35 },
+  },
+
+  /**
    * Confringo, the Heavy Spell, and its Charge. Holding the Heavy Spell
    * builds the Charge from 0 to full over `fullSeconds`; releasing casts
    * Confringo with damage and knockback scaled by the Charge (a tap still
@@ -796,6 +826,8 @@ export const tuning = {
   focus: {
     /** Points gained per deed. */
     gain: {
+      /** For winning a Clash. */
+      clashWin: 40,
       /** For each Spell that damages the Duelist (a direct hit or an Incendio Burn), once per Spell. */
       damageTaken: 5,
       /** For each Light Spell the Duelist lands. */

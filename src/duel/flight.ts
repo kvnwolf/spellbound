@@ -1,7 +1,7 @@
 /**
  * Spell flight for one tick: every Spell in the air travels its straight
  * segment, and whatever it meets first along that segment decides its fate:
- * another Spell (both cancel), a Duelist (a hit), Cover, the Arena bounds or
+ * another Spell (both cancel, or lock into a Clash), a Duelist (a hit), Cover, the Arena bounds or
  * the floor. Collisions are swept, so a fast Spell never tunnels through a
  * thin target between two ticks. Pure; the Duel simulation applies outcomes.
  */
@@ -25,6 +25,15 @@ export interface FlightBodies {
   readonly bodyHeight: number;
   /** Radius of a Spell's sphere, which differs by kind (Confringo is a big, slow blast). */
   readonly radiusOf: (spell: SpellState) => number;
+  /**
+   * Which pairs of opposing Spells lock into a Clash instead of cancelling,
+   * and how close (centre to centre, metres) they need to come to do it.
+   * Without it every meeting cancels.
+   */
+  readonly clash?: {
+    readonly reach: number;
+    readonly locks: (a: SpellState, b: SpellState) => boolean;
+  };
 }
 
 export type FlightOutcome =
@@ -42,6 +51,12 @@ export type FlightOutcome =
     }
   | {
       readonly kind: "cancelled";
+      readonly spells: readonly [SpellState, SpellState];
+      readonly position: Point3;
+    }
+  /** Two Spells that met in the air and locked into a Clash; both leave the air. */
+  | {
+      readonly kind: "clashed";
       readonly spells: readonly [SpellState, SpellState];
       readonly position: Point3;
     };
@@ -215,7 +230,7 @@ const firstObstacle = (
   return first;
 };
 
-/** When two opposing Spells meet in the air this tick, if they do. */
+/** When two opposing Spells meet in the air this tick (to cancel, or to Clash), if they do. */
 const meeting = (
   a: SpellState,
   b: SpellState,
@@ -225,6 +240,9 @@ const meeting = (
   if (a.team === b.team) {
     return undefined;
   }
+
+  const touching = bodies.radiusOf(a) + bodies.radiusOf(b);
+  const locks = bodies.clash?.locks(a, b) ?? false;
 
   const at = firstWithin(
     [
@@ -237,7 +255,7 @@ const meeting = (
       (a.velocity.y - b.velocity.y) * seconds,
       (a.velocity.z - b.velocity.z) * seconds,
     ],
-    bodies.radiusOf(a) + bodies.radiusOf(b)
+    locks ? Math.max(bodies.clash?.reach ?? 0, touching) : touching
   );
 
   if (at === undefined) {
@@ -250,7 +268,7 @@ const meeting = (
   return {
     at,
     outcome: {
-      kind: "cancelled",
+      kind: locks ? "clashed" : "cancelled",
       position: {
         x: (pointA.x + pointB.x) / 2,
         y: (pointA.y + pointB.y) / 2,
