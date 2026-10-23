@@ -15,23 +15,52 @@ export const createOverlay = (element: HTMLElement) => {
   const items = document.createElement("ul");
   const hint = document.createElement("p");
   hint.className = "overlay-hint";
-  const action = document.createElement("button");
-  action.className = "overlay-action";
+  // The title's veil over everything: one click anywhere starts the game.
+  const veil = document.createElement("button");
+  const veilLine = document.createElement("span");
+  veil.className = "overlay-veil";
+  veil.append(veilLine);
   // The fan-game disclaimer, at the foot of the title (menu.css).
   const legal = document.createElement("p");
   legal.className = "overlay-legal";
   legal.textContent = text.legal;
-  element.append(heading, body, items, action, hint, legal);
+  element.append(heading, body, items, hint, veil, legal);
   let shown: string | undefined;
+
+  /**
+   * Hands menu.css the height of what this screen lays out under the logo
+   * (the veil's line, on the title), so it can centre the logo and that
+   * together on the screen. The click hint comes and goes on its own: it
+   * hangs below, uncounted.
+   */
+  const measure = () => {
+    const laidOut = [...element.children].filter(
+      (child): child is HTMLElement =>
+        child instanceof HTMLElement &&
+        child.matches("h2, p:not([class]), ul, .overlay-hint") &&
+        child.offsetParent !== null
+    );
+
+    const top = Math.min(...laidOut.map((child) => child.offsetTop));
+
+    const bottom = Math.max(
+      ...laidOut.map((child) => child.offsetTop + child.offsetHeight)
+    );
+
+    const flow = laidOut.length > 0 ? bottom - top : 0;
+    const line = veil.classList.contains("shown") ? veilLine.offsetHeight : 0;
+
+    menu.style.setProperty("--content-height", `${String(flow + line)}px`);
+  };
 
   return {
     hide: () => {
       menu.hidden = true;
       shown = undefined;
     },
-    /** Calls `listener` when the screen's action button is clicked. */
+    /** Calls `listener` when the screen's action (the title's veil) is clicked. */
     onAction: (listener: () => void) => {
-      action.addEventListener("click", listener);
+      veil.addEventListener("click", listener);
     },
     show: (view: ScreenView) => {
       const key = JSON.stringify(view);
@@ -49,8 +78,10 @@ export const createOverlay = (element: HTMLElement) => {
       body.hidden = view.body === undefined;
       hint.textContent = view.hint ?? "";
       hint.hidden = view.hint === undefined;
-      action.textContent = view.action ?? "";
-      action.hidden = view.action === undefined;
+      // The veil keeps its words while it fades out.
+      veilLine.textContent = view.action ?? veilLine.textContent;
+      veil.classList.toggle("shown", view.action !== undefined);
+      veil.disabled = view.action === undefined;
       items.replaceChildren(
         ...(view.items ?? []).map((item) => {
           const entry = document.createElement("li");
@@ -65,6 +96,7 @@ export const createOverlay = (element: HTMLElement) => {
       items.hidden = view.items === undefined;
       element.hidden = false;
       menu.hidden = false;
+      measure();
     },
   };
 };

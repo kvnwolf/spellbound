@@ -19,8 +19,16 @@
    * it, so the longest menu still fits under it.
    */
   --logo-width: min(40rem, 86vw, 72vh);
-  --logo-top: clamp(1rem, 8vh, 7rem);
   --logo-height: calc(var(--logo-width) / 4);
+  /*
+   * The logo and the screen's content under it centred together: overlay.ts
+   * measures the content (loading has none yet, the prompt's estimate).
+   */
+  --content-height: 4.5rem;
+  --logo-top: max(
+    clamp(1rem, 4vh, 3rem),
+    calc(50vh - (var(--logo-height) + 1.25rem + var(--content-height)) / 2)
+  );
   /* The Clash point, the flare's centre (118 of the logo's 160 units down). */
   --clash-y: calc(var(--logo-top) + var(--logo-height) * 0.7375);
   /* The beams' last stretch of growth (logo.css) before they meet. */
@@ -68,18 +76,6 @@
 
 #menu[hidden] {
   display: none;
-}
-
-/*
- * Loading and the connect prompt are the title alone: the logo and the
- * prompt under it centred together on the screen.
- */
-#menu:is(
-  [data-intro="loading"],
-  :has(#overlay:is([data-screen="title"], [data-screen="connect"]))
-) {
-  /* ponytail: the prompt's height (two short lines) is estimated, 4.5rem. */
-  --logo-top: calc(50vh - (var(--logo-height) + 1.25rem + 4.5rem) / 2);
 }
 
 /* Registered so the glint can travel round the rune. */
@@ -367,6 +363,7 @@
 /* The fan-game disclaimer: small, at the foot of the title, fading out after it. */
 #overlay .overlay-legal {
   position: fixed;
+  z-index: 3;
   right: 0;
   bottom: calc(clamp(0.5rem, 1.6vmin, 1.25rem) + 1.25rem);
   left: 0;
@@ -386,29 +383,55 @@
   opacity: 0;
 }
 
-/* The title's one button: gilt, like a highlighted menu entry. */
-#overlay .overlay-action {
-  margin-top: 0.75rem;
-  padding: 0.7rem 2.6rem;
+/*
+ * The title's veil over the whole screen: the room dimmed, one line under
+ * the logo; a click anywhere starts and it fades away.
+ */
+#overlay .overlay-veil {
+  position: fixed;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: calc(var(--logo-top) + var(--logo-height) + 1.25rem) 1rem 0;
   color: var(--gold);
-  border: 1px solid rgb(216 180 106 / 75%);
-  background: var(--ink);
-  box-shadow: 0 0 18px rgb(216 180 106 / 18%);
+  border: none;
+  background: rgb(4 6 14 / 45%);
   font: inherit;
   font-size: clamp(1.1rem, 2.4vw, 1.5rem);
   letter-spacing: 0.18em;
-  text-shadow: 0 0 12px rgb(216 180 106 / 45%);
+  text-align: center;
+  text-shadow: 0 0 14px rgb(216 180 106 / 55%);
   text-transform: uppercase;
+  visibility: hidden;
+  opacity: 0;
   cursor: pointer;
   transition:
-    box-shadow 160ms ease-out,
-    background 160ms ease-out;
+    opacity 600ms ease-out,
+    visibility 0s 600ms;
 }
 
-#overlay .overlay-action:is(:hover, :focus-visible) {
+#overlay .overlay-veil.shown {
+  visibility: visible;
+  opacity: 1;
+  transition: opacity 600ms ease-out;
+  animation: menu-veil-breathe 2.4s ease-in-out infinite;
+}
+
+#menu[data-intro="loading"] #overlay .overlay-veil {
+  visibility: hidden;
+}
+
+#overlay .overlay-veil:focus-visible {
   outline: none;
-  background: rgb(216 180 106 / 14%);
-  box-shadow: 0 0 28px rgb(216 180 106 / 40%);
+}
+
+/* The line breathes, asking to be clicked. */
+@keyframes menu-veil-breathe {
+  50% {
+    color: rgb(239 228 200 / 85%);
+  }
 }
 
 /*
@@ -431,7 +454,7 @@
 
 #menu[data-intro="clash"]
   #overlay
-  > :is(ul, .overlay-action, .overlay-hint, .overlay-effects) {
+  > :is(ul, .overlay-veil, .overlay-hint, .overlay-effects) {
   animation-delay: calc(var(--clash-delay) + 420ms);
 }
 

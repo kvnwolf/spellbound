@@ -26,7 +26,7 @@ export interface ScreenView {
     readonly disabled?: true;
   }[];
   readonly hint?: string;
-  /** A button to click: the title's start. */
+  /** A click anywhere does this (the title's start), said over a veil. */
   readonly action?: string;
 }
 
