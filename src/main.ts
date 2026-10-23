@@ -786,7 +786,6 @@ const start = async () => {
     // reallocate the frame's targets.
     if (hasArea && (view === undefined || resized)) {
       frame.render();
-
       resized = false;
     }
 
