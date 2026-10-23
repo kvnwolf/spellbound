@@ -945,7 +945,7 @@ export const createDuel = (config: DuelConfig): Duel => {
     spell.kind === "depulso" ? 0 : tuning[spell.kind].radius;
 
   const tickSeconds = 1 / tuning.tickRate;
-  const stride = tuning.duelist.walkSpeed * tickSeconds;
+  const stride = () => tuning.duelist.walkSpeed * tickSeconds;
   const ticksOf = (seconds: number) => Math.round(seconds * tuning.tickRate);
 
   const bookkeeping = new Map<DuelistId, Bookkeeping>();
@@ -3315,7 +3315,7 @@ export const createDuel = (config: DuelConfig): Duel => {
     }
 
     const move = clampLength(intent.move, 1);
-    const speed = stride * tuning.potions.drink.moveScale * swiftScale(book);
+    const speed = stride() * tuning.potions.drink.moveScale * swiftScale(book);
 
     const stepTo = walk(
       self.position,
@@ -3504,8 +3504,8 @@ export const createDuel = (config: DuelConfig): Duel => {
       // Charging is a commitment: the Duelist creeps (and cannot sprint).
       const speed =
         (book.chargeTicks > 0
-          ? stride * confringo.chargeMoveScale
-          : stride * guard.pace) * swiftScale(book);
+          ? stride() * confringo.chargeMoveScale
+          : stride() * guard.pace) * swiftScale(book);
 
       // A Dodge dashes along its own line at once; a walk eases toward
       // where the stick asks.

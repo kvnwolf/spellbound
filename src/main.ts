@@ -794,3 +794,7 @@ const start = async () => {
 };
 
 void start();
+
+if (import.meta.env.DEV) {
+  void import("./tuning-panel");
+}

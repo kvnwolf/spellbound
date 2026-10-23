@@ -1155,7 +1155,9 @@ export const createDuelistView = (
     pelvis.getWorldPosition(lift);
     const above = lift.y - object.position.y - pelvisMean;
     lift.y -= (1 - gait.bob) * above * share;
-    lift.y += (Math.min(raise / weights, gait.maxRaise) + gait.lift) * share;
+    lift.y +=
+      Math.min(raise / weights, gait.maxRaise) * share +
+      gait.lift * runningShare();
     pelvis.parent?.worldToLocal(lift);
     pelvis.position.copy(lift);
     pelvis.updateMatrixWorld(true);

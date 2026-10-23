@@ -1027,7 +1027,7 @@ describe("AI Special Spells", () => {
             difficulty,
             gap: 5,
             player: chargingInClose(),
-            seconds: 9,
+            seconds: 11,
             seed,
             settings: onlyDepulso,
             sturdy: true,

@@ -749,7 +749,7 @@ export const tuning = {
       /** Stamina drained every second spent sprinting (only while moving). */
       drain: 5,
       /** Running speed, as a multiple of the walking speed. */
-      speedScale: 2,
+      speedScale: 2.85,
     },
     stamina: {
       max: 100,
@@ -1064,7 +1064,7 @@ export const tuning = {
         rim: "#ffb36b",
       },
     },
-    walkSpeed: 3,
+    walkSpeed: 2.1,
     /**
      * The visible Wand and the right arm that holds it. At rest, walking or
      * running the arm hangs with the clips, the Wand held low. It rises (by
