@@ -6,6 +6,17 @@ export interface Vec2 {
   readonly y: number;
 }
 
+/**
+ * The Spell Wheel this tick: `held` while R2 holds it open, and `pick`, where
+ * the right stick points (x right, y up; centred picks nothing). The
+ * simulation reads it over time: releasing casts the Special Spell picked,
+ * releasing with the stick centred cancels.
+ */
+export interface WheelIntent {
+  readonly held: boolean;
+  readonly pick: Vec2;
+}
+
 /** A Lock-on Target switch: to the next opponent on the left (-1) or right (1), or none (0). */
 export type TargetSwitch = -1 | 0 | 1;
 
@@ -60,6 +71,8 @@ export interface Intent {
   readonly shield: boolean;
   /** The sprint button is down this tick: sprinting lasts while it is held and Stamina lasts. */
   readonly sprint: boolean;
+  /** The Spell Wheel, held open with a pick, or closed. */
+  readonly spellWheel: WheelIntent;
 }
 
 /** The Intent of a Controller that does nothing. */
@@ -72,6 +85,7 @@ export const idleIntent: Intent = {
   look: { pitch: 0, yaw: 0 },
   move: { x: 0, y: 0 },
   shield: false,
+  spellWheel: { held: false, pick: { x: 0, y: 0 } },
   sprint: false,
   switchTarget: 0,
 };

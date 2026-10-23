@@ -368,6 +368,29 @@ export const tuning = {
   },
 
   /**
+   * Focus: the three-segment meter a Duelist builds through skilful play and
+   * spends on Special Spells. It starts empty every Round and never decays.
+   * Points; a Special Spell costs whole segments.
+   */
+  focus: {
+    /** Points gained per deed. */
+    gain: {
+      /** For each Spell that damages the Duelist (a direct hit or an Incendio Burn), once per Spell. */
+      damageTaken: 5,
+      /** For each Light Spell the Duelist lands. */
+      lightSpellHit: 15,
+      /** For each Parry. */
+      parry: 30,
+      /** For each Perfect Dodge. */
+      perfectDodge: 20,
+    },
+    /** The full meter: three segments. */
+    max: 99,
+    /** Points per segment. */
+    segment: 33,
+  },
+
+  /**
    * DualSense haptics. Rumble pulses start at these motor strengths (0 to 1;
    * the left motor is the heavy one, the right the light one) and fade out
    * over `seconds`. Colours are 0-255 RGB for the lightbar.
@@ -420,6 +443,28 @@ export const tuning = {
     staminaShortSeconds: 0.35,
   },
 
+  /**
+   * Incendio, a Special Spell: a fireball that explodes on impact (a
+   * Duelist, a Shield, another Spell, Cover or the floor). The direct hit
+   * deals `damage` (a Shield blocks it); every opponent within the blast is
+   * left with a Burn, which a Shield does not stop.
+   */
+  incendio: {
+    /** Everyone whose body is within this many metres of the explosion is caught in the blast. */
+    blastRadius: 2.4,
+    burn: { damagePerSecond: 5, seconds: 3 },
+    cooldownSeconds: 7,
+    /** Damage of the direct hit, Health points. */
+    damage: 18,
+    /** The projectile is a sphere of this radius for collisions. */
+    radius: 0.26,
+    /** After the cast, no Light Spell can follow for this long. */
+    recoverySeconds: 0.35,
+    /** Focus segments it costs. */
+    segments: 2,
+    speed: 19,
+  },
+
   input: {
     /**
      * Flicking the right stick switches the Lock-on Target left or right: the
@@ -459,6 +504,15 @@ export const tuning = {
        */
       springFrequency: 30,
     },
+    /**
+     * R2 holds the Spell Wheel open: it opens once the trigger travels past
+     * `open` and closes once it comes back under `close` (0 to 1), so a
+     * trigger resting near the line never flickers it. While it is open the
+     * right stick picks a slice instead of turning the camera, and once it
+     * closes the stick turns the camera again only after coming back under
+     * `stickRest` (so letting go never flings the view).
+     */
+    spellWheel: { close: 0.15, open: 0.35, stickRest: 0.3 },
     /** Stick deflection below this radius reads as centred. */
     stickDeadZone: 0.12,
     /** Trigger travel below this value reads as released. */
@@ -526,6 +580,21 @@ export const tuning = {
     stickPress: 0.6,
     /** It must come back inside this before it can step again: one tilt, one step. */
     stickRelease: 0.35,
+  },
+
+  /**
+   * Petrificus Totalus, a Special Spell: the Duelist it hits is Petrified,
+   * frozen in place and unable to act, for `petrifiedSeconds`. No damage.
+   */
+  petrificus: {
+    cooldownSeconds: 9,
+    petrifiedSeconds: 1.5,
+    radius: 0.2,
+    /** After the cast, no Light Spell can follow for this long. */
+    recoverySeconds: 0.35,
+    /** Focus segments it costs. */
+    segments: 2,
+    speed: 24,
   },
 
   /**
@@ -612,6 +681,14 @@ export const tuning = {
     /** The Duel's victory or defeat call-out plays this long before the result screen. */
     resultDelaySeconds: 3,
   },
+
+  /**
+   * The Spell Wheel, as the simulation reads it: the stick picks the slice it
+   * points at once pushed past `pickDeflection`; back at the centre for
+   * longer than `cancelGraceSeconds` it picks nothing, so releasing R2 then
+   * cancels. The grace forgives a stick let go a moment before the trigger.
+   */
+  spellWheel: { cancelGraceSeconds: 0.1, pickDeflection: 0.5 },
 
   /** Stupefy, the Light Spell. Damage is in Health points. */
   stupefy: {

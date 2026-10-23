@@ -91,6 +91,10 @@ interface Palette {
 const palettes: Record<SpellKind, Palette> = {
   /** Fire: a deep orange with a pale gold heart. */
   confringo: { hot: new Color("#ffe2a0"), main: new Color("#ff6a12") },
+  /** A fireball: blood-orange flame round a pale yellow heart. */
+  incendio: { hot: new Color("#fff1b8"), main: new Color("#ff3d0a") },
+  /** A cold, pale-blue binding light. */
+  petrificus: { hot: new Color("#eef4ff"), main: new Color("#5f8fff") },
   /** A red bolt with a white-hot heart. */
   stupefy: { hot: new Color("#ffd2c4"), main: new Color("#ff2a1f") },
 };
@@ -119,6 +123,18 @@ const looks: Record<SpellKind, BoltLook> = {
     glow: { intensity: 2.6, size: 1.7 },
     light: { distance: 10, intensity: 16 },
     trail: { intensity: 2.2, length: 3.4, width: 0.17 },
+  },
+  incendio: {
+    core: { intensity: 8, radius: 0.15 },
+    glow: { intensity: 3, size: 1.5 },
+    light: { distance: 10, intensity: 18 },
+    trail: { intensity: 2.6, length: 3, width: 0.16 },
+  },
+  petrificus: {
+    core: { intensity: 7, radius: 0.09 },
+    glow: { intensity: 2.6, size: 1 },
+    light: { distance: 8, intensity: 9 },
+    trail: { intensity: 2.8, length: 3.4, width: 0.06 },
   },
   stupefy: {
     core: { intensity: 6, radius: 0.08 },
@@ -525,6 +541,10 @@ const sizeOf = (spell: SpellState) => {
     return spell.strong ? strongScale : 1;
   }
 
+  if (spell.kind !== "confringo") {
+    return 1;
+  }
+
   const charged = confringoTapScale + (1 - confringoTapScale) * spell.charge;
 
   return spell.empowered ? charged * empoweredScale : charged;
@@ -615,6 +635,8 @@ export const createSpellVfx = (): SpellVfx => {
 
   const pools: Record<SpellKind, ReturnType<typeof createBoltPool>> = {
     confringo: createBoltPool("confringo", object),
+    incendio: createBoltPool("incendio", object),
+    petrificus: createBoltPool("petrificus", object),
     stupefy: createBoltPool("stupefy", object),
   };
 

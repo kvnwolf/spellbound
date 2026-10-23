@@ -63,6 +63,14 @@ const holding = (axes: readonly [number, number, number, number]) => {
   };
 };
 
+/** Pulls R2 (button 7) to `travel`, as the Gamepad API reports an analog trigger. */
+const pull = (
+  pad: { buttons: GamepadLike["buttons"][number][] },
+  travel: number
+) => {
+  pad.buttons[7] = { pressed: travel > 0, value: travel };
+};
+
 const settle = (tick: () => Intent) => {
   let intent = tick();
 
@@ -305,8 +313,77 @@ describe(createHumanController, () => {
       look: { pitch: 0, yaw: 0 },
       move: { x: 0, y: 0 },
       shield: false,
+      spellWheel: { held: false, pick: { x: 0, y: 0 } },
       sprint: false,
       switchTarget: 0,
+    });
+  });
+
+  describe("R2 and the Spell Wheel", () => {
+    const { close, open } = tuning.input.spellWheel;
+
+    it("holds the wheel open while R2 is pulled, picking with the right stick", () => {
+      const { pad, tick } = holding([0, 0, 0, 0]);
+
+      const before = tick();
+      pull(pad, 1);
+      pad.axes = [0, 0, -1, 0];
+      const picking = tick();
+      pull(pad, 0);
+      const released = tick();
+
+      expect(before.spellWheel.held).toBeFalsy();
+      expect(picking.spellWheel.held).toBeTruthy();
+      expect(picking.spellWheel.pick.x).toBeCloseTo(-1);
+      expect(picking.spellWheel.pick.y).toBeCloseTo(0);
+      expect(released.spellWheel.held).toBeFalsy();
+    });
+
+    it("opens past a light pull and only closes once R2 is nearly let go", () => {
+      const { pad, tick } = holding([0, 0, 0, 0]);
+
+      pull(pad, open * 0.8);
+      const light = tick();
+      pull(pad, open * 1.2);
+      const opened = tick();
+      pull(pad, (open + close) / 2);
+      const easing = tick();
+      pull(pad, close * 0.5);
+      const closed = tick();
+
+      expect(
+        [light, opened, easing, closed].map((each) => each.spellWheel.held)
+      ).toStrictEqual([false, true, true, false]);
+    });
+
+    it("never turns the camera or switches Target while the wheel is open", () => {
+      const { pad, ticks } = holding([0, 0, 0, 0]);
+
+      ticks(2);
+      pull(pad, 1);
+      pad.axes = [0, 0, 1, 0];
+      const wheelOpen = ticks(ticksOf(0.5));
+
+      expect(wheelOpen.every((each) => each.look.yaw === 0)).toBeTruthy();
+      expect(wheelOpen.every((each) => each.look.pitch === 0)).toBeTruthy();
+      expect(wheelOpen.every((each) => each.switchTarget === 0)).toBeTruthy();
+    });
+
+    it("leaves the camera still after the wheel closes until the stick comes back to the centre", () => {
+      const { pad, ticks } = holding([0, 0, 0, 0]);
+
+      pull(pad, 1);
+      pad.axes = [0, 0, 1, 0];
+      ticks(10);
+      pull(pad, 0);
+      const stillPushed = ticks(10);
+      pad.axes = [0, 0, 0, 0];
+      ticks(2);
+      pad.axes = [0, 0, 1, 0];
+      const pushedAgain = ticks(5);
+
+      expect(stillPushed.every((each) => each.look.yaw === 0)).toBeTruthy();
+      expect(pushedAgain.at(-1)?.look.yaw).toBeGreaterThan(0);
     });
   });
 });

@@ -32,7 +32,17 @@ import {
 } from "./geometry";
 import type { Aim, GroundPoint, Point3 } from "./geometry";
 import { idleIntent } from "./intent";
-import type { Intent, Vec2 } from "./intent";
+import type { Intent, Vec2, WheelIntent } from "./intent";
+import {
+  focusCost,
+  readiness,
+  sliceAt,
+  specialSpellKinds,
+  spellWheelSlices,
+} from "./spell-wheel";
+import type { SpecialSpellKind } from "./spell-wheel";
+
+export type { SpecialSpellKind } from "./spell-wheel";
 
 export type DuelistId = string;
 
@@ -126,10 +136,31 @@ export interface DuelistState {
   readonly shielding: boolean;
   /** Running at sprint speed this tick, draining Stamina. */
   readonly sprinting: boolean;
+  /**
+   * Focus points, between 0 and `tuning.focus.max` (three segments of
+   * `tuning.focus.segment`). Built by landing Light Spells, Parrying, Perfect
+   * Dodging and taking damage; spent on Special Spells. Empty every Round,
+   * and it never decays.
+   */
+  readonly focus: number;
+  /** Seconds left before each Special Spell can be cast again; 0 when ready. */
+  readonly cooldowns: Readonly<Record<SpecialSpellKind, number>>;
+  /**
+   * The Spell Wheel: open while R2 holds it, with the Special Spell the right
+   * stick picks (null with the stick centred, or on a locked slice).
+   */
+  readonly spellWheel: {
+    readonly open: boolean;
+    readonly selected: SpecialSpellKind | null;
+  };
+  /** Seconds left of an Incendio Burn, taking damage over time; 0 when not burning. */
+  readonly burnSeconds: number;
+  /** Seconds left Petrified by Petrificus Totalus, frozen and unable to act; 0 when not. */
+  readonly petrifiedSeconds: number;
 }
 
-/** Stupefy is the Light Spell; Confringo the Heavy Spell. */
-export type SpellKind = "confringo" | "stupefy";
+/** Stupefy is the Light Spell; Confringo the Heavy Spell; the rest are Special Spells. */
+export type SpellKind = "confringo" | "stupefy" | SpecialSpellKind;
 
 /** A Spell in flight. Ids are unique for the whole Duel, so views can track one across ticks. */
 export interface SpellState {
@@ -294,6 +325,17 @@ export type DuelEvent =
       readonly spell: SpellState;
       readonly reflected: SpellState;
       readonly position: Point3;
+    }
+  /**
+   * An Incendio exploded at `position` (on a Duelist, a Shield, another
+   * Spell, Cover or the floor), leaving every opponent in the blast, Shield
+   * or not, with a Burn: `burned`, by id.
+   */
+  | {
+      readonly type: "explosion";
+      readonly spell: SpellState;
+      readonly position: Point3;
+      readonly burned: readonly DuelistId[];
     }
   /** A defence was asked for without enough Stamina, and refused. */
   | {
@@ -492,23 +534,42 @@ interface Bookkeeping {
   verticalSpeed: number;
   /** Ticks to wait before Stamina regenerates again. */
   regenTicks: number;
+  /** R2 held the Spell Wheel open last tick: letting go of it casts. */
+  wheelHeld: boolean;
+  /** The Special Spell the stick picks on the open wheel; null for none. */
+  wheelPick: SpecialSpellKind | null;
+  /** Ticks the stick has rested at the centre of the open wheel. */
+  wheelRestTicks: number;
+  /** Ticks left of each Special Spell's Cooldown. */
+  cooldownTicks: Record<SpecialSpellKind, number>;
+  /** Ticks left of an Incendio Burn. */
+  burnTicks: number;
+  /** Ticks left Petrified. */
+  petrifiedTicks: number;
 }
 
-/** What a Duelist lets go of this tick: a Light Spell, or a Heavy Spell after Charging for `chargeSeconds`. */
+/**
+ * What a Duelist lets go of this tick: a Light Spell, a Heavy Spell after
+ * Charging for `chargeSeconds`, or a Special Spell from the Spell Wheel.
+ */
 type Release =
   | { readonly kind: "stupefy" }
-  | { readonly kind: "confringo"; readonly chargeSeconds: number };
+  | { readonly kind: "confringo"; readonly chargeSeconds: number }
+  | { readonly kind: SpecialSpellKind };
 
 const freshBookkeeping = (): Bookkeeping => ({
+  burnTicks: 0,
   buttons: { dodge: false, jump: false, shield: false, sprint: false },
   chain: 0,
   chargeTicks: 0,
+  cooldownTicks: { incendio: 0, petrificus: 0 },
   dodgeStep: { x: 0, z: 0 },
   dodgeTicks: 0,
   heavyHeld: false,
   held: false,
   hiddenTicks: 0,
   knockback: undefined,
+  petrifiedTicks: 0,
   queued: false,
   recentreTicks: 0,
   recoveryTicks: 0,
@@ -519,9 +580,28 @@ const freshBookkeeping = (): Bookkeeping => ({
   staggerTicks: 0,
   ticksSinceCast: Number.POSITIVE_INFINITY,
   verticalSpeed: 0,
+  wheelHeld: false,
+  wheelPick: null,
+  wheelRestTicks: 0,
 });
 
 const noNudge: Aim = { pitch: 0, yaw: 0 };
+
+const closedWheel: DuelistState["spellWheel"] = { open: false, selected: null };
+
+const wheelLetGo: WheelIntent = { held: false, pick: { x: 0, y: 0 } };
+
+/** A Special Spell leaving the Wand this tick, and the Focus it costs. */
+interface SpecialCast {
+  readonly kind: SpecialSpellKind;
+  readonly cost: number;
+}
+
+/** The Spell Wheel after one tick: what the snapshot shows, and the Special Spell let go of, if any. */
+interface WheelRead {
+  readonly state: DuelistState["spellWheel"];
+  readonly released: SpecialSpellKind | null;
+}
 
 /** Where a Duelist's Spells leave the Wand. */
 export const wandTip = (self: DuelistState, tuning: Tuning): Point3 => {
@@ -572,11 +652,10 @@ const dodgeHeading = (
 export const createDuel = (config: DuelConfig): Duel => {
   const { arena, tuning } = config;
   const { bodyRadius } = tuning.duelist;
-  const { confringo, round: rounds, stupefy } = tuning;
+  const { confringo, incendio, petrificus, round: rounds, stupefy } = tuning;
 
   /** The radius of a Spell's sphere, for collisions. */
-  const spellRadius = (spell: SpellState) =>
-    spell.kind === "confringo" ? confringo.radius : stupefy.radius;
+  const spellRadius = (spell: SpellState) => tuning[spell.kind].radius;
 
   const tickSeconds = 1 / tuning.tickRate;
   const stride = tuning.duelist.walkSpeed * tickSeconds;
@@ -719,17 +798,23 @@ export const createDuel = (config: DuelConfig): Duel => {
     const spawned: DuelistState[] = config.duelists.map((setup) => ({
       aim: { pitch: tuning.aim.pitch.rest, yaw: 0 },
       aimPoint: { x: setup.spawn.x, y: 0, z: setup.spawn.z },
+      burnSeconds: 0,
       chargeSeconds: 0,
+      cooldowns: { incendio: 0, petrificus: 0 },
       dodgeSeconds: 0,
       elevation: 0,
       facing: defaultForward,
+      // Focus starts empty every Round.
+      focus: 0,
       health: tuning.duelist.health,
       id: setup.id,
       knockbackSeconds: 0,
       knockedOut: false,
       lockNudge: noNudge,
+      petrifiedSeconds: 0,
       position: setup.spawn,
       shielding: false,
+      spellWheel: closedWheel,
       sprinting: false,
       staggerSeconds: 0,
       stamina: tuning.defence.stamina.max,
@@ -1522,6 +1607,16 @@ export const createDuel = (config: DuelConfig): Duel => {
       };
     }
 
+    // Incendio's direct hit; its Burn comes from the explosion. Petrificus
+    // Totalus deals no damage: it Petrifies.
+    if (spell.kind === "incendio") {
+      return { amount: incendio.damage, knockback: 0 };
+    }
+
+    if (spell.kind === "petrificus") {
+      return { amount: 0, knockback: 0 };
+    }
+
     const empower = spell.empowered ? confringo.perfectScale : 1;
 
     const scaled = (range: { readonly full: number; readonly min: number }) =>
@@ -1560,6 +1655,53 @@ export const createDuel = (config: DuelConfig): Duel => {
   };
 
   /**
+   * Whether a Duelist's body (a cylinder, lifted while they jump) reaches
+   * within the blast's radius of `centre`: a jump can clear a blast on the floor.
+   */
+  const inBlast = (self: DuelistState, centre: Point3) => {
+    const across = Math.max(
+      distanceBetween(self.position, { x: centre.x, z: centre.z }) - bodyRadius,
+      0
+    );
+
+    const feet = self.elevation;
+    const head = feet + tuning.duelist.height;
+    const up = Math.max(feet - centre.y, centre.y - head, 0);
+
+    return Math.hypot(across, up) <= incendio.blastRadius;
+  };
+
+  /**
+   * An Incendio explosion: every opponent of its caster standing in the
+   * blast (not Dodging, and only while the Round is fought) is left with a
+   * Burn, whether or not their Shield stopped the fireball itself. A fresh
+   * Burn restarts its clock; Burns do not stack.
+   */
+  const explode = (draft: Draft, spell: SpellState, position: Point3) => {
+    const caught =
+      draft.round.phase === "fighting"
+        ? draft.duelists.filter(
+            (each) =>
+              each.team !== spell.team &&
+              !each.knockedOut &&
+              each.dodgeSeconds === 0 &&
+              inBlast(each, position)
+          )
+        : [];
+
+    for (const each of caught) {
+      books(each.id).burnTicks = ticksOf(incendio.burn.seconds);
+    }
+
+    draft.events.push({
+      burned: caught.map((each) => each.id),
+      position,
+      spell,
+      type: "explosion",
+    });
+  };
+
+  /**
    * Spells in flight travel against where everyone stood at the start of the
    * tick. Duelists can only be hit while the Round is being fought, so a
    * Spell still in the air after a Knockout flies over the fallen. Returns
@@ -1594,15 +1736,12 @@ export const createDuel = (config: DuelConfig): Duel => {
           : undefined;
 
       // A Shield in the way blocks or Parries it instead.
-      if (
-        outcome.kind === "hit" &&
-        struck &&
-        meetShield(struck, outcome.spell, outcome.position, draft) !== "hit"
-      ) {
-        continue;
-      }
+      const met =
+        outcome.kind === "hit" && struck
+          ? meetShield(struck, outcome.spell, outcome.position, draft)
+          : "hit";
 
-      if (outcome.kind === "hit") {
+      if (outcome.kind === "hit" && met === "hit") {
         const { spell, targetId } = outcome;
         const { amount, knockback } = impactOf(spell);
         damage.set(targetId, (damage.get(targetId) ?? 0) + amount);
@@ -1610,6 +1749,11 @@ export const createDuel = (config: DuelConfig): Duel => {
         // The strong Stupefy Staggers: no moving or casting for a moment.
         if (spell.strong) {
           books(targetId).staggerTicks = ticksOf(stupefy.staggerSeconds);
+        }
+
+        // Petrificus Totalus freezes the Duelist it hits.
+        if (spell.kind === "petrificus") {
+          books(targetId).petrifiedTicks = ticksOf(petrificus.petrifiedSeconds);
         }
 
         // Confringo knocks the Duelist it hits back along its flight.
@@ -1637,12 +1781,48 @@ export const createDuel = (config: DuelConfig): Duel => {
         });
       } else if (outcome.kind === "stopped") {
         draft.events.push({ ...outcome, type: "spell-stopped" });
-      } else {
+      } else if (outcome.kind === "cancelled") {
         draft.events.push({
           position: outcome.position,
           spells: outcome.spells,
           type: "spells-cancelled",
         });
+      }
+
+      // Incendio explodes wherever it ends, Shield or not; only a Parry,
+      // which sends it back, keeps it flying.
+      const ended =
+        outcome.kind === "cancelled" ? outcome.spells : [outcome.spell];
+
+      for (const spell of ended) {
+        if (spell.kind === "incendio" && met !== "parried") {
+          explode(draft, spell, outcome.position);
+        }
+      }
+    }
+
+    return damage;
+  };
+
+  /**
+   * One tick of every Burn while the Round is fought: damage over time,
+   * added to `damage`.
+   */
+  const burn = (draft: Draft, damage: Map<DuelistId, number>) => {
+    if (draft.round.phase !== "fighting") {
+      return damage;
+    }
+
+    for (const self of draft.duelists) {
+      const book = books(self.id);
+
+      if (book.burnTicks > 0 && !self.knockedOut) {
+        book.burnTicks -= 1;
+        damage.set(
+          self.id,
+          (damage.get(self.id) ?? 0) +
+            incendio.burn.damagePerSecond * tickSeconds
+        );
       }
     }
 
@@ -1840,6 +2020,106 @@ export const createDuel = (config: DuelConfig): Duel => {
   };
 
   /**
+   * The Spell Wheel for one tick: while R2 holds it open, the stick picks
+   * the slice it points at (a locked slice picks nothing), and once it has
+   * rested at the centre for longer than the grace, nothing is picked.
+   * Letting go of R2 returns what was picked, to be cast; with nothing
+   * picked, letting go cancels.
+   */
+  const readWheel = (book: Bookkeeping, wheel: WheelIntent): WheelRead => {
+    if (!wheel.held) {
+      const released = book.wheelHeld ? book.wheelPick : null;
+      book.wheelHeld = false;
+      book.wheelPick = null;
+      book.wheelRestTicks = 0;
+
+      return { released, state: closedWheel };
+    }
+
+    const slice = sliceAt(wheel.pick, tuning.spellWheel.pickDeflection);
+
+    if (slice === undefined) {
+      book.wheelRestTicks += 1;
+
+      if (book.wheelRestTicks > ticksOf(tuning.spellWheel.cancelGraceSeconds)) {
+        book.wheelPick = null;
+      }
+    } else {
+      book.wheelRestTicks = 0;
+      book.wheelPick = spellWheelSlices[slice] ?? null;
+    }
+
+    book.wheelHeld = true;
+
+    return { released: null, state: { open: true, selected: book.wheelPick } };
+  };
+
+  /** The Special Spells' Cooldowns as the snapshot shows them, in seconds. */
+  const cooldownsOf = (book: Bookkeeping) => ({
+    incendio: book.cooldownTicks.incendio * tickSeconds,
+    petrificus: book.cooldownTicks.petrificus * tickSeconds,
+  });
+
+  /**
+   * Whether a Special Spell let go of on the wheel leaves the Wand: only on
+   * the floor, free to cast (not Dodging or behind the Shield), not in the
+   * middle of a Charge, with the Focus to pay for it and off Cooldown.
+   */
+  const canCastSpecial = (
+    self: DuelistState,
+    book: Bookkeeping,
+    guard: Guard,
+    kind: SpecialSpellKind
+  ) =>
+    guard.canCast &&
+    !guard.airborne &&
+    book.chargeTicks === 0 &&
+    readiness(
+      kind,
+      { cooldowns: cooldownsOf(book), focus: self.focus },
+      tuning
+    ) === "ready";
+
+  /**
+   * The Special Spell a Duelist free to act casts this tick, if the wheel
+   * released one they can cast, with the Focus it costs. Its Cooldown starts
+   * as it leaves.
+   */
+  const specialOf = (
+    self: DuelistState,
+    book: Bookkeeping,
+    guard: Guard,
+    released: SpecialSpellKind | null
+  ): SpecialCast | undefined => {
+    if (released === null || !canCastSpecial(self, book, guard, released)) {
+      return undefined;
+    }
+
+    book.cooldownTicks[released] = ticksOf(tuning[released].cooldownSeconds);
+
+    return { cost: focusCost(released, tuning), kind: released };
+  };
+
+  /** Whether a standing Duelist is free to act: not Staggered, Petrified or knocked back. */
+  const free = (self: DuelistState, book: Bookkeeping) =>
+    !self.knockedOut &&
+    book.staggerTicks === 0 &&
+    book.petrifiedTicks === 0 &&
+    book.knockback === undefined;
+
+  /** One tick off every per-Duelist timer: recovery, Stagger, Petrified and the Cooldowns. */
+  const countDown = (book: Bookkeeping) => {
+    book.recoveryTicks = Math.max(book.recoveryTicks - 1, 0);
+    book.staggerTicks = Math.max(book.staggerTicks - 1, 0);
+    book.petrifiedTicks = Math.max(book.petrifiedTicks - 1, 0);
+    book.ticksSinceCast += 1;
+
+    for (const kind of specialSpellKinds) {
+      book.cooldownTicks[kind] = Math.max(book.cooldownTicks[kind] - 1, 0);
+    }
+  };
+
+  /**
    * Duelists aim, move and decide to cast. Looking around works during the
    * intro's countdown and while Staggered; moving, Charging and casting only
    * while fighting, standing, not Staggered and not knocked back. Anything
@@ -1866,17 +2146,24 @@ export const createDuel = (config: DuelConfig): Duel => {
         ? steer(standing, intent, draft.duelists, draft.events)
         : standing;
 
-      const canAct =
-        phase === "fighting" &&
-        !self.knockedOut &&
-        book.staggerTicks === 0 &&
-        book.knockback === undefined;
+      const canAct = phase === "fighting" && free(self, book);
+
+      // The wheel can be held open whenever the Duelist can look around;
+      // what it releases is only cast if they can act right now.
+      const wheel = readWheel(book, canLook ? intent.spellWheel : wheelLetGo);
 
       book.held = intent.lightSpell;
       book.heavyHeld = intent.heavySpell;
-      book.recoveryTicks = Math.max(book.recoveryTicks - 1, 0);
-      book.staggerTicks = Math.max(book.staggerTicks - 1, 0);
-      book.ticksSinceCast += 1;
+      countDown(book);
+
+      /** What the snapshot shows of the wheel, Cooldowns, Burn and Petrified, whatever the Duelist did. */
+      const status = (state: DuelistState): DuelistState => ({
+        ...state,
+        burnSeconds: book.burnTicks * tickSeconds,
+        cooldowns: cooldownsOf(book),
+        petrifiedSeconds: book.petrifiedTicks * tickSeconds,
+        spellWheel: wheel.state,
+      });
 
       const target =
         self.targetId === null ? undefined : byId.get(self.targetId);
@@ -1895,16 +2182,27 @@ export const createDuel = (config: DuelConfig): Duel => {
       const obstacles = [...arena.cover, ...arena.obstructions, ...others];
 
       if (!canAct) {
-        return sidelined(defended, book, obstacles);
+        return status(sidelined(defended, book, obstacles));
       }
 
-      const release = spellsOf(book, intent, guard, pressed, heavyPressed);
+      const special = specialOf(self, book, guard, wheel.released);
+
+      // A Special Spell let go of on the wheel goes first; a Light Spell
+      // pressed on the same tick waits for its recovery.
+      if (special) {
+        book.queued ||= pressed;
+      }
+
+      const release: Release | undefined = special
+        ? { kind: special.kind }
+        : spellsOf(book, intent, guard, pressed, heavyPressed);
+
       const chargeSeconds = book.chargeTicks / tuning.tickRate;
 
       // Overcharge: held a moment past full, the Charge Backfires. No
       // Spell leaves the Wand, and the caster is hurt and Staggered.
       if (chargeStage(chargeSeconds, confringo) === "overcharged") {
-        return backfire(defended, book, draft.events, draft.backfires);
+        return status(backfire(defended, book, draft.events, draft.backfires));
       }
 
       if (release) {
@@ -1933,13 +2231,14 @@ export const createDuel = (config: DuelConfig): Duel => {
             move.y * speed
           );
 
-      return {
+      return status({
         ...defended,
         chargeSeconds,
+        focus: self.focus - (special?.cost ?? 0),
         knockbackSeconds: 0,
         position: collide(wanted, bodyRadius, obstacles, arena),
         staggerSeconds: book.staggerTicks * tickSeconds,
-      };
+      });
     });
 
     draft.duelists = settleAim(acted, draft.events);
@@ -1977,12 +2276,16 @@ export const createDuel = (config: DuelConfig): Duel => {
         }
 
         book.recoveryTicks = ticksOf(stupefy.castInterval);
-      } else {
+      } else if (release.kind === "confringo") {
         empowered = chargeStage(release.chargeSeconds, confringo) === "perfect";
         power = empowered ? 1 : chargeLevel(release.chargeSeconds, confringo);
         // A Heavy Spell breaks the Light Spell's rhythm.
         book.chain = 0;
         book.recoveryTicks = ticksOf(confringo.recoverySeconds);
+      } else {
+        // A Special Spell, like a Heavy one, breaks the Light Spell's rhythm.
+        book.chain = 0;
+        book.recoveryTicks = ticksOf(tuning[release.kind].recoverySeconds);
       }
 
       book.ticksSinceCast = 0;
@@ -1990,7 +2293,7 @@ export const createDuel = (config: DuelConfig): Duel => {
       const origin = wandTip(self, tuning);
       const launch = towardPoint(origin, self.aimPoint);
 
-      // Both Spells aim the same way. Locked On: straight at the Target's
+      // Every Spell aims the same way. Locked On: straight at the Target's
       // chest where it stands now (no lead), with a weak homing a strafe can
       // still beat. Free-aiming: to the point under the crosshair, bent by
       // Aim Assist at launch only.
@@ -2014,7 +2317,7 @@ export const createDuel = (config: DuelConfig): Duel => {
           self.targetId === null
             ? assistedLaunch(self, origin, launch, draft.duelists)
             : launch,
-          release.kind === "confringo" ? confringo.speed : stupefy.speed
+          tuning[release.kind].speed
         ),
       };
 
@@ -2032,11 +2335,61 @@ export const createDuel = (config: DuelConfig): Duel => {
     }
   };
 
+  /**
+   * Focus earned this tick, read off its events: a Light Spell landed, a
+   * Parry, a Perfect Dodge, and a little for every Spell that damaged the
+   * Duelist (its direct hit and its Burn count once together). Capped at
+   * three segments; it never decays.
+   */
+  const gainFocus = (draft: Draft) => {
+    const { gain, max } = tuning.focus;
+    const gains = new Map<DuelistId, number>();
+    // Each Spell's damage counts once per Duelist it hurt.
+    const hurt = new Set<string>();
+
+    const add = (id: DuelistId, points: number) =>
+      gains.set(id, (gains.get(id) ?? 0) + points);
+
+    const damaged = (spell: SpellState, id: DuelistId) => {
+      const key = `${spell.id}:${id}`;
+
+      if (!hurt.has(key)) {
+        hurt.add(key);
+        add(id, gain.damageTaken);
+      }
+    };
+
+    for (const event of draft.events) {
+      if (event.type === "spell-hit" && event.spell.kind === "stupefy") {
+        add(event.spell.casterId, gain.lightSpellHit);
+      }
+
+      if (event.type === "spell-hit" && event.damage > 0) {
+        damaged(event.spell, event.targetId);
+      } else if (event.type === "explosion") {
+        for (const id of event.burned) {
+          damaged(event.spell, id);
+        }
+      } else if (event.type === "parry") {
+        add(event.duelistId, gain.parry);
+      } else if (event.type === "perfect-dodge") {
+        add(event.duelistId, gain.perfectDodge);
+      }
+    }
+
+    if (gains.size > 0) {
+      draft.duelists = draft.duelists.map((self) => ({
+        ...self,
+        focus: Math.min(self.focus + (gains.get(self.id) ?? 0), max),
+      }));
+    }
+  };
+
   const step = (intents: Readonly<Record<DuelistId, Intent>>): DuelTick => {
     const draft: Draft = { ...current, backfires: new Map(), events: [] };
 
     advanceClock(draft);
-    applyDamage(draft, flySpells(draft));
+    applyDamage(draft, burn(draft, flySpells(draft)));
     decideRound(draft);
 
     const releases = act(draft, (id) => intents[id] ?? idleIntent);
@@ -2045,6 +2398,7 @@ export const createDuel = (config: DuelConfig): Duel => {
     applyDamage(draft, draft.backfires);
     decideRound(draft);
     cast(draft, releases);
+    gainFocus(draft);
 
     current = {
       duelists: draft.duelists,

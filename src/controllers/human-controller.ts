@@ -75,6 +75,9 @@ const createFlickDetector = (
  * - □: the Light Spell.
  * - △: the Heavy Spell, held to Charge and released to cast.
  * - ○: Dodge. ✕: jump. L1 (held): the Shield. R1 (held): sprint. L3 is unbound.
+ * - R2 (held): the Spell Wheel. While it is open the right stick picks a
+ *   slice instead of turning the camera (or nudging the Lock-on framing, or
+ *   flicking), and letting go of R2 casts what it picks. The game never slows.
  *
  * Everything advances once per Intent, which the Duel asks for every tick.
  */
@@ -86,8 +89,13 @@ export const createHumanController = (
   const tickSeconds = 1 / settings.tickRate;
   const aimResponse = createAimResponse(look);
   const flicks = createFlickDetector(flick, tickSeconds);
+  const wheel = settings.input.spellWheel;
   let r3WasDown = false;
   let settleTicks = 0;
+  // The Spell Wheel is open (R2 held), and the right stick is the wheel's
+  // until it comes back to the centre after the wheel closes.
+  let wheelOpen = false;
+  let stickPicking = false;
 
   return {
     intent: () => {
@@ -96,6 +104,8 @@ export const createHumanController = (
       if (!pad) {
         aimResponse.reset();
         r3WasDown = false;
+        wheelOpen = false;
+        stickPicking = false;
 
         return idleIntent;
       }
@@ -110,11 +120,30 @@ export const createHumanController = (
       const settling = settleTicks > 0;
       settleTicks = Math.max(settleTicks - 1, 0);
 
-      if (settling) {
+      // R2 holds the Spell Wheel open, with some hysteresis on the trigger.
+      wheelOpen = pad.triggers.r2 > (wheelOpen ? wheel.close : wheel.open);
+
+      // While the wheel is open the right stick picks a slice instead of
+      // looking, and once it closes it only looks again after coming back
+      // to the centre, so letting go of R2 never flings the camera.
+      if (wheelOpen) {
+        stickPicking = true;
+      } else if (
+        Math.hypot(pad.rightStick.x, pad.rightStick.y) < wheel.stickRest
+      ) {
+        stickPicking = false;
+      }
+
+      if (settling || stickPicking) {
         flicks.disarm();
       }
 
-      const stick = settling ? { x: 0, y: 0 } : pad.rightStick;
+      if (stickPicking) {
+        aimResponse.reset();
+      }
+
+      const stick = settling || stickPicking ? { x: 0, y: 0 } : pad.rightStick;
+
       const turn = aimResponse.step(stick, tickSeconds);
 
       return {
@@ -131,8 +160,12 @@ export const createHumanController = (
         },
         move: pad.leftStick,
         shield: pad.buttons.l1,
+        spellWheel: {
+          held: wheelOpen,
+          pick: wheelOpen ? pad.rightStick : { x: 0, y: 0 },
+        },
         sprint: pad.buttons.r1,
-        switchTarget: settling ? 0 : flicks.read(stick),
+        switchTarget: settling || stickPicking ? 0 : flicks.read(stick),
       };
     },
   };
