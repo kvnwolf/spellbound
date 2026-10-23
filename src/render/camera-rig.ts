@@ -9,7 +9,10 @@
  *   the same point the simulation casts the aim ray from, so the screen
  *   centre (the crosshair) always looks down that ray and Spells go to the
  *   point under it. When a wall or column is in the way it pulls in along
- *   the ray rather than swinging, so the crosshair stays true.
+ *   the ray rather than swinging, so the crosshair stays true. Pulled in
+ *   close to the Duelist while they face it (or right up against them
+ *   whichever way they face), it rises and tilts down instead so they stay
+ *   in view (see camera-framing); the reticle fades out while it does.
  * - **Lock-on** (and the Knockout shot): the camera sits behind the Duelist,
  *   on the far side from the Target, over the right shoulder, and looks at a
  *   point between the two so both stay framed. A close Target pulls it back
@@ -41,12 +44,15 @@ import {
 import type { Aim, GroundPoint, Point3 } from "../duel/geometry";
 import type { Tuning } from "../tuning";
 import { chooseSwing, swingCameraOffset } from "./camera-clearance";
+import { freeCameraPose, freeReach, liftWanted } from "./camera-framing";
+import type { FreeSubject, Pose } from "./camera-framing";
 import type { CameraShake } from "./camera-shake";
 
-/** The free camera's subject: the local Duelist and where they look. */
+/** The free camera's subject: the local Duelist, where they look and which way they face. */
 export interface FreeView {
   readonly position: GroundPoint;
   readonly aim: Aim;
+  readonly facing: GroundPoint;
 }
 
 /** The Lock-on framing's subject: frame `self` and `target`, turned by `nudge`. */
@@ -74,18 +80,17 @@ export interface CameraRig {
    * none, 1 the full push. The rig eases toward it in `follow`.
    */
   readonly chargePush: (share: number) => void;
+  /**
+   * The free camera has lifted off the aim line to keep the Duelist in view,
+   * so the screen centre no longer marks where Spells go: hide the reticle.
+   */
+  readonly offAimLine: () => boolean;
 }
 
 export interface CameraRigSettings {
   readonly camera: Tuning["camera"];
   readonly eye: AimEye;
   readonly chestHeight: number;
-}
-
-/** A camera pose: where it is and the unit direction it looks. */
-interface Pose {
-  readonly eye: Point3;
-  readonly look: Point3;
 }
 
 /** 0 when the Target is farther than `startsAt`, 1 at `fullAt` or nearer, eased in between. */
@@ -191,8 +196,11 @@ export const createCameraRig = (
   // How far through the transition: 0 is the free camera, 1 the Lock-on
   // framing. Moves at a steady rate in time; the easing is applied on top.
   let blend = 0;
-  // The free camera's share of its full distance it is allowed out to.
-  let freeReach = 1;
+  // The free camera's share of its full distance it is allowed out to, and
+  // how far it has lifted off the aim line to keep the Duelist in view.
+  let reachShown = 1;
+  let liftEased = 0;
+  let liftShown = 0;
   // The aim the free camera had on the last frame before the Lock-on framing
   // took over. Locking turns the aim to the Target at once (within a tick),
   // so the transition has to start from this, not from the new aim.
@@ -241,52 +249,40 @@ export const createCameraRig = (
   };
 
   /**
-   * The free camera: straight behind the aim pivot along the aim, at the
-   * free distance, pulled in along that same line when a wall, a column or
-   * the floor is in the way. Pulling in is immediate; easing back out is not.
+   * The free camera: straight behind the aim pivot along the aim, pulled in
+   * along that same line when a wall, a column or the floor is in the way,
+   * and lifted off it when that brings it close to the Duelist. Pulling in
+   * and a forced lift are immediate (the camera must never be blocked or
+   * inside the Duelist); easing back out, and a chosen lift, are not.
    */
   const freePose = (view: FreeView, seconds: number): Pose => {
-    const pivot = aimPivot(view.position, view.aim.yaw, arena, aimEye);
-    const look = directionOf(view.aim);
-    const { distance, minHeight } = settings.free;
-    const back = { x: -look.x * distance, z: -look.z * distance };
-    const backLength = Math.hypot(back.x, back.z);
-    let reach = 1;
+    const subject: FreeSubject = {
+      facing: view.facing,
+      look: directionOf(view.aim),
+      pivot: aimPivot(view.position, view.aim.yaw, arena, aimEye),
+      position: view.position,
+    };
 
-    if (backLength > 1e-6) {
-      const clear = swingCameraOffset(
-        { x: pivot.x, z: pivot.z },
-        back,
-        0,
-        arena,
-        clearance
-      );
+    const reach = freeReach(subject, arena, settings);
 
-      reach = Math.hypot(clear.x, clear.z) / backLength;
-    }
-
-    // Looking up lowers the camera: it never sinks below the floor margin.
-    if (look.y > 0) {
-      reach = Math.min(reach, (pivot.y - minHeight) / (look.y * distance));
-    }
-
-    freeReach = Math.min(
+    reachShown = Math.min(
       reach,
-      freeReach +
-        (reach - freeReach) *
+      reachShown +
+        (reach - reachShown) *
           (1 - Math.exp(-clearance.releaseSharpness * seconds))
     );
 
-    const out = distance * freeReach;
+    const wanted = liftWanted(subject, reachShown, settings, chestHeight);
 
-    return {
-      eye: {
-        x: pivot.x - look.x * out,
-        y: pivot.y - look.y * out,
-        z: pivot.z - look.z * out,
-      },
-      look,
-    };
+    liftEased +=
+      (wanted.soft - liftEased) *
+      (1 - Math.exp(-settings.free.lift.sharpness * seconds));
+    liftShown = Math.max(wanted.forced, liftEased);
+
+    return freeCameraPose(subject, arena, settings, chestHeight, {
+      lift: liftShown,
+      reach: reachShown,
+    });
   };
 
   /** The Lock-on framing, smoothed toward framing both Duelists. */
@@ -485,6 +481,7 @@ export const createCameraRig = (
 
       shake?.apply(camera, seconds);
     },
+    offAimLine: () => liftShown > settings.free.lift.reticleHideAt,
     resize: (aspect) => {
       camera.aspect = aspect;
       camera.updateProjectionMatrix();

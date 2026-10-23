@@ -485,6 +485,35 @@ export const tuning = {
     free: {
       /** Distance behind the aim pivot. */
       distance: 4.6,
+      /**
+       * When a wall or column pulls the free camera in close to the local
+       * Duelist, it rises and tilts down so they stay in view instead of
+       * ending up under or inside the camera. Leaving the aim line takes the
+       * crosshair off where Spells go, so it only happens while the Duelist
+       * faces the camera (walking toward it: not aiming), or when the camera
+       * would otherwise come right up against them; the reticle fades out
+       * meanwhile. Distances are from the camera to the Duelist's chest.
+       */
+      lift: {
+        /** Facing the camera from this (dot of facing and the way back to the camera, 0 is side-on)... */
+        facingFrom: 0,
+        /** ...fully at this (0.5 is 60 degrees off straight at the camera). */
+        facingFull: 0.5,
+        /** Even while aiming, the camera starts leaving the aim line this close... */
+        forcedFrom: 1.05,
+        /** ...and has fully left it this close. */
+        forcedFull: 0.8,
+        /** Starts tilting toward the Duelist this close, while they face the camera. */
+        from: 2.8,
+        /** Steepest the lifted camera looks down (radians, about 72 degrees): never straight down. */
+        maxTilt: 1.25,
+        /** The lifted camera rises until it is at least this far from the Duelist's chest. */
+        nearest: 2,
+        /** The reticle fades out once the lift is past this share. */
+        reticleHideAt: 0.15,
+        /** Exponential rate, per second, of easing into and out of the lift (a lift the camera is forced into is immediate). */
+        sharpness: 7,
+      },
       /** The camera never drops below this height; looking up pulls it in toward the pivot instead. */
       minHeight: 0.35,
     },
@@ -1551,9 +1580,17 @@ export const tuning = {
 
   /**
    * The Knockout shot: the camera frames the fallen Duelist from the
-   * winner's side, as if standing this far from them.
+   * winner's side, as if standing `standOff` metres from them, swinging
+   * round to the most open side when walls or Cover crowd that one. The
+   * side is chosen once, when the shot starts.
    */
-  knockoutCamera: { standOff: 2.5 },
+  knockoutCamera: {
+    /** Open ground wanted on the chosen side, metres from the fallen Duelist: room for the whole shot. */
+    room: 7,
+    /** What a radian away from the winner's side costs, in metres of room lost: higher keeps closer to the winner's side. */
+    sideCost: 1.5,
+    standOff: 2.5,
+  },
 
   /** Lock-on: R3 locks a Duelist onto an opponent, who becomes their Target. */
   lockOn: {

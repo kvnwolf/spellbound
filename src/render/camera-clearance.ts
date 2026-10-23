@@ -17,7 +17,7 @@ type Clearance = Tuning["camera"]["clearance"];
  * `origin` is a Duelist, whose body is wider than `margin`, so it always
  * starts in the clear.
  */
-const clearDistance = (
+export const clearDistance = (
   origin: GroundPoint,
   heading: GroundPoint,
   arena: ArenaLayout,

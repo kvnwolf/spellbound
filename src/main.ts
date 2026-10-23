@@ -26,12 +26,15 @@ import { chargeStage } from "./duel/charge";
 import type { Difficulty } from "./duel/difficulty";
 import { clashOpponentOf, createDuel } from "./duel/duel";
 import type { DuelEvent, DuelistId, DuelSnapshot } from "./duel/duel";
+import type { GroundPoint } from "./duel/geometry";
 import { idleIntent } from "./duel/intent";
 import type { Intent } from "./duel/intent";
 import { createFixedStepClock } from "./game-loop";
 import { createHud } from "./hud";
 import { createOverlay } from "./overlay";
+import { knockoutSide, knockoutViewpoint } from "./render/camera-framing";
 import { clashViewpoint, createCameraRig } from "./render/camera-rig";
+import type { Framing } from "./render/camera-rig";
 import { createCameraShake } from "./render/camera-shake";
 import { createChargeRing } from "./render/charge-ring";
 import { chargingWands } from "./render/charging-wands";
@@ -60,19 +63,6 @@ import type { Tuning } from "./tuning";
 
 const localId: DuelistId = "local";
 const opponentId: DuelistId = "opponent";
-
-/**
- * Where the camera stands for the Knockout shot: a point a few metres in
- * front of the fallen Duelist (toward the opponent they were facing), facing
- * back at them, so the rig frames them from the winner's side.
- */
-const knockoutViewpoint = (fallen: DuelistSample) => ({
-  facing: { x: -fallen.facing.x, z: -fallen.facing.z },
-  position: {
-    x: fallen.position.x + fallen.facing.x * tuning.knockoutCamera.standOff,
-    z: fallen.position.z + fallen.facing.z * tuning.knockoutCamera.standOff,
-  },
-});
 
 const element = <T extends HTMLElement>(
   selector: string,
@@ -534,6 +524,55 @@ const start = async () => {
     return { alpha, events };
   };
 
+  // The side the current Knockout shot frames the fallen Duelist from:
+  // chosen once when the shot starts, so it never flips mid-shot.
+  let knockoutFrom: GroundPoint | undefined;
+
+  // The Knockout shot's framing while a Round is not being fought: the
+  // fallen Duelist seen from the winner's side, or the most open side near
+  // it, clear of walls and Cover whichever way they faced.
+  const knockoutFraming = (
+    samples: ReadonlyMap<DuelistId, DuelistSample>
+  ): Framing | undefined => {
+    const fallen = current.duelists.find((each) => each.knockedOut);
+    const fallenSample = fallen && samples.get(fallen.id);
+
+    if (
+      fallen === undefined ||
+      fallenSample === undefined ||
+      current.round.phase === "fighting"
+    ) {
+      knockoutFrom = undefined;
+
+      return undefined;
+    }
+
+    const winner = current.duelists.find(
+      (each) => !each.knockedOut && each.team !== fallen.team
+    );
+
+    knockoutFrom ??= knockoutSide(
+      fallenSample.position,
+      (winner && samples.get(winner.id)?.position) ?? {
+        x: fallenSample.position.x + fallenSample.facing.x,
+        z: fallenSample.position.z + fallenSample.facing.z,
+      },
+      cameraObstacles,
+      tuning
+    );
+
+    return {
+      nudge: { pitch: 0, yaw: 0 },
+      self: knockoutViewpoint(
+        fallenSample.position,
+        knockoutFrom,
+        cameraObstacles,
+        tuning
+      ),
+      target: fallenSample.position,
+    };
+  };
+
   // Resolves once the loop is installed; the loop itself runs every frame.
   // Poses every Duelist and points the camera: the Knockout shot, Lock-on framing or free aim.
   const showDuelists = (alpha: number, seconds: number) => {
@@ -572,21 +611,11 @@ const start = async () => {
     defenceVfx.show(samples, seconds);
 
     const localSample = samples.get(localId);
-    const fallen = current.duelists.find((each) => each.knockedOut);
-    const fallenSample = fallen ? samples.get(fallen.id) : undefined;
+    const knockout = knockoutFraming(samples);
 
-    if (localSample && fallenSample && current.round.phase !== "fighting") {
-      // The Knockout shot: look down on the fallen Duelist from the side
-      // they were hit from, until the next Round lines everyone up again.
-      rig.follow(
-        localSample,
-        {
-          nudge: { pitch: 0, yaw: 0 },
-          self: knockoutViewpoint(fallenSample).position,
-          target: fallenSample.position,
-        },
-        seconds
-      );
+    if (localSample && knockout) {
+      // The Knockout shot, until the next Round lines everyone up again.
+      rig.follow(localSample, knockout, seconds);
       reticle.show({ locked: false, visible: false }, rig.camera, seconds);
     } else if (localSample) {
       // In a Clash the camera frames both ends of the beam, locked or not,
@@ -615,8 +644,10 @@ const start = async () => {
         seconds
       );
 
+      // The reticle also hides while the free camera has lifted off the
+      // aim line to keep the Duelist in view near a wall.
       reticle.show(
-        { locked: target !== undefined, visible: true },
+        { locked: target !== undefined || rig.offAimLine(), visible: true },
         rig.camera,
         seconds
       );
