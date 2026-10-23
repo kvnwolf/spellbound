@@ -45,6 +45,9 @@ export const text = {
     roundWon: "Ronda para ti",
     victory: "¡Victoria!",
   },
+  /** The fan-game disclaimer at the foot of the menus. */
+  legal:
+    "Spellbound es un fan game gratuito y sin fines de lucro, no afiliado, respaldado ni patrocinado por Warner Bros. Entertainment Inc., J.K. Rowling ni Wizarding World. Los nombres de hechizos y pociones del universo de Harry Potter son marcas y propiedad de sus respectivos dueños y se usan como homenaje.",
   menu: { hint: "✕ Confirmar     ○ Atrás" },
   pause: {
     continue: "Continuar",

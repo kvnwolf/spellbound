@@ -1,4 +1,5 @@
 import type { ScreenView } from "./screens/view";
+import { text } from "./text";
 
 /**
  * The full-screen panel over the scene: the title, the menus, the pause and
@@ -10,7 +11,11 @@ export const createOverlay = (element: HTMLElement) => {
   const items = document.createElement("ul");
   const hint = document.createElement("p");
   hint.className = "overlay-hint";
-  element.append(heading, body, items, hint);
+  // The fan-game disclaimer, at the foot of every menu.
+  const legal = document.createElement("p");
+  legal.className = "overlay-legal";
+  legal.textContent = text.legal;
+  element.append(heading, body, items, hint, legal);
   let shown: string | undefined;
 
   return {
