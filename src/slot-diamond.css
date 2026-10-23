@@ -34,8 +34,8 @@
 
 /* Trigger held: the slots spread apart, ready for a face button. */
 .sd-diamond[data-held="true"] {
-  --sd-spread: 5.4rem;
-  --sd-badge: 3.5rem;
+  --sd-spread: 3.3rem;
+  --sd-badge: 3rem;
 
   opacity: 1;
 }
