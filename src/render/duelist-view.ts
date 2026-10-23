@@ -216,8 +216,33 @@ export const createDuelistView = (
   const upper = createLayer();
   const lower = createLayer();
 
+  // The pose the clips last set, before this view's own turns and IK. The
+  // mixer only writes a joint whose clip value changed, so a joint it skips
+  // would keep last frame's turns and they would pile up (a spine spinning
+  // round): every joint goes back to the clips' pose before the mixer runs.
+  const bones: Object3D[] = [];
+  rig.model.traverse((node) => {
+    if (node.type === "Bone") {
+      bones.push(node);
+    }
+  });
+
+  const clipPose = bones.map((bone) => ({
+    position: bone.position.clone(),
+    quaternion: bone.quaternion.clone(),
+  }));
+
   /** Hands each layer's weights and times to the mixer and poses the body. */
   const play = () => {
+    for (const [index, bone] of bones.entries()) {
+      const pose = clipPose[index];
+
+      if (pose) {
+        bone.position.copy(pose.position);
+        bone.quaternion.copy(pose.quaternion);
+      }
+    }
+
     for (const [name, action] of actions) {
       for (const [layer, half] of [
         [upper, action.upper],
@@ -234,6 +259,11 @@ export const createDuelistView = (
     }
 
     mixer.update(0);
+
+    for (const [index, bone] of bones.entries()) {
+      clipPose[index]?.position.copy(bone.position);
+      clipPose[index]?.quaternion.copy(bone.quaternion);
+    }
   };
 
   // Motion, measured from the samples: how fast and which way, in the body frame.
@@ -245,7 +275,6 @@ export const createDuelistView = (
   let headingYaw = 0;
   let last: { x: number; z: number; elevation: number } | null = null;
   let phase = 0;
-  let backward = false;
   let twist = 0;
   /** The legs' reach on the clips' own stride (1 their own), so the gait keeps its cadence. */
   let stride = 1;
@@ -492,21 +521,18 @@ export const createDuelistView = (
       seconds
     );
 
-    // Off the facing the legs turn toward the motion; far off it they walk backwards.
-    const off = Math.atan2(heading.x, heading.z);
+    // The legs always run the way the body goes, turning with it as an
+    // angle (so circling a Target never flips them about, there being no
+    // backwards gait to switch to); with the Wand up they turn to the aim,
+    // no further than `raisedTwist` from it.
+    const limit =
+      gait.maxTwist + (gait.raisedTwist - gait.maxTwist) * weight.lock;
 
-    if (
-      backward ? Math.abs(off) < gait.backTo : Math.abs(off) > gait.backFrom
-    ) {
-      backward = !backward;
-    }
+    const legs = walking ? Math.max(-limit, Math.min(limit, headingYaw)) : 0;
 
-    const legs = backward ? wrap(off - Math.PI) : off;
-    twist = approach(
-      twist,
-      walking ? Math.max(-gait.maxTwist, Math.min(gait.maxTwist, legs)) : 0,
-      gait.twistSharpness,
-      seconds
+    twist = wrap(
+      twist +
+        wrap(legs - twist) * (1 - Math.exp(-gait.twistSharpness * seconds))
     );
 
     // The cycle advances by the ground covered over the stride the legs
@@ -514,10 +540,7 @@ export const createDuelistView = (
     stride = strideNow();
 
     if (travelling) {
-      phase = loopTime(
-        phase + ((backward ? -1 : 1) * distance) / (stride * cycleNow()),
-        1
-      );
+      phase = loopTime(phase + distance / (stride * cycleNow()), 1);
     }
   };
 
@@ -779,6 +802,16 @@ export const createDuelistView = (
   const directionToWorld = (local: Vector3, out: Vector3) =>
     out.copy(local).transformDirection(object.matrixWorld);
 
+  /** The share of the lower body the locomotion clips hold this frame. */
+  const locomotionShare = () =>
+    Math.min(
+      locomotionClips.reduce(
+        (sum, clip) => sum + (lower.weights.get(clip) ?? 0),
+        0
+      ),
+      1
+    );
+
   /**
    * Two-bone IK on a limb (upper bone, lower bone, end): the end reaches
    * `target` (world), bending toward `hint` (a world direction), and turns
@@ -897,7 +930,9 @@ export const createDuelistView = (
    * along the motion is scaled by `stride` about its hip (planted feet stay
    * on the floor, the cycle already advances by that stride) and the pelvis
    * keeps `gait.bob` of the clips' bounce, by the share the locomotion
-   * clips hold of the lower body.
+   * clips hold of the lower body. A shorter step than the clip's raises
+   * the pelvis so the planted leg stays as straight as the clip has it
+   * (short steps fold the knees otherwise: a crouched shuffle).
    */
   const warpGait = () => {
     let share = 0;
@@ -933,11 +968,31 @@ export const createDuelistView = (
       joints.feet[side].getWorldQuaternion(footTurns[side]);
     }
 
+    // How much higher the pelvis rides for each foot to keep its leg's
+    // length at the shorter reach, the planted (lower) foot counting most.
+    let raise = 0;
+    let weights = 0;
+
+    for (const side of [0, 1] as const) {
+      const hip = hips[side];
+      const ankle = ankles[side];
+      const along = scratch.subVectors(ankle, hip).dot(motionAxis);
+      const length = ankle.distanceTo(hip);
+      const drop = hip.y - ankle.y;
+      const level = Math.max(length * length - drop * drop, 0);
+      const spread = Math.max(level - along * along * (1 - scale * scale), 0);
+      const each = Math.sqrt(Math.max(length * length - spread, 0)) - drop;
+      const planted = 1 / (0.02 + Math.max(ankle.y - object.position.y, 0));
+      raise += Math.max(each, 0) * planted;
+      weights += planted;
+    }
+
     // The pelvis bounces less: moved toward the clips' mean height.
     const { pelvis } = joints;
     pelvis.getWorldPosition(lift);
     const above = lift.y - object.position.y - pelvisMean;
     lift.y -= (1 - gait.bob) * above * share;
+    lift.y += (Math.min(raise / weights, gait.maxRaise) + gait.lift) * share;
     pelvis.parent?.worldToLocal(lift);
     pelvis.position.copy(lift);
     pelvis.updateMatrixWorld(true);
@@ -1161,6 +1216,21 @@ export const createDuelistView = (
 
       for (const spine of joints.spine) {
         turnAbout(spine, up, -counter / joints.spine.length);
+      }
+    }
+
+    // The run clips stoop: the spine straightens up by `upright` about the
+    // hips' own side-to-side axis.
+    const upright = gait.upright * locomotionShare();
+
+    if (upright > 1e-4) {
+      directionToWorld(leftAxis.set(1, 0, 0), leftAxis).applyAxisAngle(
+        up,
+        twist
+      );
+
+      for (const spine of joints.spine) {
+        turnAbout(spine, leftAxis, -upright / joints.spine.length);
       }
     }
 

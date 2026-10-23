@@ -899,15 +899,17 @@ export const tuning = {
        * jog and sprint each play alone, handing over to the next across the
        * `crossovers` speed bands (m/s); the speed eases at `speedSharpness`
        * and the gait fades in at `gaitSharpness` above `minSpeed`. Moving off
-       * the facing, the legs turn toward the motion (at most `maxTwist`,
-       * easing at `twistSharpness`); the spine turns the chest back at most
+       * the facing, the legs turn toward the motion (at most `maxTwist`, or
+       * `raisedTwist` with the Wand up, easing at `twistSharpness`); a
+       * shortened step raises the pelvis (at most `maxRaise` metres) so the
+       * legs keep the clip's straightness, and running it rides `lift` metres
+       * higher still and the spine straightens `upright` radians (the run
+       * clips crouch and stoop); the spine turns the chest back at most
        * `counterTwist` (all the way while the Wand is up) and the head looks
-       * the rest, at most `headTurn` off the chest. Past `backFrom` off the
-       * facing (back under `backTo`) the legs walk backwards instead.
+       * the rest, at most `headTurn` off the chest. There is no backwards
+       * gait: `maxTwist` of π lets the legs run any way, turning as an angle.
        */
       gait: {
-        backFrom: 2.2,
-        backTo: 1.9,
         bob: 0.45,
         cadence: {
           run: { base: 2.45, perSpeed: 0.12 },
@@ -920,11 +922,15 @@ export const tuning = {
         ],
         gaitSharpness: 8,
         headTurn: 1.1,
-        maxTwist: 1.6,
+        lift: 0.06,
+        maxRaise: 0.12,
+        maxTwist: Math.PI,
         minSpeed: 0.3,
+        raisedTwist: 1.1,
         speedSharpness: 10,
         stride: [0.4, 1.3],
         twistSharpness: 10,
+        upright: 0.28,
       },
       /** The head looks this share of the aim's pitch. */
       headPitch: 0.5,
