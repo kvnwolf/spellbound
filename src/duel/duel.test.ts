@@ -285,7 +285,7 @@ describe("Facing while free-aiming", () => {
     );
 
     expect(firstTurn).toBeGreaterThan(0);
-    expect(firstTurn).toBeLessThan(0.1);
+    expect(firstTurn).toBeLessThan(0.15);
     // Walking toward the camera: facing it, which shows the face.
     expect(angleOff(turned.facing, { x: 0, z: 1 })).toBeCloseTo(0);
     expect(turned.aim.yaw).toBeCloseTo(before.aim.yaw);

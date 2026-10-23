@@ -749,7 +749,7 @@ export const tuning = {
       /** Stamina drained every second spent sprinting (only while moving). */
       drain: 5,
       /** Running speed, as a multiple of the walking speed. */
-      speedScale: 2.85,
+      speedScale: 2,
     },
     stamina: {
       max: 100,
@@ -939,12 +939,12 @@ export const tuning = {
        * gait: `maxTwist` of π lets the legs run any way, turning as an angle.
        */
       gait: {
-        bob: 0.3,
+        bob: 0.16,
         cadence: {
-          run: { base: 2.3, perSpeed: 0.12 },
-          walk: { base: 1.3, perSpeed: 0.35 },
+          run: { base: 1.75, perSpeed: 0.12 },
+          walk: { base: 1.3, perSpeed: 0.62 },
         },
-        calm: 0.35,
+        calm: 0.42,
         counterTwist: 0.45,
         // The run (R1, 6 m/s) is the sprint clip: the jog's high heel kicks
         // skip like a cartoon; the jog only bridges the walk to it.
@@ -956,13 +956,13 @@ export const tuning = {
         headLead: { max: 0.45, seconds: 0.18 },
         headTurn: 1.1,
         /** How much of the clips' bowed head lifts back toward the horizon. */
-        horizon: 0.75,
+        horizon: 0.46,
         lean: {
           accelerationSharpness: 10,
           headLevel: 0.7,
-          maxForward: 0.14,
+          maxForward: 0.2,
           maxSide: 0.21,
-          share: 0.4,
+          share: 0.08,
           sharpness: 9,
           velocitySharpness: 14,
         },
@@ -979,10 +979,10 @@ export const tuning = {
         },
         raisedTwist: 1.1,
         speedSharpness: 10,
-        stride: [0.4, 1.3],
-        tuck: { run: 0.24, walk: 0.14 },
+        stride: [0.4, 1.29],
+        tuck: { run: 0.11, walk: 0.01 },
         twistSharpness: 10,
-        upright: { run: 0.37, walk: 0.16 },
+        upright: { run: 0.37, walk: 0.25 },
       },
       /** The head looks this share of the aim's pitch. */
       headPitch: 0.5,
@@ -1064,7 +1064,7 @@ export const tuning = {
         rim: "#ffb36b",
       },
     },
-    walkSpeed: 2.1,
+    walkSpeed: 3.05,
     /**
      * The visible Wand and the right arm that holds it. At rest, walking or
      * running the arm hangs with the clips, the Wand held low. It rises (by
@@ -1557,7 +1557,11 @@ export const tuning = {
    * it begins to. A walk turns the facing on the same kind of spring,
    * `turnHalflife` (casting still turns to the aim at once: see `facing`).
    */
-  movement: { slowDownHalflife: 0.07, speedUpHalflife: 0.1, turnHalflife: 0.1 },
+  movement: {
+    slowDownHalflife: 0.03,
+    speedUpHalflife: 0.02,
+    turnHalflife: 0.08,
+  },
 
   /**
    * Petrificus Totalus, a Special Spell: the Duelist it hits is Petrified,
