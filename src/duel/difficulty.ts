@@ -1,6 +1,6 @@
 /**
  * The Difficulty of the AI Controller, chosen before the Duel. Easiest first.
- * The Duel carries it in its configuration; the AI will read it later.
+ * The AI Controller plays by its profile in `tuning.ai.profiles`.
  */
 export const difficulties = ["novato", "duelista", "maestro"] as const;
 

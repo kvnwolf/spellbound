@@ -4,6 +4,129 @@
  */
 export const tuning = {
   /**
+   * The AI Controller: how it plays, shared by every Difficulty, and one
+   * profile per Difficulty. It drives its Duelist only through the Intent a
+   * human produces, so these numbers are the AI's "hands": when it presses
+   * what, and how well it times it. Ranges are picked uniformly between
+   * `min` and `max` each time.
+   */
+  ai: {
+    /** Extra seconds between the Stupefies of a burst, on top of `stupefy.castInterval`: a human rhythm, not a metronome. */
+    burstGap: { max: 0.12, min: 0.03 },
+    /**
+     * Taking Cover: the AI walks to a spot `standOff` metres behind a column
+     * (seen from the opponent) no more than `reach` metres away and hides
+     * there for `seconds`.
+     */
+    cover: { reach: 6, seconds: { max: 3, min: 1.5 }, standOff: 0.5 },
+    /**
+     * An opponent crossing the line of fire faster than this (metres per
+     * second) would sidestep a Locked On cast, which never leads; a
+     * disciplined AI waits `waitSeconds` for a better moment instead.
+     */
+    crossingSpeed: 1.5,
+    /** A Dodge is pressed this long before a Spell lands: inside the Perfect Dodge window, give or take. */
+    dodgeLead: { max: 0.18, min: 0.06 },
+    /**
+     * A jump is pressed `lead` seconds before a Spell lands, which has the
+     * feet above a chest-high Spell when it arrives; with less warning than
+     * `minWarning` it is too late to jump, and a Spell coming in higher than
+     * `maxHeight` (metres above the feet) cannot be jumped: the AI does something else.
+     */
+    jump: { lead: 0.44, maxHeight: 1.7, minWarning: 0.34 },
+    /**
+     * Before Locking On the AI turns its free aim toward the opponent's
+     * chest like a right stick: the turn rate is `gain` times the angle left
+     * (per second), capped at `maxSpeed` radians per second. It presses R3
+     * once the crosshair is within `lockAngle` radians of the chest.
+     */
+    look: { gain: 8, lockAngle: 0.06, maxSpeed: 5 },
+    profiles: {
+      duelista: {
+        attackPause: { max: 1.9, min: 0.8 },
+        band: { max: 12, min: 7 },
+        burst: { max: 3, min: 1 },
+        chargeHold: { mean: 0.5, spread: 0.035 },
+        coverChance: 0.2,
+        defences: { dodge: 0.3, jump: 0.15, shield: 0.55 },
+        defendChance: 0.65,
+        discipline: 0.4,
+        heavyShare: 0.35,
+        punishChance: 0.65,
+        reactionSeconds: { max: 0.38, min: 0.22 },
+        shieldLead: { max: 0.25, min: 0.05 },
+        strafeChance: 0.7,
+        strafeSpeed: 0.75,
+      },
+      /** Quick, defends almost everything (often with a Parry), times the Charge, punishes. */
+      maestro: {
+        attackPause: { max: 1.3, min: 0.5 },
+        band: { max: 12, min: 7 },
+        burst: { max: 3, min: 2 },
+        chargeHold: { mean: 0.51, spread: 0.015 },
+        coverChance: 0.3,
+        defences: { dodge: 0.3, jump: 0.1, shield: 0.6 },
+        defendChance: 0.88,
+        discipline: 0.8,
+        heavyShare: 0.4,
+        punishChance: 0.95,
+        reactionSeconds: { max: 0.25, min: 0.15 },
+        shieldLead: { max: 0.13, min: 0.03 },
+        strafeChance: 0.9,
+        strafeSpeed: 1,
+      },
+      /** Slow to react, rarely defends, mistimes the Charge, presses little. */
+      novato: {
+        /** Seconds between one attack and the next. */
+        attackPause: { max: 2.8, min: 1.3 },
+        /** The distance it keeps from its Target, metres. */
+        band: { max: 11, min: 6 },
+        /** Stupefies in a burst (whole numbers): three in a row make the strong cast that Staggers. */
+        burst: { max: 2, min: 1 },
+        /** How long it holds a Charge before releasing (seconds since the press): a normal spread around `mean`. */
+        chargeHold: { mean: 0.47, spread: 0.07 },
+        /** Chance to take Cover after being hit. */
+        coverChance: 0.08,
+        /** How it defends, by weight. */
+        defences: { dodge: 0.25, jump: 0, shield: 0.75 },
+        /** Chance to defend an incoming Spell at all. */
+        defendChance: 0.3,
+        /** Chance to hold a cast while the Target crosses the line of fire. */
+        discipline: 0,
+        /** Share of attacks that are a Charged Confringo; the rest are Stupefy bursts. */
+        heavyShare: 0.3,
+        /** Chance to punish a Staggered opponent. */
+        punishChance: 0.25,
+        /** Seconds between noticing something (an incoming Spell, a Staggered opponent, a lost lock) and acting on it. */
+        reactionSeconds: { max: 0.65, min: 0.4 },
+        /** How long before a Spell lands the Shield goes up: within `defence.shield.parryWindow` it Parries. */
+        shieldLead: { max: 0.45, min: 0.12 },
+        /** Chance to strafe (rather than stand) each time it picks, and at what share of full speed. */
+        strafeChance: 0.45,
+        strafeSpeed: 0.55,
+      },
+    },
+    /** The Shield stays up this long past the moment a Spell was due to land, then drops so the next one can be Parried afresh. */
+    shieldHoldSeconds: 0.1,
+    /** Sprints to close the distance when this many metres beyond its band (and Stamina is above half). */
+    sprintBeyond: 4,
+    /** Never raises the Shield with less Stamina than this left, and never Dodges into less than this. */
+    staminaReserve: 15,
+    /** How long the AI keeps one strafing direction (or standing still) before picking again. */
+    strafeSeconds: { max: 2.4, min: 0.8 },
+    /**
+     * Moving less than `stuckShare` of the stride it asked for, for more
+     * than `stuckTicks` ticks in a row, counts as stuck against something:
+     * it strafes the other way.
+     */
+    stuckShare: 0.3,
+    stuckTicks: 6,
+    /** A Spell whose line passes within this many metres of the body (on top of both radii) is a threat to defend. */
+    threatMargin: 0.2,
+    waitSeconds: 0.2,
+  },
+
+  /**
    * Free aim: a human aims with the camera, so the aim is a ray from a pivot
    * over the Duelist's right shoulder (the camera sits straight behind it)
    * along the Duelist's yaw and pitch. Angles are radians.

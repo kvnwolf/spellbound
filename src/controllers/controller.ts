@@ -16,7 +16,7 @@ export interface Controller {
   readonly intent: (view: ControllerView) => Intent;
 }
 
-/** A Controller that never does anything: the opponent before the AI exists. */
+/** A Controller that never does anything: a dummy opponent for testing (`?rival=idle`). */
 export const idleController: Controller = {
   intent: () => idleIntent,
 };

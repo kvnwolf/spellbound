@@ -2,11 +2,11 @@ import { idleIntent } from "../duel/intent";
 import type { Controller } from "./controller";
 
 /**
- * A development stand-in for the AI: a stationary Duelist that keeps itself
- * Locked On to its opponent (pressing Lock-on whenever it has no Target, as
- * any Controller would) and taps the Light Spell every `intervalTicks` ticks,
- * so incoming Spells, mid-air cancels and taking hits can be tried before the
- * AI exists.
+ * A development rival in place of the AI (`?rival=casts`): a stationary
+ * Duelist that keeps itself Locked On to its opponent (pressing Lock-on
+ * whenever it has no Target, as any Controller would) and taps the Light
+ * Spell every `intervalTicks` ticks, so incoming Spells, mid-air cancels and
+ * taking hits can be tried on a predictable beat.
  */
 export const createDebugCasterController = (
   intervalTicks: number
