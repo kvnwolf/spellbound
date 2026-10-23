@@ -1001,6 +1001,12 @@ export const tuning = {
         sharpness: 30,
         takeoff: { from: 0.04, seconds: 0.26, to: 0.36 },
       },
+      /**
+       * A Spell landing kicks the upper body back (and `sideShare` of it to
+       * the side it struck) at `impulse` radians a second, springing back at
+       * `frequency` Hz with `damping` (under 1, so it rebounds once).
+       */
+      kick: { damping: 0.5, frequency: 4, impulse: 4.5, sideShare: 0.5 },
       /** The Knockout: `Death01` held lying from `lieAt` seconds; getting up (`LayToIdle`) fades out over its last `riseFadeSeconds`. */
       knockout: { lieAt: 1.9, riseFadeSeconds: 0.35 },
       /**

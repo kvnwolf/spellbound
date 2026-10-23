@@ -340,6 +340,8 @@ export const createDuelistView = (
   let lastYaw: number | null = null;
   /** The legs stepping round as the body turns on the spot, 0 to 1. */
   let pivot = 0;
+  /** A hit's kick to the upper body: a springy recoil back (pitch) and to a side (roll), radians and their rates. */
+  const kick = { pitch: 0, pitchRate: 0, roll: 0, rollRate: 0 };
   /** How winded the Duelist is (0 to 1), and where their breath is in its cycle. */
   let winded = 0;
   let breathPhase = 0;
@@ -1427,6 +1429,39 @@ export const createDuelistView = (
     turnAbout(joints.spine[0] ?? joints.pelvis, leftAxis, -sway);
   };
 
+  /**
+   * A Spell landing at `where` (world) kicks the upper body: back, and away
+   * from the side it struck (`motion.kick`).
+   */
+  const kickFrom = (where: Point3) => {
+    const { kick: tuned } = motion;
+    const local = object.worldToLocal(scratch.set(where.x, where.y, where.z));
+    const side = Math.max(-1, Math.min(1, local.x / 0.3));
+    kick.pitchRate -= tuned.impulse;
+    kick.rollRate += tuned.impulse * tuned.sideShare * side;
+  };
+
+  /** The kick springs back (an underdamped spring, so it rebounds once), for `seconds`. */
+  const settleKick = (seconds: number) => {
+    const { kick: tuned } = motion;
+    const omega = tuned.frequency * Math.PI * 2;
+    const steps = Math.max(1, Math.ceil(seconds / (1 / 240)));
+    const step = seconds / steps;
+
+    for (let index = 0; index < steps; index += 1) {
+      kick.pitchRate +=
+        (-omega * omega * kick.pitch -
+          2 * tuned.damping * omega * kick.pitchRate) *
+        step;
+      kick.pitch += kick.pitchRate * step;
+      kick.rollRate +=
+        (-omega * omega * kick.roll -
+          2 * tuned.damping * omega * kick.rollRate) *
+        step;
+      kick.roll += kick.rollRate * step;
+    }
+  };
+
   /** How winded the Duelist is (from the Stamina spent) and the breath's cycle, for `seconds`. */
   const catchBreath = (sample: DuelistSample, seconds: number) => {
     const { breath } = motion;
@@ -1498,6 +1533,16 @@ export const createDuelistView = (
     lookAhead(sample);
 
     breatheAndSway();
+
+    // A hit's kick, spread up the spine and neck.
+    if (Math.abs(kick.pitch) + Math.abs(kick.roll) > 1e-4) {
+      for (const joint of [...joints.spine.slice(1), joints.neck]) {
+        directionToWorld(leftAxis.set(1, 0, 0), leftAxis);
+        turnAbout(joint, leftAxis, kick.pitch / 3);
+        directionToWorld(leftAxis.set(0, 0, 1), leftAxis);
+        turnAbout(joint, leftAxis, kick.roll / 3);
+      }
+    }
 
     // The head stays level as the body leans: the eyes keep the horizon.
     const level = gait.lean.headLevel;
@@ -1637,6 +1682,7 @@ export const createDuelistView = (
 
     measure(sample, seconds);
     catchBreath(sample, seconds);
+    settleKick(seconds);
     easeWeights(sample, seconds);
     const rolling = stack(sample);
     play();
@@ -1742,6 +1788,7 @@ export const createDuelistView = (
       if (event.targetId === id) {
         blendPending = true;
         flinchAge = 0;
+        kickFrom(event.position);
         flinchClip =
           event.position.y - (last?.elevation ?? 0) > duelist.chestHeight + 0.15
             ? "Hit_Head"
