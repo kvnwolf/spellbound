@@ -991,11 +991,6 @@ export const tuning = {
     },
     /** Clicking R3 often knocks the right stick: it is ignored this long after the press, seconds. */
     lockOnSettleSeconds: 0.12,
-    /**
-     * How the right stick turns the camera. The deflection is shaped by a
-     * response curve, eased by a critically damped spring (light smoothing and
-     * a touch of acceleration), then scaled to turn rates. Up looks up.
-     */
     look: {
       /**
        * Response curve: the stick deflection (0 to 1) is raised to this power.
@@ -1012,6 +1007,16 @@ export const tuning = {
        */
       springFrequency: 30,
     },
+    /**
+     * How the right stick turns the camera. The deflection is shaped by a
+     * response curve, eased by a critically damped spring (light smoothing and
+     * a touch of acceleration), then scaled to turn rates. Up looks up.
+     */
+    /**
+     * L2 is the Potion Slots' modifier, read like R2 for the Spell Slots:
+     * held once past `hold`, until it comes back under `release` (0 to 1).
+     */
+    potionSlots: { hold: 0.35, release: 0.15 },
     /**
      * R2 is the Spell Slots' modifier: it counts as held once the trigger
      * travels past `hold` and until it comes back under `release` (0 to 1),
@@ -1141,6 +1146,61 @@ export const tuning = {
     rimPower: 2,
     rimRadiance: 1.3,
     stoneColor: "#8a8e96",
+  },
+
+  /**
+   * How an active Potion looks: a subtle aura round the drinker's silhouette
+   * in the Potion's colour while its effect lasts, breathing `pulseSpeed`
+   * times a second between `low` and full `radiance`, easing in and out at
+   * `fadeSharpness` per second; Wiggenweld flashes its colour once over
+   * `flashSeconds` as it heals. While drinking, a vial in the Potion's colour
+   * glows at the lips. Colours are hex; radiance is scene-linear HDR.
+   */
+  potionLook: {
+    colors: {
+      strength: "#ff6a3a",
+      swiftness: "#5fe0d0",
+      wiggenweld: "#7fe06a",
+    },
+    fadeSharpness: 8,
+    flashRadiance: 2.2,
+    flashSeconds: 0.6,
+    low: 0.5,
+    /** Fresnel exponent: higher hugs the silhouette's edge more tightly. */
+    power: 1.8,
+    pulseSpeed: 1.4,
+    radiance: 0.9,
+    /** The vial's own glow while it is drunk. */
+    vialRadiance: 2.4,
+  },
+
+  /**
+   * The Potion bound to each Potion Slot (one per face button), or null for
+   * an empty slot.
+   */
+  potionSlots: {
+    circle: "swiftness",
+    cross: null,
+    square: "wiggenweld",
+    triangle: "strength",
+  },
+
+  /**
+   * Potions, drunk from the Potion Slots (L2 held and a face button). Each
+   * Round every Duelist starts with `charges` of each, spent as drinking
+   * starts. Drinking takes `drink.seconds`, during which the drinker walks at
+   * `drink.moveScale` of their speed and cannot cast, Shield, Charge, Dodge
+   * or jump; any Spell landing on them (a direct hit, not a Burn) interrupts
+   * it and the Potion is lost. A Disarmed Duelist can drink.
+   */
+  potions: {
+    drink: { moveScale: 0.4, seconds: 1 },
+    /** Spell damage dealt is multiplied by `damageScale` for `seconds`. */
+    strength: { charges: 1, damageScale: 1.25, seconds: 10 },
+    /** Stamina is never spent and walking is `speedScale` times faster for `seconds`. */
+    swiftness: { charges: 1, seconds: 8, speedScale: 1.3 },
+    /** Restores `healShare` of the full Health at once. */
+    wiggenweld: { charges: 2, healShare: 0.35 },
   },
 
   /**

@@ -134,6 +134,14 @@ const pull = (
   pad.buttons[7] = { pressed: travel > 0, value: travel };
 };
 
+/** Pulls L2 (button 6) to `travel`, as the Gamepad API reports an analog trigger. */
+const pullL2 = (
+  pad: { buttons: GamepadLike["buttons"][number][] },
+  travel: number
+) => {
+  pad.buttons[6] = { pressed: travel > 0, value: travel };
+};
+
 const settle = (tick: () => Intent) => {
   let intent = tick();
 
@@ -451,6 +459,7 @@ describe(createHumanController, () => {
       lockOn: false,
       look: { pitch: 0, yaw: 0 },
       move: { x: 0, y: 0 },
+      potionSlots: { held: false, press: null },
       shield: false,
       spellSlots: { held: false, press: null },
       sprint: false,
@@ -565,6 +574,122 @@ describe(createHumanController, () => {
       expect(settle(tick).look.yaw).toBeCloseTo(maxYawSpeed);
     });
   });
+
+  describe("L2 and the Potion Slots", () => {
+    const { hold, release } = tuning.input.potionSlots;
+    const faces = { circle: 1, cross: 0, square: 2, triangle: 3 } as const;
+    const l1 = 4;
+
+    it("presses a face button's Potion Slot while L2 is held, for the tick of the press only", () => {
+      const { pad, press, tick } = holding([0, 0, 0, 0]);
+
+      pullL2(pad, 1);
+      const armed = tick();
+      press(faces.square, true);
+      const pressed = tick();
+      const stillDown = tick();
+
+      expect(armed.potionSlots).toStrictEqual({ held: true, press: null });
+      expect(pressed.potionSlots).toStrictEqual({
+        held: true,
+        press: "square",
+      });
+      expect(pressed.spellSlots).toStrictEqual({ held: false, press: null });
+      expect(stillDown.potionSlots).toStrictEqual({ held: true, press: null });
+    });
+
+    it("withholds the face buttons' usual actions while they drink from their slots", () => {
+      const { pad, press, tick } = holding([0, 0, 0, 0]);
+
+      pullL2(pad, 1);
+      tick();
+
+      for (const index of Object.values(faces)) {
+        press(index, true);
+      }
+
+      const intent = tick();
+      // Still withheld after L2 is let go, until the buttons are.
+      pullL2(pad, 0);
+      const afterL2 = tick();
+
+      expect(intent).toMatchObject({
+        dodge: false,
+        heavySpell: false,
+        jump: false,
+        lightSpell: false,
+        potionSlots: { held: true, press: "triangle" },
+      });
+      expect(afterL2).toMatchObject({
+        dodge: false,
+        heavySpell: false,
+        jump: false,
+        lightSpell: false,
+        potionSlots: { held: false, press: null },
+      });
+    });
+
+    it("drinks nothing from L2 alone, and the face buttons act as usual without it", () => {
+      const { pad, press, tick } = holding([0, 0, 0, 0]);
+
+      pullL2(pad, 1);
+      const l2Alone = tick();
+      pullL2(pad, 0);
+      tick();
+      press(faces.circle, true);
+      const circlePressed = tick();
+
+      expect(l2Alone.potionSlots.press).toBeNull();
+      expect(circlePressed).toMatchObject({
+        dodge: true,
+        potionSlots: { held: false, press: null },
+      });
+    });
+
+    it("holds L2 past a light pull and lets it go only once nearly released", () => {
+      const { pad, tick } = holding([0, 0, 0, 0]);
+
+      pullL2(pad, hold * 0.8);
+      const light = tick();
+      pullL2(pad, hold * 1.2);
+      const held = tick();
+      pullL2(pad, (hold + release) / 2);
+      const easing = tick();
+      pullL2(pad, release * 0.5);
+      const letGo = tick();
+
+      expect(
+        [light, held, easing, letGo].map((each) => each.potionSlots.held)
+      ).toStrictEqual([false, true, true, false]);
+    });
+
+    it("keeps the Shield on L1 while L2 is held", () => {
+      const { pad, press, tick } = holding([0, 0, 0, 0]);
+
+      pullL2(pad, 1);
+      press(l1, true);
+
+      expect(tick()).toMatchObject({
+        potionSlots: { held: true, press: null },
+        shield: true,
+      });
+    });
+
+    it("casts from the Spell Slot, not the Potion Slot, when R2 and L2 are both held", () => {
+      const { pad, press, tick } = holding([0, 0, 0, 0]);
+
+      pull(pad, 1);
+      pullL2(pad, 1);
+      tick();
+      press(faces.square, true);
+
+      expect(tick()).toMatchObject({
+        potionSlots: { held: true, press: null },
+        spellSlots: { held: true, press: "square" },
+      });
+    });
+  });
+
   describe("pumping the Clash with △", () => {
     it("pumps with each press of △, up and down again", () => {
       const { clash, press, tick } = holding([0, 0, 0, 0]);

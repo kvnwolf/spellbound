@@ -309,10 +309,30 @@ describe("Depulso", () => {
     expect(duelist(duel, "rival").chargeSeconds).toBe(0);
   });
 
-  // Not tested yet: Depulso interrupting an opponent drinking a Potion (the
-  // Potion lost). Potions do not exist until #8; Depulso's hit is a
-  // `spell-hit` like any other, so the rule "a hit interrupts drinking" will
-  // cover it. #8 should add that test here.
+  it("interrupts an opponent drinking a Potion: the Potion is lost", () => {
+    const duel = ready({ rival: offFacing(2.5, 0) });
+
+    // The rival holds L2 and presses □ for Wiggenweld, then the push lands.
+    run(duel, 1, {
+      rival: intent({ potionSlots: { held: true, press: "square" } }),
+    });
+    const { drinking } = duelist(duel, "rival");
+
+    const events = [
+      ...depulsoFrom(duel),
+      ...run(duel, secondsToTicks(tuning.potions.drink.seconds + 0.5)),
+    ];
+
+    expect(drinking).toMatchObject({ kind: "wiggenweld" });
+    expect(ofType(events, "potion-interrupted")).toStrictEqual([
+      { duelistId: "rival", kind: "wiggenweld", type: "potion-interrupted" },
+    ]);
+    expect(ofType(events, "potion-drunk")).toStrictEqual([]);
+    expect(duelist(duel, "rival")).toMatchObject({
+      drinking: null,
+      potions: { wiggenweld: tuning.potions.wiggenweld.charges - 1 },
+    });
+  });
 
   it("is blocked by a Shield facing the caster, which still slides back, less far, and stays up", () => {
     const shield = { rival: intent({ shield: true }) };

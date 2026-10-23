@@ -33,6 +33,8 @@ import {
 import type { Aim, GroundPoint, Point3 } from "./geometry";
 import { idleIntent } from "./intent";
 import type { Intent, Vec2 } from "./intent";
+import { fullCharges, potionIn } from "./potions";
+import type { LastingPotion, PotionKind, PotionSlot } from "./potions";
 import {
   boundTo,
   focusCost,
@@ -42,6 +44,8 @@ import {
 import type { SpecialSpellKind, SpellSlot } from "./spell-slots";
 
 export type { SpecialSpellKind, SpellSlot } from "./spell-slots";
+
+export type { LastingPotion, PotionKind, PotionSlot } from "./potions";
 
 export type DuelistId = string;
 
@@ -156,6 +160,25 @@ export interface DuelistState {
    * it is in their hand. Disarmed, they cannot cast or Shield.
    */
   readonly looseWand: LooseWand | null;
+  /** Charges left of each Potion this Round; full again every Round. */
+  readonly potions: Readonly<Record<PotionKind, number>>;
+  /**
+   * The Potion being drunk, and how long until it is down; null when not
+   * drinking. Drinking, the Duelist walks slowly and cannot cast, Shield,
+   * Charge, Dodge or jump, and a Spell landing on them interrupts it.
+   */
+  readonly drinking: Drinking | null;
+  /** Seconds left of each lasting Potion's effect; 0 while it is not active. */
+  readonly potionEffects: Readonly<Record<LastingPotion, number>>;
+  /** The Potion Slots' modifier (L2) is held: a face button now drinks from its slot. */
+  readonly potionSlotsHeld: boolean;
+}
+
+/** A Potion on its way down. */
+export interface Drinking {
+  readonly kind: PotionKind;
+  /** Seconds until it is drunk and takes effect. */
+  readonly secondsLeft: number;
 }
 
 /** A Disarmed Duelist's Wand, out of their hand. */
@@ -418,6 +441,24 @@ export type DuelEvent =
       readonly how: "pickup" | "return";
       readonly position: Point3;
     }
+  /** A Duelist started drinking a Potion from its slot; its charge is spent. */
+  | {
+      readonly type: "potion-start";
+      readonly duelistId: DuelistId;
+      readonly kind: PotionKind;
+    }
+  /** A Potion is down and takes effect: Wiggenweld heals at once, the others start lasting. */
+  | {
+      readonly type: "potion-drunk";
+      readonly duelistId: DuelistId;
+      readonly kind: PotionKind;
+    }
+  /** A Spell landed on a Duelist drinking a Potion (or they lost control): the Potion is lost. */
+  | {
+      readonly type: "potion-interrupted";
+      readonly duelistId: DuelistId;
+      readonly kind: PotionKind;
+    }
   /** A defence was asked for without enough Stamina, and refused. */
   | {
       readonly type: "stamina-short";
@@ -648,6 +689,10 @@ interface Bookkeeping {
   wand: LostWand | undefined;
   /** The Clash pump was down last tick: a Clash counts presses, not the hold. */
   pumpHeld: boolean;
+  /** The Potion being drunk and the ticks until it is down. */
+  drink: { readonly kind: PotionKind; ticksLeft: number } | undefined;
+  /** Ticks left of each lasting Potion's effect. */
+  effectTicks: Record<LastingPotion, number>;
 }
 
 /** A Wand knocked loose: where it left the hand, where it lands, and how many ticks since. */
@@ -675,6 +720,8 @@ const freshBookkeeping = (): Bookkeeping => ({
   cooldownTicks: { depulso: 0, expelliarmus: 0, incendio: 0, petrificus: 0 },
   dodgeStep: { x: 0, z: 0 },
   dodgeTicks: 0,
+  drink: undefined,
+  effectTicks: { strength: 0, swiftness: 0 },
   heavyHeld: false,
   held: false,
   hiddenTicks: 0,
@@ -961,6 +1008,7 @@ export const createDuel = (config: DuelConfig): Duel => {
       chargeSeconds: 0,
       cooldowns: { depulso: 0, expelliarmus: 0, incendio: 0, petrificus: 0 },
       dodgeSeconds: 0,
+      drinking: null,
       elevation: 0,
       facing: defaultForward,
       // Focus starts empty every Round.
@@ -973,6 +1021,10 @@ export const createDuel = (config: DuelConfig): Duel => {
       looseWand: null,
       petrifiedSeconds: 0,
       position: setup.spawn,
+      potionEffects: { strength: 0, swiftness: 0 },
+      potionSlotsHeld: false,
+      // Every Potion's charges refill every Round.
+      potions: fullCharges(tuning),
       shielding: false,
       spellSlotsHeld: false,
       sprinting: false,
@@ -1324,6 +1376,8 @@ export const createDuel = (config: DuelConfig): Duel => {
     readonly backfires: Map<DuelistId, number>;
     /** What Depulso's cone costs the Duelists it caught this tick, applied once the Spells are cast. */
     readonly blasts: Map<DuelistId, number>;
+    /** How many of `events` have been checked for hits interrupting a Potion. */
+    checkedForDrinks: number;
   }
 
   const { defence } = tuning;
@@ -1335,13 +1389,29 @@ export const createDuel = (config: DuelConfig): Duel => {
   const handsFree = (book: Bookkeeping) =>
     book.dodgeTicks === 0 && book.wand === undefined;
 
-  /** Stamina as it is spent through one tick. */
+  /** Stamina as it is spent through one tick; `unlimited` under a Swiftness Potion, when nothing costs any. */
   interface Purse {
     stamina: number;
     spent: boolean;
+    readonly unlimited: boolean;
   }
 
+  /** A Duelist's Stamina for this tick: under a Swiftness Potion it stays full and nothing spends it. */
+  const purseOf = (self: DuelistState, book: Bookkeeping): Purse => {
+    const unlimited = book.effectTicks.swiftness > 0;
+
+    return {
+      spent: false,
+      stamina: unlimited ? defence.stamina.max : self.stamina,
+      unlimited,
+    };
+  };
+
   const spend = (purse: Purse, amount: number) => {
+    if (purse.unlimited) {
+      return;
+    }
+
     purse.stamina = Math.max(purse.stamina - amount, 0);
     purse.spent = true;
   };
@@ -1589,7 +1659,7 @@ export const createDuel = (config: DuelConfig): Duel => {
       sprint: intent.sprint,
     };
 
-    const purse: Purse = { spent: false, stamina: self.stamina };
+    const purse = purseOf(self, book);
     const elevation = fall(self, book, draft);
     const grounded = elevation === 0 && book.verticalSpeed === 0;
     book.dodgeTicks = Math.max(book.dodgeTicks - 1, 0);
@@ -2029,6 +2099,12 @@ export const createDuel = (config: DuelConfig): Duel => {
     });
   };
 
+  /** What a Duelist's Spell damage is multiplied by: more under a Strength Potion. */
+  const strengthOf = (id: DuelistId) =>
+    books(id).effectTicks.strength > 0
+      ? tuning.potions.strength.damageScale
+      : 1;
+
   /**
    * A Spell landing on a Duelist at `position`: its damage (added to
    * `damage`), the Stagger, Petrified or knockback it brings, and the hit
@@ -2041,7 +2117,8 @@ export const createDuel = (config: DuelConfig): Duel => {
     targetId: DuelistId,
     position: Point3
   ) => {
-    const { amount, knockback } = impactOf(spell);
+    const { knockback } = impactOf(spell);
+    const amount = impactOf(spell).amount * strengthOf(spell.casterId);
     damage.set(targetId, (damage.get(targetId) ?? 0) + amount);
 
     // The strong Stupefy Staggers: no moving or casting for a moment.
@@ -2752,6 +2829,182 @@ export const createDuel = (config: DuelConfig): Duel => {
     for (const kind of specialSpellKinds) {
       book.cooldownTicks[kind] = Math.max(book.cooldownTicks[kind] - 1, 0);
     }
+
+    book.effectTicks.strength = Math.max(book.effectTicks.strength - 1, 0);
+    book.effectTicks.swiftness = Math.max(book.effectTicks.swiftness - 1, 0);
+  };
+
+  /**
+   * A Potion being drunk is lost: a Spell landed, or the drinker lost
+   * control. Reported only while the Round is fought (`reported`): past a
+   * Knockout it just goes.
+   */
+  const interruptDrink = (draft: Draft, id: DuelistId, reported = true) => {
+    const book = books(id);
+
+    if (book.drink && reported) {
+      draft.events.push({
+        duelistId: id,
+        kind: book.drink.kind,
+        type: "potion-interrupted",
+      });
+    }
+
+    book.drink = undefined;
+  };
+
+  /**
+   * Every Spell that landed on a drinker since the last check (a direct hit,
+   * Depulso's included, whatever its damage; not a Burn) interrupts their
+   * Potion, which is lost.
+   */
+  const interruptDrinks = (draft: Draft) => {
+    for (const event of draft.events.slice(draft.checkedForDrinks)) {
+      if (event.type === "spell-hit") {
+        interruptDrink(draft, event.targetId);
+      }
+    }
+
+    draft.checkedForDrinks = draft.events.length;
+  };
+
+  /**
+   * The Potion a Duelist free to act starts drinking this tick: the one bound
+   * to the Potion Slot they pressed, if they have a charge of it and their
+   * hands are free of anything else (on the floor, not Dodging, Shielding or
+   * Charging, and not already drinking). A Disarmed Duelist can drink.
+   */
+  const drinkOf = (
+    self: DuelistState,
+    book: Bookkeeping,
+    guard: Guard,
+    pressed: PotionSlot | null
+  ): PotionKind | undefined => {
+    const kind = pressed === null ? null : potionIn(pressed, tuning);
+
+    if (
+      kind === null ||
+      self.potions[kind] <= 0 ||
+      book.drink !== undefined ||
+      book.dodgeTicks > 0 ||
+      book.chargeTicks > 0 ||
+      guard.state.shielding ||
+      guard.airborne
+    ) {
+      return undefined;
+    }
+
+    return kind;
+  };
+
+  /** A Potion is down: Wiggenweld heals at once, the others start lasting. Returns the drinker's new Health. */
+  const takeEffect = (
+    self: DuelistState,
+    book: Bookkeeping,
+    kind: PotionKind,
+    draft: Draft
+  ) => {
+    draft.events.push({ duelistId: self.id, kind, type: "potion-drunk" });
+
+    if (kind === "wiggenweld") {
+      const max = tuning.duelist.health;
+
+      return Math.min(
+        self.health + max * tuning.potions.wiggenweld.healShare,
+        max
+      );
+    }
+
+    book.effectTicks[kind] = ticksOf(tuning.potions[kind].seconds);
+
+    return self.health;
+  };
+
+  /** The walking stride's multiplier under a Swiftness Potion: faster while it lasts. */
+  const swiftScale = (book: Bookkeeping) =>
+    book.effectTicks.swiftness > 0 ? tuning.potions.swiftness.speedScale : 1;
+
+  /** What `drinkTick` needs of the Duelist acting this tick. */
+  interface Actor {
+    /** As they stood at the start of the tick. */
+    readonly self: DuelistState;
+    /** With their defence settled. */
+    readonly defended: DuelistState;
+    readonly guard: Guard;
+    readonly intent: Intent;
+    readonly obstacles: readonly Obstacle[];
+    readonly target: DuelistState | undefined;
+  }
+
+  /**
+   * A Potion for a Duelist free to act this tick: drinking starts from the
+   * Potion Slot pressed (spending its charge), or goes on, and once it is
+   * down it takes effect. Drinking, the Duelist casts nothing, loses any
+   * Charge and only walks slowly. Returns their state, or undefined when
+   * they are not drinking.
+   */
+  const drinkTick = (
+    { defended, guard, intent, obstacles, self, target }: Actor,
+    book: Bookkeeping,
+    draft: Draft
+  ): DuelistState | undefined => {
+    const started = drinkOf(self, book, guard, intent.potionSlots.press);
+
+    if (started) {
+      book.drink = {
+        kind: started,
+        ticksLeft: ticksOf(tuning.potions.drink.seconds),
+      };
+      draft.events.push({
+        duelistId: self.id,
+        kind: started,
+        type: "potion-start",
+      });
+    } else if (book.drink) {
+      book.drink.ticksLeft -= 1;
+    }
+
+    const { drink } = book;
+
+    if (!drink) {
+      return undefined;
+    }
+
+    book.chargeTicks = 0;
+    book.queued = false;
+
+    const down = drink.ticksLeft === 0;
+
+    const health = down
+      ? takeEffect(self, book, drink.kind, draft)
+      : self.health;
+
+    if (down) {
+      book.drink = undefined;
+    }
+
+    const move = clampLength(intent.move, 1);
+    const speed = stride * tuning.potions.drink.moveScale * swiftScale(book);
+
+    const wanted = walk(
+      self.position,
+      self.aim.yaw,
+      target?.position,
+      move.x * speed,
+      move.y * speed
+    );
+
+    return {
+      ...defended,
+      chargeSeconds: 0,
+      health,
+      knockbackSeconds: 0,
+      position: collide(wanted, bodyRadius, obstacles, arena),
+      potions: started
+        ? { ...self.potions, [started]: self.potions[started] - 1 }
+        : self.potions,
+      staggerSeconds: book.staggerTicks * tickSeconds,
+    };
   };
 
   /**
@@ -2791,7 +3044,18 @@ export const createDuel = (config: DuelConfig): Duel => {
         ...state,
         burnSeconds: book.burnTicks * tickSeconds,
         cooldowns: cooldownsOf(book),
+        drinking: book.drink
+          ? {
+              kind: book.drink.kind,
+              secondsLeft: book.drink.ticksLeft * tickSeconds,
+            }
+          : null,
         petrifiedSeconds: book.petrifiedTicks * tickSeconds,
+        potionEffects: {
+          strength: book.effectTicks.strength * tickSeconds,
+          swiftness: book.effectTicks.swiftness * tickSeconds,
+        },
+        potionSlotsHeld: canLook && intent.potionSlots.held,
         // In a Clash, R2 is the pump, not the Spell Slots' modifier.
         spellSlotsHeld: canLook && intent.spellSlots.held,
       });
@@ -2799,16 +3063,19 @@ export const createDuel = (config: DuelConfig): Duel => {
       const target =
         self.targetId === null ? undefined : byId.get(self.targetId);
 
+      // Drinking a Potion, the hands are full: no Dodge, jump, sprint or Shield.
+      const canDefend = canAct && book.drink === undefined;
+
       // Defence runs first, and even for a Duelist who cannot act: a jump
       // still falls and Stamina still regenerates.
       // Pushed back behind a Shield by Depulso, the Shield stays up.
       const guard = defend(
         self,
         intent,
-        canAct,
+        canDefend,
         target,
         draft,
-        canAct || guardedSlide(self, book, phase)
+        canDefend || guardedSlide(self, book, phase)
       );
 
       const defended = { ...self, ...guard.state };
@@ -2822,7 +3089,21 @@ export const createDuel = (config: DuelConfig): Duel => {
       const obstacles = [...arena.cover, ...arena.obstructions, ...others];
 
       if (!canAct) {
+        // Losing control loses the Potion too.
+        interruptDrink(draft, self.id, phase === "fighting");
+
         return status(sidelined(defended, book, obstacles));
+      }
+
+      // Drinking a Potion (or starting one) takes the whole tick.
+      const drinking = drinkTick(
+        { defended, guard, intent, obstacles, self, target },
+        book,
+        draft
+      );
+
+      if (drinking) {
+        return status(drinking);
       }
 
       const special = specialOf(self, book, guard, intent.spellSlots.press);
@@ -2853,9 +3134,9 @@ export const createDuel = (config: DuelConfig): Duel => {
 
       // Charging is a commitment: the Duelist creeps (and cannot sprint).
       const speed =
-        book.chargeTicks > 0
+        (book.chargeTicks > 0
           ? stride * confringo.chargeMoveScale
-          : stride * guard.pace;
+          : stride * guard.pace) * swiftScale(book);
 
       // A Dodge dashes along its own line instead of walking.
       const wanted = guard.dash
@@ -2901,15 +3182,16 @@ export const createDuel = (config: DuelConfig): Duel => {
    * closer they stand, losing any Charge (no Backfire), and takes its damage,
    * unless a Shield facing the caster blocks it (it cannot be Parried): then
    * the push is weaker, and the Shield stays up through the slide.
-   * Interrupting a Potion being drunk is left to Potions (#8), which a hit
-   * interrupts: Depulso's is a `spell-hit` like any other.
+   * Its hit is a `spell-hit` like any other, so it interrupts a Potion being
+   * drunk.
    */
   const blast = (draft: Draft, caster: DuelistState, spell: SpellState) => {
     if (draft.round.phase !== "fighting") {
       return;
     }
 
-    const { coneDegrees, damage, knockback, range } = depulso;
+    const { coneDegrees, knockback, range } = depulso;
+    const damage = depulso.damage * strengthOf(caster.id);
     const halfAngle = (coneDegrees * Math.PI) / 360;
     const ticks = ticksOf(knockback.seconds);
     const caught = new Set<DuelistId>();
@@ -3151,6 +3433,7 @@ export const createDuel = (config: DuelConfig): Duel => {
       ...current,
       backfires: new Map(),
       blasts: new Map(),
+      checkedForDrinks: 0,
       events: [],
     };
 
@@ -3161,6 +3444,8 @@ export const createDuel = (config: DuelConfig): Duel => {
     const damage = flySpells(draft);
 
     struggle(draft, intentOf, damage);
+    // A Spell landing on a drinker (in flight, or a Clash won) loses their Potion.
+    interruptDrinks(draft);
     applyDamage(draft, burn(draft, damage));
     decideRound(draft);
 
@@ -3171,6 +3456,8 @@ export const createDuel = (config: DuelConfig): Duel => {
     decideRound(draft);
     tendWands(draft);
     cast(draft, releases);
+    // Depulso's cone lands as it is cast, interrupting a drinker caught in it.
+    interruptDrinks(draft);
     // Depulso lands as it is cast, and can Knock an opponent Out.
     applyDamage(draft, draft.blasts);
     decideRound(draft);

@@ -1,7 +1,7 @@
 import type { DualSenseSnapshot } from "../dualsense/input";
 import { clashOpponentOf } from "../duel/duel";
 import { idleIntent } from "../duel/intent";
-import type { TargetSwitch, Vec2 } from "../duel/intent";
+import type { SlotsIntent, TargetSwitch, Vec2 } from "../duel/intent";
 import { spellSlots } from "../duel/spell-slots";
 import type { SpellSlot } from "../duel/spell-slots";
 import { tuning } from "../tuning";
@@ -65,16 +65,28 @@ const createFlickDetector = (
   };
 };
 
+/** Whether a trigger modifier is held: past `hold`, or still above `release` once it was. */
+const holds = (
+  travel: number,
+  was: boolean,
+  { hold, release }: Tuning["input"]["spellSlots"]
+) => travel > (was ? release : hold);
+
 /**
- * R2 and the face buttons, read for the Spell Slots. R2 is the modifier,
- * held past `hold` until it comes back under `release`. A face button pressed
- * while it is held is a press of that button's Spell Slot (one per tick,
- * △ □ ○ ✕ in that order), and its usual action is withheld until the button
- * is let go, even if R2 is let go first. A face button already held before
- * R2 keeps its usual action, so pulling R2 mid-Charge never releases it.
+ * R2, L2 and the face buttons, read for the Spell Slots and the Potion
+ * Slots. Each trigger is a modifier, held past `hold` until it comes back
+ * under `release`. A face button pressed while R2 is held is a press of that
+ * button's Spell Slot; while only L2 is held, of its Potion Slot (one per
+ * tick, △ □ ○ ✕ in that order). Its usual action is withheld until the
+ * button is let go, even if the trigger is let go first. A face button
+ * already held before the trigger keeps its usual action, so pulling R2 or
+ * L2 mid-Charge never releases it.
  */
-const createSlotReader = (settings: Tuning["input"]["spellSlots"]) => {
-  let held = false;
+const createSlotReader = (
+  settings: Pick<Tuning["input"], "potionSlots" | "spellSlots">
+) => {
+  let spellHeld = false;
+  let potionHeld = false;
   const down = { circle: false, cross: false, square: false, triangle: false };
 
   const toSlot = {
@@ -86,13 +98,14 @@ const createSlotReader = (settings: Tuning["input"]["spellSlots"]) => {
 
   return {
     read: (pad: DualSenseSnapshot) => {
-      held = pad.triggers.r2 > (held ? settings.release : settings.hold);
+      spellHeld = holds(pad.triggers.r2, spellHeld, settings.spellSlots);
+      potionHeld = holds(pad.triggers.l2, potionHeld, settings.potionSlots);
       let press: SpellSlot | null = null;
 
       for (const slot of spellSlots) {
         const now = pad.buttons[slot];
 
-        if (now && !down[slot] && held) {
+        if (now && !down[slot] && (spellHeld || potionHeld)) {
           toSlot[slot] = true;
           press ??= slot;
         } else if (!now) {
@@ -110,12 +123,17 @@ const createSlotReader = (settings: Tuning["input"]["spellSlots"]) => {
           square: down.square && !toSlot.square,
           triangle: down.triangle && !toSlot.triangle,
         },
-        held,
-        press,
+        // R2 wins a press made with both triggers held.
+        potionSlots: {
+          held: potionHeld,
+          press: spellHeld ? null : press,
+        },
+        spellSlots: { held: spellHeld, press: spellHeld ? press : null },
       };
     },
     reset: () => {
-      held = false;
+      spellHeld = false;
+      potionHeld = false;
 
       for (const slot of spellSlots) {
         down[slot] = false;
@@ -187,6 +205,9 @@ const createStartGuard = () => {
  * - R2 (held): the Spell Slots' modifier. While it is held, pressing a face
  *   button casts from its Spell Slot instead of its usual action (R2 alone
  *   casts nothing); the right stick keeps turning the camera as usual.
+ * - L2 (held): the Potion Slots' modifier, the mirror of R2: a face button
+ *   pressed while it is held drinks from its Potion Slot instead of its usual
+ *   action. L1's Shield is unaffected. With both triggers held, R2 wins.
  * - During a Clash every △ press is a pump (R2 pumps nothing). △ does
  *   nothing else from the Clash on until it has been let go after the Clash
  *   ends, so the △ that Charged the Confringo, or the one that pumped, never
@@ -202,7 +223,7 @@ export const createHumanController = (
   const tickSeconds = 1 / settings.tickRate;
   const aimResponse = createAimResponse(look);
   const flicks = createFlickDetector(flick, tickSeconds);
-  const slots = createSlotReader(settings.input.spellSlots);
+  const slots = createSlotReader(settings.input);
   const startGuard = createStartGuard();
   let r3WasDown = false;
   let settleTicks = 0;
@@ -241,13 +262,19 @@ export const createHumanController = (
 
       const stick = settling ? { x: 0, y: 0 } : pad.rightStick;
       const turn = aimResponse.step(stick, tickSeconds);
-      const { face, held, press } = slots.read(pad);
+      const { face, potionSlots, spellSlots: castSlots } = slots.read(pad);
 
       if (clashOpponentOf(snapshot.clash, self) !== undefined) {
         triangleSpoken = true;
       } else if (!pad.buttons.triangle) {
         triangleSpoken = false;
       }
+
+      // A △ spoken for by the Clash presses no slot either.
+      const spokenFor = (read: SlotsIntent): SlotsIntent =>
+        triangleSpoken && read.press === "triangle"
+          ? { ...read, press: null }
+          : read;
 
       return {
         // △ is also the Clash pump; the simulation counts the presses, and
@@ -266,11 +293,9 @@ export const createHumanController = (
           yaw: turn.x * look.maxYawSpeed,
         },
         move: pad.leftStick,
+        potionSlots: spokenFor(potionSlots),
         shield: pad.buttons.l1,
-        spellSlots: {
-          held,
-          press: triangleSpoken && press === "triangle" ? null : press,
-        },
+        spellSlots: spokenFor(castSlots),
         sprint: pad.buttons.r1,
         switchTarget: settling ? 0 : flicks.read(stick),
       };

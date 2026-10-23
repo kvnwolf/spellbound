@@ -8,10 +8,10 @@ export interface Vec2 {
 }
 
 /**
- * The Spell Slots this tick: `held` while the modifier (R2, for a human) is
- * held, and `press`, the slot whose face button was pressed this tick (for
- * that single tick), or null. The simulation casts the Special Spell bound to
- * a pressed slot, if it can be cast.
+ * The Spell Slots (or the Potion Slots) this tick: `held` while the modifier
+ * (R2, or L2, for a human) is held, and `press`, the slot whose face button
+ * was pressed this tick (for that single tick), or null. The simulation casts
+ * the Special Spell (or drinks the Potion) bound to a pressed slot, if it can.
  */
 export interface SlotsIntent {
   readonly held: boolean;
@@ -74,6 +74,8 @@ export interface Intent {
   readonly sprint: boolean;
   /** The Spell Slots: the modifier held, and a slot pressed this tick. */
   readonly spellSlots: SlotsIntent;
+  /** The Potion Slots: the modifier held, and a slot pressed this tick. */
+  readonly potionSlots: SlotsIntent;
   /**
    * The Clash pump (△, for a human) is down this tick. Only a Duelist locked
    * in a Clash reads it: each press, not the hold, pushes the meeting point
@@ -92,6 +94,7 @@ export const idleIntent: Intent = {
   lockOn: false,
   look: { pitch: 0, yaw: 0 },
   move: { x: 0, y: 0 },
+  potionSlots: { held: false, press: null },
   shield: false,
   spellSlots: { held: false, press: null },
   sprint: false,

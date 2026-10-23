@@ -10,6 +10,7 @@ import type {
   DuelistId,
   DuelistState,
   DuelSnapshot,
+  PotionKind,
   SpellState,
   TeamId,
 } from "../duel/duel";
@@ -87,7 +88,13 @@ export type Sound =
   /** A Clash won: the beam drives through. */
   | { readonly kind: "clash-win" }
   /** A Clash nobody won blowing up. */
-  | { readonly kind: "clash-explode" };
+  | { readonly kind: "clash-explode" }
+  /** A Potion uncorked and drunk. */
+  | { readonly kind: "potion-drink" }
+  /** A Potion down and taking effect: Wiggenweld's heal, Strength's surge, Swiftness's rush. */
+  | { readonly kind: "potion-effect"; readonly potion: PotionKind }
+  /** A Potion lost to a hit: the vial shattering. */
+  | { readonly kind: "potion-interrupted" };
 
 /** How a Round ended for the local Duelist. */
 export type RoundOutcome = "draw" | "lost" | "won";
@@ -311,6 +318,15 @@ const eventSounds: EventSounds = {
       { kind: "perfect-release" },
       event.spell.position
     ),
+  ],
+  "potion-drunk": (event, _frame, place) => [
+    place.by(event.duelistId, { kind: "potion-effect", potion: event.kind }),
+  ],
+  "potion-interrupted": (event, _frame, place) => [
+    place.by(event.duelistId, { kind: "potion-interrupted" }),
+  ],
+  "potion-start": (event, _frame, place) => [
+    place.by(event.duelistId, { kind: "potion-drink" }),
   ],
   // The Duel's own result stands in for its last Round's.
   "round-end": (event, frame) =>

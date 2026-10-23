@@ -466,6 +466,51 @@ describe(cuesFor, () => {
     });
   });
 
+  describe("Potions", () => {
+    it("uncorks a Potion as drinking starts, sounds its effect as it is down and shatters one interrupted", () => {
+      const snapshot = duelSnapshot();
+      const rival = snapshot.duelists.find((each) => each.id === opponent);
+
+      const chest = {
+        x: rival?.position.x,
+        y: tuning.duelist.chestHeight,
+        z: rival?.position.z,
+      };
+
+      expect(
+        cues([
+          { duelistId: local, kind: "wiggenweld", type: "potion-start" },
+          { duelistId: local, kind: "wiggenweld", type: "potion-drunk" },
+          { duelistId: local, kind: "strength", type: "potion-drunk" },
+          { duelistId: local, kind: "swiftness", type: "potion-drunk" },
+          { duelistId: opponent, kind: "strength", type: "potion-interrupted" },
+        ])
+      ).toStrictEqual([
+        { at: null, opponent: false, sound: { kind: "potion-drink" } },
+        {
+          at: null,
+          opponent: false,
+          sound: { kind: "potion-effect", potion: "wiggenweld" },
+        },
+        {
+          at: null,
+          opponent: false,
+          sound: { kind: "potion-effect", potion: "strength" },
+        },
+        {
+          at: null,
+          opponent: false,
+          sound: { kind: "potion-effect", potion: "swiftness" },
+        },
+        {
+          at: chest,
+          opponent: true,
+          sound: { kind: "potion-interrupted" },
+        },
+      ]);
+    });
+  });
+
   describe("Rounds", () => {
     it("beats the countdown's first number as soon as an intro is heard", () => {
       expect(beats(null, introAt(3))).toStrictEqual([

@@ -78,6 +78,11 @@ const everySound: EverySound = {
   "petrificus-cast": [{ kind: "petrificus-cast" }],
   petrify: [{ kind: "petrify" }],
   "petrify-break": [{ kind: "petrify-break" }],
+  "potion-drink": [{ kind: "potion-drink" }],
+  "potion-effect": (["strength", "swiftness", "wiggenweld"] as const).map(
+    (potion) => ({ kind: "potion-effect" as const, potion })
+  ),
+  "potion-interrupted": [{ kind: "potion-interrupted" }],
   "round-end": (["draw", "lost", "won"] as const).map((outcome) => ({
     kind: "round-end" as const,
     outcome,
@@ -217,6 +222,10 @@ describe("the catalog covers every sound", () => {
   });
 });
 
+/** The sample a Potion's effect plays. */
+const effect = (potion: "strength" | "swiftness" | "wiggenweld") =>
+  sampleFor({ kind: "potion-effect", potion }, settings).sample;
+
 describe("the sample a sound plays", () => {
   it("plays the strong impact for every third Stupefy and the plain one otherwise", () => {
     expect(
@@ -246,6 +255,14 @@ describe("the sample a sound plays", () => {
     expect(
       sampleFor({ kind: "stupefy-cast", strong: false }, settings).ducks
     ).toBeFalsy();
+  });
+
+  it("plays each Potion's own effect as it is down", () => {
+    expect([
+      effect("wiggenweld"),
+      effect("strength"),
+      effect("swiftness"),
+    ]).toStrictEqual(["potion-heal", "potion-strength", "potion-swiftness"]);
   });
 
   it("plays a fuller Confringo louder", () => {

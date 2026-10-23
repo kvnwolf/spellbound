@@ -5,6 +5,7 @@
  *
  * A new sound is one line in `sampleOfSound` (plus its kind in `cues.ts`).
  */
+import type { PotionKind } from "../duel/potions";
 import type { DuelScreen, PauseScreen, Screen } from "../screens/screens";
 import type { Tuning } from "../tuning";
 import type { LoopSound, MenuSound, RoundOutcome, Sound } from "./cues";
@@ -69,6 +70,13 @@ const roundEnd: Readonly<Record<RoundOutcome, SampleId>> = {
   won: "round-won",
 };
 
+/** Each Potion's effect as it is down. */
+const potionEffect: Readonly<Record<PotionKind, SampleId>> = {
+  strength: "potion-strength",
+  swiftness: "potion-swiftness",
+  wiggenweld: "potion-heal",
+};
+
 /** Every third Stupefy, and a heavy Spell on a Shield: louder and lower. */
 const heavy = (is: boolean, { emphasis }: AudioSettings) =>
   is ? { gain: emphasis.heavy.gain, rate: emphasis.heavy.rate } : {};
@@ -117,6 +125,12 @@ const sampleOfSound: SampleTable = {
   "petrificus-cast": just("petrificus-cast"),
   petrify: just("petrify"),
   "petrify-break": just("petrify-break"),
+  "potion-drink": just("potion-drink"),
+  "potion-effect": {
+    pick: ({ potion }) => ({ sample: potionEffect[potion] }),
+    samples: Object.values(potionEffect),
+  },
+  "potion-interrupted": just("potion-interrupted"),
   "round-end": {
     pick: ({ outcome }) => ({ sample: roundEnd[outcome] }),
     samples: Object.values(roundEnd),
