@@ -749,7 +749,7 @@ export const tuning = {
       /** Stamina drained every second spent sprinting (only while moving). */
       drain: 20,
       /** Running speed, as a multiple of the walking speed. */
-      speedScale: 1.6,
+      speedScale: 2,
     },
     stamina: {
       max: 100,
@@ -895,7 +895,8 @@ export const tuning = {
        * covers the ground actually travelled. The clip cycles advance at the
        * cadence and the legs reach by IK to the stride (scaled on the clip's
        * own, between `stride[0]` and `stride[1]` of it), so planted feet stay
-       * put at any speed; the pelvis keeps `bob` of the clip's bounce. Walk,
+       * put at any speed; the pelvis keeps `bob` of the clip's bounce and the
+       * upper body `calm` of the standing pose (the clips swing hard). Walk,
        * jog and sprint each play alone, handing over to the next across the
        * `crossovers` speed bands (m/s); the speed eases at `speedSharpness`
        * and the gait fades in at `gaitSharpness` above `minSpeed`. Moving off
@@ -910,15 +911,16 @@ export const tuning = {
        * gait: `maxTwist` of π lets the legs run any way, turning as an angle.
        */
       gait: {
-        bob: 0.45,
+        bob: 0.3,
         cadence: {
-          run: { base: 2.45, perSpeed: 0.12 },
+          run: { base: 2.3, perSpeed: 0.12 },
           walk: { base: 1.3, perSpeed: 0.35 },
         },
+        calm: 0.35,
         counterTwist: 0.45,
         crossovers: [
-          [1.6, 2.4],
-          [5.6, 6.8],
+          [1.4, 2.2],
+          [4.4, 5.6],
         ],
         gaitSharpness: 8,
         headTurn: 1.1,
@@ -997,7 +999,7 @@ export const tuning = {
         rim: "#ffb36b",
       },
     },
-    walkSpeed: 4.5,
+    walkSpeed: 3.2,
     /**
      * The visible Wand and the right arm that holds it. At rest, walking or
      * running the arm hangs with the clips, the Wand held low. It rises (by

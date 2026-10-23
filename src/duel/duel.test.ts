@@ -1179,13 +1179,27 @@ describe("Lock-on", () => {
     expect(Math.max(...turns)).toBeLessThanOrEqual(mostPerTick + 1e-9);
   });
 
-  it("can be escaped by a sideways strafe at mid range", () => {
+  it("is not escaped by jogging sideways at mid range", () => {
     const duel = fight();
     toggleLock(duel);
 
     const events = [
       ...run(duel, 1, { hero: castLight, rival: rivalStrafes }),
       ...run(duel, secondsToTicks(1.5), { rival: rivalStrafes }),
+    ];
+
+    expect(ofType(events, "spell-cast")).toHaveLength(1);
+    expect(ofType(events, "spell-hit")).toHaveLength(1);
+  });
+
+  it("can be escaped by sprinting sideways at mid range", () => {
+    const duel = fight();
+    toggleLock(duel);
+    const sprints = intent({ move: { x: -1, y: 0 }, sprint: true });
+
+    const events = [
+      ...run(duel, 1, { hero: castLight, rival: sprints }),
+      ...run(duel, secondsToTicks(1.5), { rival: sprints }),
     ];
 
     expect(ofType(events, "spell-cast")).toHaveLength(1);

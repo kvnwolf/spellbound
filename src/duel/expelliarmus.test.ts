@@ -276,7 +276,7 @@ describe("A Disarmed Duelist", () => {
 const walkTo = (duel: Duel, who: string, spot: GroundPoint) => {
   const events: DuelEvent[] = [];
 
-  for (let tick = 0; tick < secondsToTicks(4); tick += 1) {
+  for (let tick = 0; tick < secondsToTicks(6); tick += 1) {
     const self = duelist(duel, who);
     const offset = distanceBetween(self.position, spot);
 

@@ -616,15 +616,19 @@ export const createDuelistView = (
     }
 
     // Locomotion, in step: one phase for every clip, each offset so its
-    // left foot leads at the same moment.
+    // left foot leads at the same moment. The upper body keeps `gait.calm`
+    // of the standing pose on the move: the clips swing the arms and rock
+    // the shoulders far more than a person jogging does.
     const strides = strideWeights();
 
     for (const layer of [upper, lower]) {
+      const calm = layer === upper ? gait.calm * gaitWeight : 0;
+
       lay(
         layer,
         "Idle_Loop",
         loopTime(clock, durationOf("Idle_Loop")),
-        1 - gaitWeight
+        1 - gaitWeight + calm
       );
 
       for (const [index, clip] of locomotionClips.entries()) {
@@ -633,7 +637,7 @@ export const createDuelistView = (
           layer,
           clip,
           loopTime((phase + assets.strides[clip].offset) * duration, duration),
-          gaitWeight * (strides[index] ?? 0)
+          (gaitWeight - calm) * (strides[index] ?? 0)
         );
       }
     }
