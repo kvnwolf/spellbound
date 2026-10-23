@@ -241,6 +241,8 @@ export const createDuelistView = (
   let gaitWeight = 0;
   let walking = false;
   const heading = new Vector3(0, 0, 1);
+  /** `heading` as a yaw in the body frame, eased the short way round. */
+  let headingYaw = 0;
   let last: { x: number; z: number; elevation: number } | null = null;
   let phase = 0;
   let backward = false;
@@ -471,13 +473,15 @@ export const createDuelistView = (
       seconds
     );
 
+    // Eased as an angle, not a vector: reversing (right to left) swings
+    // one way round instead of collapsing through zero and flipping about.
     if (distance > 1e-5) {
-      heading
-        .lerp(
-          scratch.set(localX / distance, 0, localZ / distance),
-          1 - Math.exp(-gait.speedSharpness * seconds)
-        )
-        .normalize();
+      headingYaw = wrap(
+        headingYaw +
+          wrap(Math.atan2(localX, localZ) - headingYaw) *
+            (1 - Math.exp(-gait.speedSharpness * seconds))
+      );
+      heading.set(Math.sin(headingYaw), 0, Math.cos(headingYaw));
     }
 
     walking = travelling && speed > gait.minSpeed;
@@ -1109,13 +1113,54 @@ export const createDuelistView = (
     }
   };
 
-  /** Turns the legs toward the motion and the chest back to the facing; the head follows the aim. */
+  /**
+   * The head looks where the Duelist means to: the facing (a Locked On
+   * Duelist's Target), or the aim while the Wand is up, whatever the clips
+   * and the spine left it at (a cast clip turns it toward the Wand hand).
+   */
+  const lookAhead = (sample: DuelistSample) => {
+    if (
+      sample.knockedOut ||
+      rollAge < dodgeSeconds ||
+      riseAge < durationOf("LayToIdle")
+    ) {
+      return;
+    }
+
+    const wanted =
+      object.rotation.y +
+      wrap(wandYaw(sample) - object.rotation.y) * weight.lock;
+
+    joints.head.updateWorldMatrix(true, false);
+    const e = joints.head.matrixWorld.elements;
+
+    const off = Math.max(
+      -gait.headTurn,
+      Math.min(gait.headTurn, wrap(wanted - Math.atan2(e[8], e[10])))
+    );
+
+    turnAbout(joints.neck, up, off * 0.4);
+    turnAbout(joints.head, up, off * 0.6);
+  };
+
+  /**
+   * Turns the legs toward the motion; the chest turns back to the facing
+   * only as far as a spine can (`counterTwist`), all the way while the Wand
+   * is up, and the head looks the rest of the way (`headTurn` at most).
+   */
   const turnBody = (sample: DuelistSample) => {
+    const held = Math.max(
+      -gait.counterTwist,
+      Math.min(gait.counterTwist, twist)
+    );
+
+    const counter = held + (twist - held) * weight.lock;
+
     if (Math.abs(twist) > 1e-4) {
       turnAbout(joints.pelvis, up, twist);
 
       for (const spine of joints.spine) {
-        turnAbout(spine, up, -twist / joints.spine.length);
+        turnAbout(spine, up, -counter / joints.spine.length);
       }
     }
 
@@ -1131,6 +1176,8 @@ export const createDuelistView = (
         turnAbout(spine, up, lead / joints.spine.length);
       }
     }
+
+    lookAhead(sample);
 
     directionToWorld(leftAxis.set(1, 0, 0), leftAxis);
     const pitch = Math.max(-1, Math.min(1, sample.aim.pitch));

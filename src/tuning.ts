@@ -900,23 +900,26 @@ export const tuning = {
        * `crossovers` speed bands (m/s); the speed eases at `speedSharpness`
        * and the gait fades in at `gaitSharpness` above `minSpeed`. Moving off
        * the facing, the legs turn toward the motion (at most `maxTwist`,
-       * easing at `twistSharpness`) while the spine turns the chest back;
-       * past `backFrom` off the facing (back under `backTo`) the legs walk
-       * backwards instead.
+       * easing at `twistSharpness`); the spine turns the chest back at most
+       * `counterTwist` (all the way while the Wand is up) and the head looks
+       * the rest, at most `headTurn` off the chest. Past `backFrom` off the
+       * facing (back under `backTo`) the legs walk backwards instead.
        */
       gait: {
-        backFrom: 1.95,
-        backTo: 1.7,
+        backFrom: 2.2,
+        backTo: 1.9,
         bob: 0.45,
         cadence: {
           run: { base: 2.45, perSpeed: 0.12 },
           walk: { base: 1.3, perSpeed: 0.35 },
         },
+        counterTwist: 0.45,
         crossovers: [
           [1.6, 2.4],
           [5.6, 6.8],
         ],
         gaitSharpness: 8,
+        headTurn: 1.1,
         maxTwist: 1.6,
         minSpeed: 0.3,
         speedSharpness: 10,
@@ -1024,11 +1027,11 @@ export const tuning = {
         petrificus: { inward: 0.15, raise: -0.35, reach: 0.12 },
         stupefy: { inward: 0.12, raise: 0.55, reach: 0.05 },
       },
-      hold: 0.5,
+      hold: 0.08,
       /** How long the Wand is, from the grip to the tip. */
       length: 0.4,
       lockSharpness: 14,
-      lowerSharpness: 6,
+      lowerSharpness: 12,
       rest: [0.2, 0.08, 1],
       shield: [0.1, 0.42, 0.9],
     },
