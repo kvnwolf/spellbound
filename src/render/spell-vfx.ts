@@ -983,6 +983,23 @@ export const createSpellVfx = (settings: SpellVfxSettings): SpellVfx => {
     });
   };
 
+  /**
+   * The Clash's bursts: two Confringos slamming together, every pump at the
+   * meeting point, and the blast when nobody wins it. The beam itself is
+   * the Clash VFX's.
+   */
+  const clashBurst = (event: DuelEvent) => {
+    if (event.type === "clash-start" || event.type === "clash-pump") {
+      burst(
+        event.clash.point,
+        event.type === "clash-start" ? bursts.confringoStop : bursts.perfect,
+        palettes.confringo
+      );
+    } else if (event.type === "clash-end" && event.outcome === "exploded") {
+      explode(event.position);
+    }
+  };
+
   const handle = (events: readonly DuelEvent[]) => {
     // Round and Duel events have no Spell look.
     for (const event of events) {
@@ -1061,6 +1078,8 @@ export const createSpellVfx = (settings: SpellVfxSettings): SpellVfx => {
         castPoints.set(event.reflected.id, event.position);
         burst(event.position, bursts.hit, palettes[event.spell.kind]);
       }
+
+      clashBurst(event);
     }
   };
 

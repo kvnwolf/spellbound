@@ -1,0 +1,103 @@
+/*
+ * The Clash HUD: "¡Clash!" in the centre as it starts (it rests invisible
+ * and punches in), then the pump prompt under the reticle: a pulsing R2
+ * trigger, its line, and the tug-of-war bar. Gold and fire on translucent ink.
+ */
+.clash-callout {
+  position: absolute;
+  inset: 30% 0 auto;
+  color: var(--confringo);
+  font-size: clamp(3.4rem, 10vw, 7.5rem);
+  font-style: italic;
+  letter-spacing: 0.05em;
+  text-align: center;
+  white-space: nowrap;
+  opacity: 0;
+  text-shadow:
+    0 0 28px rgb(255 120 30 / 75%),
+    0 0 8px rgb(255 226 160 / 60%),
+    0 2px 6px rgb(0 0 0 / 85%);
+}
+
+.clash-prompt {
+  position: absolute;
+  inset: calc(50% + 4.6rem) 0 auto;
+  display: grid;
+  gap: 0.45rem;
+  justify-items: center;
+}
+
+.clash-prompt[hidden],
+#hud.hud-held .clash-callout,
+#hud.hud-held .clash-prompt {
+  display: none;
+}
+
+/* The R2 trigger: a rounded tab, like the DualSense's, breathing fire. */
+.clash-trigger {
+  display: grid;
+  place-items: center;
+  width: 3.4rem;
+  height: 2.3rem;
+  border: 2px solid var(--gold);
+  border-radius: 1.2rem 1.2rem 0.5rem 0.5rem;
+  color: var(--parchment);
+  font-size: 1.15rem;
+  letter-spacing: 0.06em;
+  background: var(--ink);
+  animation: clash-breathe 0.42s ease-in-out infinite alternate;
+}
+
+@keyframes clash-breathe {
+  from {
+    box-shadow:
+      0 0 6px rgb(255 140 50 / 35%),
+      inset 0 0 4px rgb(255 140 50 / 20%);
+  }
+
+  to {
+    border-color: var(--confringo);
+    box-shadow:
+      0 0 22px rgb(255 140 50 / 85%),
+      inset 0 0 10px rgb(255 160 70 / 55%);
+  }
+}
+
+.clash-pump {
+  color: var(--gold);
+  font-size: clamp(1rem, 2vw, 1.3rem);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+/* Where the meeting point stands: filled from the local Duelist's side. */
+.clash-bar {
+  position: relative;
+  width: clamp(10rem, 24vw, 16rem);
+  height: 0.32rem;
+  border-radius: 0.2rem;
+  background: rgb(10 12 24 / 60%);
+  box-shadow: 0 0 0 1px rgb(216 180 106 / 45%);
+}
+
+.clash-bar-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 50%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--gold), var(--confringo));
+}
+
+.clash-bar-marker {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 50%;
+  translate: -50% -50%;
+  background: #fff3d6;
+  box-shadow:
+    0 0 10px #ffd08a,
+    0 0 18px var(--confringo);
+}

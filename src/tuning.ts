@@ -354,6 +354,12 @@ export const tuning = {
      */
     chargePush: { degrees: 5, sharpness: 7 },
     /**
+     * During a Clash the Lock-on framing is taken from a point this many
+     * metres to the local Duelist's right, so the beam runs across the
+     * screen at an angle instead of straight away from the camera.
+     */
+    clashSideStep: 2,
+    /**
      * Keeping the view clear of Arena geometry. The camera is a disc of radius
      * `margin` that must stay inside the walls and out of every column, and
      * no column may stand between it and the local Duelist.
@@ -884,6 +890,8 @@ export const tuning = {
       /** Pulses per second of the red flash between the full Charge and its Backfire. */
       warnPulse: 14,
     },
+    /** "¡Clash!" punches in for `calloutSeconds` as the local Duelist's Clash starts; the R2 prompt kicks for `pumpKickSeconds` on every pump. */
+    clash: { calloutSeconds: 1.1, pumpKickSeconds: 0.14 },
     /**
      * A floating number at the impact point of every hit on an opponent (never
      * on the local Duelist): it rises `risePixels` over `seconds` and fades

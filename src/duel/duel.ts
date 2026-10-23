@@ -720,6 +720,20 @@ export const clashOpponentOf = (
   return second.duelistId === id ? first.duelistId : undefined;
 };
 
+/**
+ * Whether a Duelist looks around (turns, Locks On, holds the Spell Slots)
+ * this tick: standing, during the intro or the fight, and not rooted in a
+ * Clash, where R2 is the pump and nothing else moves.
+ */
+const looksAround = (
+  self: DuelistState,
+  phase: RoundPhase,
+  clash: ClashState | null
+) =>
+  (phase === "fighting" || phase === "intro") &&
+  !self.knockedOut &&
+  clashOpponentOf(clash, self.id) === undefined;
+
 /** Where a Duelist's Spells leave the Wand. */
 export const wandTip = (self: DuelistState, tuning: Tuning): Point3 => {
   const { forward, height, right } = tuning.duelist.wandTip;
@@ -2739,14 +2753,7 @@ export const createDuel = (config: DuelConfig): Duel => {
       const pressed = intent.lightSpell && !book.held;
       const heavyPressed = intent.heavySpell && !book.heavyHeld;
 
-      // Locked in a Clash, a Duelist is rooted: no moving, turning, casting
-      // or defending, only pumping.
-      const rooted = clashOpponentOf(draft.clash, standing.id) !== undefined;
-
-      const canLook =
-        (phase === "fighting" || phase === "intro") &&
-        !standing.knockedOut &&
-        !rooted;
+      const canLook = looksAround(standing, phase, draft.clash);
 
       const self = canLook
         ? steer(standing, intent, draft.duelists, draft.events)

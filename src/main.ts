@@ -8,6 +8,7 @@ import "./style.css";
 import { createActivationHint } from "./activation-hint";
 import { courtyard, courtyardSpawns } from "./arena/courtyard";
 import { createDuelAudio } from "./audio/audio";
+import { createClashHud } from "./clash-hud";
 import { createAiController } from "./controllers/ai-controller";
 import type { Controller } from "./controllers/controller";
 import { idleController } from "./controllers/controller";
@@ -21,17 +22,18 @@ import type { DualSenseSnapshot } from "./dualsense/input";
 import { createMenuInput } from "./dualsense/menu-input";
 import { chargeStage } from "./duel/charge";
 import type { Difficulty } from "./duel/difficulty";
-import { createDuel } from "./duel/duel";
+import { clashOpponentOf, createDuel } from "./duel/duel";
 import type { DuelEvent, DuelistId, DuelSnapshot } from "./duel/duel";
 import { idleIntent } from "./duel/intent";
 import type { Intent } from "./duel/intent";
 import { createFixedStepClock } from "./game-loop";
 import { createHud } from "./hud";
 import { createOverlay } from "./overlay";
-import { createCameraRig } from "./render/camera-rig";
+import { clashViewpoint, createCameraRig } from "./render/camera-rig";
 import { createCameraShake } from "./render/camera-shake";
 import { createChargeRing } from "./render/charge-ring";
 import { chargingWands } from "./render/charging-wands";
+import { createClashVfx } from "./render/clash-vfx";
 import { createCourtyardScene, torchSpots } from "./render/courtyard-view";
 import { createDefenceVfx } from "./render/defence-vfx";
 import { createDuelistView } from "./render/duelist-view";
@@ -187,6 +189,11 @@ const start = async () => {
         shake.add(tuning.cameraShake.depulsoCast);
       }
 
+      // A Clash blowing up between the two Wands jolts the camera too.
+      if (event.type === "clash-end" && event.outcome === "exploded") {
+        shake.add(tuning.cameraShake.explosion);
+      }
+
       // An Incendio blast jolts the camera, hardest for the one caught in it.
       if (event.type === "explosion") {
         shake.add(
@@ -266,6 +273,10 @@ const start = async () => {
   // Protego domes and Parry flashes.
   const defenceVfx = createDefenceVfx(tuning.protego);
   scene.add(defenceVfx.object);
+
+  // The Clash's beam between two Wands and its meeting point.
+  const clashVfx = createClashVfx();
+  scene.add(clashVfx.object);
 
   // The camera must also stay clear of the torch stands on the parapet, which
   // are scenery rather than Cover, so Spells ignore them.
@@ -349,6 +360,9 @@ const start = async () => {
 
   // Focus and the Spell Slots with their Cooldowns.
   const specialsHud = createSpellSlotsHud(hudElement, localId, tuning);
+
+  // "¡Clash!" and the R2 pump prompt.
+  const clashHud = createClashHud(hudElement, localId, tuning.hud.clash);
 
   // Opponents' floating Health bars and the damage numbers on them.
   const worldHud = createWorldHud(hudElement, localId, {
@@ -528,10 +542,11 @@ const start = async () => {
       );
       reticle.show({ locked: false, visible: false }, rig.camera, seconds);
     } else if (localSample) {
-      const target =
-        localSample.targetId === null
-          ? undefined
-          : samples.get(localSample.targetId);
+      // In a Clash the camera frames both ends of the beam, locked or not,
+      // from a step to the side so the beam crosses the screen.
+      const foe = clashOpponentOf(current.clash, localId);
+      const framed = foe ?? localSample.targetId;
+      const target = framed === null ? undefined : samples.get(framed);
 
       // Free: the camera follows the aim and the reticle marks where
       // Spells go. Locked On: the camera frames both, the reticle quickly
@@ -540,7 +555,14 @@ const start = async () => {
         localSample,
         target && {
           nudge: localSample.lockNudge,
-          self: localSample.position,
+          self:
+            foe === undefined
+              ? localSample.position
+              : clashViewpoint(
+                  localSample.position,
+                  target.position,
+                  tuning.camera.clashSideStep
+                ),
           target: target.position,
         },
         seconds
@@ -623,6 +645,11 @@ const start = async () => {
     );
     hud.show(current, events, seconds);
     specialsHud.show(current);
+    clashHud.show(current, events);
+    clashVfx.handle(events);
+    clashVfx.update(previous.clash, current.clash, alpha, simSeconds, (id) =>
+      views.get(id)?.wandTipPosition()
+    );
 
     showCharge(current, events, seconds, inDuel);
 

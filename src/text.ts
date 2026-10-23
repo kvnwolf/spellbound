@@ -6,6 +6,15 @@ export const text = {
     effects: "Haz clic en la página para activar los efectos del DualSense",
     sound: "Haz clic en la página para activar el sonido",
   },
+  /** While the local Duelist is locked in a Clash. */
+  clash: {
+    /** Punched onto the screen as the Clash starts. */
+    callout: "¡Clash!",
+    /** Under the pulsing trigger, telling the player to pump. */
+    pump: "¡Pulsa R2!",
+    /** The trigger's label on its icon. */
+    trigger: "R2",
+  },
   connectDualSense: "Conecta tu DualSense y pulsa cualquier botón",
   difficulty: {
     duelista: "Duelista",

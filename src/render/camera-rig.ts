@@ -148,6 +148,21 @@ const eyeBetween = (
   };
 };
 
+/**
+ * Where the Lock-on framing is taken from during a Clash: `sideStep` metres
+ * to the right of `self` (facing `target`), so the beam between them runs
+ * across the screen at an angle rather than straight away from the camera.
+ */
+export const clashViewpoint = (
+  self: GroundPoint,
+  target: GroundPoint,
+  sideStep: number
+): GroundPoint => {
+  const right = rightOf(direction(self, target));
+
+  return { x: self.x + right.x * sideStep, z: self.z + right.z * sideStep };
+};
+
 export const createCameraRig = (
   { camera: settings, chestHeight, eye: aimEye }: CameraRigSettings,
   arena: ArenaLayout,
