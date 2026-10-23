@@ -305,9 +305,20 @@ const start = async () => {
 
   let clock = createFixedStepClock(tuning.tickRate);
 
+  // A collapsed (hidden or zero-size) page keeps the last valid size and skips
+  // rendering, so the WebGPU swapchain never sees a 0-sized texture.
+  let hasArea = false;
+
   const resize = () => {
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    rig.resize(window.innerWidth / window.innerHeight);
+    const { innerHeight: height, innerWidth: width } = window;
+    hasArea = width > 0 && height > 0;
+
+    if (!hasArea) {
+      return;
+    }
+
+    renderer.setSize(width, height);
+    rig.resize(width / height);
   };
 
   resize();
@@ -553,7 +564,9 @@ const start = async () => {
       reticleElement.hidden = true;
     }
 
-    frame.render();
+    if (hasArea) {
+      frame.render();
+    }
   });
 };
 
