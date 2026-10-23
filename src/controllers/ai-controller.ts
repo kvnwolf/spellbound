@@ -3,8 +3,11 @@
  * reads the Duel snapshot and produces the same Intent a human's DualSense
  * does: it turns its aim and presses R3 to Lock On, walks and strafes to keep
  * its distance, taps Stupefy and holds Confringo, raises the Shield, Dodges
- * and jumps at incoming Spells, ducks behind Cover, punishes a Staggered
- * opponent and pumps in a Clash. Every reaction waits a human-like delay, and every choice is
+ * and jumps at incoming Spells, ducks behind Cover, casts the Special Spell
+ * that fits the moment from its Spell Slots, punishes an opponent left open
+ * (Staggered, Petrified, Disarmed or drinking), walks round Cover to its
+ * Wand when Disarmed, drinks Potions when it is safe and they make sense,
+ * and pumps in a Clash. Every reaction waits a human-like delay, and every choice is
  * rolled on a seeded random source, so a Duel replays exactly per seed.
  * Pure: no three.js, no DOM.
  */
@@ -15,6 +18,8 @@ import type {
   ArenaLayout,
   DuelistState,
   DuelSnapshot,
+  LooseWand,
+  PotionSlot,
   SpellState,
 } from "../duel/duel";
 import {
@@ -28,7 +33,22 @@ import {
 import type { GroundPoint } from "../duel/geometry";
 import { idleIntent } from "../duel/intent";
 import type { Intent, Vec2 } from "../duel/intent";
+import type { SpecialSpellKind, SpellSlot } from "../duel/spell-slots";
 import type { Tuning } from "../tuning";
+import { wayToward } from "./ai-path";
+import {
+  handsFree,
+  potionSlotOf,
+  potionToDrink,
+  safeToDrink,
+} from "./ai-potions";
+import {
+  fittingSpecial,
+  plausibleSpecials,
+  readySpecials,
+  slotOf,
+  withinDepulso,
+} from "./ai-specials";
 import type { Controller } from "./controller";
 import { between, gaussian, pick } from "./random";
 import type { Random } from "./random";
@@ -42,6 +62,9 @@ export interface AiSetup {
 }
 
 const defenceKinds = ["dodge", "jump", "shield"] as const;
+
+/** The Spell Slots untouched: R2 up, no face button. */
+const idleSpells = { spellSlots: idleIntent.spellSlots };
 
 type DefenceKind = (typeof defenceKinds)[number];
 
@@ -70,6 +93,26 @@ interface Threat {
   readonly height: number;
 }
 
+/** The ways an opponent can be left open to a punish. */
+type Opening = "disarmed" | "drinking" | "petrified" | "staggered";
+
+/** The opening `opponent` gives right now, if any. */
+const openingOf = (opponent: DuelistState): Opening | undefined => {
+  if (opponent.petrifiedSeconds > 0) {
+    return "petrified";
+  }
+
+  if (opponent.staggerSeconds > 0) {
+    return "staggered";
+  }
+
+  if (opponent.drinking) {
+    return "drinking";
+  }
+
+  return opponent.looseWand ? "disarmed" : undefined;
+};
+
 /** Everything the AI keeps between ticks. Times are Duel seconds. */
 interface Memory {
   round: number;
@@ -84,7 +127,8 @@ interface Memory {
   attack: Attack | undefined;
   nextAttackAt: number;
   punishAt: number | undefined;
-  opponentWasStaggered: boolean;
+  /** The opening the opponent gave last tick, if any. */
+  opponentOpening: Opening | undefined;
   cover: { readonly spot: GroundPoint; readonly until: number } | undefined;
   seen: Set<number>;
   previous: DuelSnapshot | undefined;
@@ -94,22 +138,40 @@ interface Memory {
   pumpAt: number | undefined;
   /** How far the AI asked to walk last tick, in metres, to tell when it is stuck. */
   askedStride: number;
+  /** Disarmed and stuck on the way to the Wand: go round obstacles on this side until then. */
+  detour: { readonly side: -1 | 1; readonly until: number } | undefined;
+  /** When the AI next looks for a Special Spell to cast. */
+  specialLookAt: number;
+  /** A Shield being baited before an Expelliarmus: until when, and whether the Shield went up. */
+  bait: { readonly sawShield: boolean; readonly until: number } | undefined;
+  /** The opponent was Charging or drinking within Depulso's reach last tick. */
+  opponentWasThreatening: boolean;
+  /** When the AI next weighs drinking a Potion. */
+  potionLookAt: number;
+  /** Already thought about hiding to drink during this stretch of low Health. */
+  hidToDrink: boolean;
 }
 
 const freshMemory = (): Memory => ({
   askedStride: 0,
   attack: undefined,
+  bait: undefined,
   cover: undefined,
   defences: [],
+  detour: undefined,
+  hidToDrink: false,
   lockReadyAt: 0,
   nextAttackAt: 0,
-  opponentWasStaggered: false,
+  opponentOpening: undefined,
+  opponentWasThreatening: false,
+  potionLookAt: 0,
   pressed: { dodge: false, jump: false, light: false, pump: false },
   previous: undefined,
   pumpAt: undefined,
   punishAt: undefined,
   round: 0,
   seen: new Set(),
+  specialLookAt: 0,
   strafe: 0,
   strafeUntil: 0,
   stuckTicks: 0,
@@ -172,6 +234,7 @@ export const createAiController = ({
     Object.assign(memory, freshMemory(), {
       nextAttackAt: now + reaction(),
       round,
+      specialLookAt: now + reaction(),
     });
   };
 
@@ -265,7 +328,8 @@ export const createAiController = ({
         self.stamina >= defence.jump.cost &&
         landsAt - readyAt >= ai.jump.minWarning &&
         threat.height < ai.jump.maxHeight,
-      shield: self.stamina > ai.staminaReserve,
+      // Disarmed, there is no Shield to raise.
+      shield: self.looseWand === null && self.stamina > ai.staminaReserve,
     };
 
     const action = pick(
@@ -343,21 +407,38 @@ export const createAiController = ({
     }
   };
 
-  /** A Staggered or Petrified opponent: after a reaction, maybe go for the punish. */
-  const watchOpponent = (opponent: DuelistState, now: number) => {
-    const staggered =
-      opponent.staggerSeconds > 0 || opponent.petrifiedSeconds > 0;
+  /**
+   * An opponent left open (Staggered, Petrified, Disarmed or drinking):
+   * each time an opening starts, after a reaction, maybe go for the punish.
+   */
+  const watchOpponent = (
+    self: DuelistState,
+    opponent: DuelistState,
+    now: number
+  ) => {
+    const opening = openingOf(opponent);
 
-    if (staggered && !memory.opponentWasStaggered) {
+    if (opening !== undefined && opening !== memory.opponentOpening) {
       memory.punishAt =
         random() < profile.punishChance ? now + reaction() : undefined;
     }
 
-    if (!staggered) {
+    if (opening === undefined) {
       memory.punishAt = undefined;
     }
 
-    memory.opponentWasStaggered = staggered;
+    memory.opponentOpening = opening;
+
+    // Starting to Charge or drink within Depulso's reach: look for a Special soon.
+    const threatening =
+      (opponent.chargeSeconds > 0 || opponent.drinking !== null) &&
+      withinDepulso(self, opponent, tuning);
+
+    if (threatening && !memory.opponentWasThreatening) {
+      memory.specialLookAt = Math.min(memory.specialLookAt, now + reaction());
+    }
+
+    memory.opponentWasThreatening = threatening;
   };
 
   const chargeHold = () =>
@@ -367,18 +448,37 @@ export const createAiController = ({
       tuning.confringo.fullSeconds * 2
     );
 
+  /**
+   * How long the opponent's opening has left for a Confringo released into
+   * it: a Stagger or Petrified as it stands; a drink, less the Spell's flight
+   * (it must land before the Potion is down); a Disarm until the Wand
+   * returns (no Shield till then).
+   */
+  const openingLeft = (self: DuelistState, opponent: DuelistState) => {
+    if (opponent.drinking) {
+      const flight =
+        distanceBetween(self.position, opponent.position) /
+        tuning.confringo.speed;
+
+      return opponent.drinking.secondsLeft - flight;
+    }
+
+    if (opponent.looseWand) {
+      return opponent.looseWand.returnSeconds;
+    }
+
+    return Math.max(opponent.staggerSeconds, opponent.petrifiedSeconds);
+  };
+
   /** The punish: a Charged Confringo when the opening lasts long enough to release it, else a full Stupefy chain. */
-  const punish = (opponent: DuelistState, now: number) => {
+  const punish = (self: DuelistState, opponent: DuelistState, now: number) => {
     memory.punishAt = undefined;
 
     if (memory.attack?.kind === "heavy") {
       return;
     }
 
-    const opening = Math.max(
-      opponent.staggerSeconds,
-      opponent.petrifiedSeconds
-    );
+    const opening = openingLeft(self, opponent);
 
     const hold = chargeHold();
 
@@ -487,10 +587,12 @@ export const createAiController = ({
    * The defence buttons this tick, from the plans: the Shield is up through
    * every planned Shield's window (overlapping windows hold it up, separate
    * ones raise it afresh, which is what Parries); a Dodge or jump is pressed
-   * once its moment comes. Plans carried out or past are dropped.
+   * once its moment comes, along `toward` if given (else to its side).
+   * Plans carried out or past are dropped.
    */
   const defenceButtons = (
-    now: number
+    now: number,
+    toward: Vec2 | undefined
   ): Partial<Pick<Intent, "dodge" | "jump" | "move" | "shield">> => {
     memory.defences = memory.defences.filter(
       (plan) => plan.action !== "shield" || now < plan.lowerAt
@@ -514,7 +616,7 @@ export const createAiController = ({
     memory.defences = memory.defences.filter((plan) => plan !== due);
 
     return due.action === "dodge"
-      ? { dodge: true, move: { x: due.side, y: 0 } }
+      ? { dodge: true, move: toward ?? { x: due.side, y: 0 } }
       : { jump: true, shield };
   };
 
@@ -574,8 +676,8 @@ export const createAiController = ({
     }
   };
 
-  /** Picks a new strafe now and then, and turns round when stuck against something. */
-  const steerStrafe = (self: DuelistState, now: number) => {
+  /** Counts the ticks in a row the AI, free to walk, covered much less ground than it asked to: stuck against something. */
+  const countStuck = (self: DuelistState) => {
     const before = memory.previous && find(memory.previous, self.id);
     const walked = before ? distanceBetween(before.position, self.position) : 0;
 
@@ -593,6 +695,20 @@ export const createAiController = ({
       walked < memory.askedStride * ai.stuckShare
         ? memory.stuckTicks + 1
         : 0;
+  };
+
+  /** Picks a new strafe now and then, and turns round when stuck against something. */
+  const steerStrafe = (self: DuelistState, now: number) => {
+    countStuck(self);
+
+    // Stuck on the way to its Wand: go round the other way for a while.
+    if (memory.stuckTicks > ai.stuckTicks && self.looseWand) {
+      memory.detour = {
+        side: memory.detour?.side === 1 ? -1 : 1,
+        until: now + between(random, ai.wand.detourSeconds),
+      };
+      memory.stuckTicks = 0;
+    }
 
     if (memory.stuckTicks > ai.stuckTicks && memory.strafe !== 0) {
       memory.strafe = memory.strafe === 1 ? -1 : 1;
@@ -612,6 +728,43 @@ export const createAiController = ({
     }
   };
 
+  /**
+   * Disarmed: straight for the Wand where it lands, the short way round
+   * Cover, Obstructions and the opponent, sprinting while Stamina leaves
+   * enough for a Dodge. Hiding in Cover is forgotten.
+   */
+  const toWand = (
+    self: DuelistState,
+    wand: LooseWand,
+    opponent: DuelistState,
+    ahead: GroundPoint,
+    now: number
+  ): Pick<Intent, "move" | "sprint"> => {
+    memory.cover = undefined;
+
+    if (memory.detour && now >= memory.detour.until) {
+      memory.detour = undefined;
+    }
+
+    const obstacles = [
+      ...arena.cover,
+      ...arena.obstructions,
+      { center: opponent.position, radius: bodyRadius },
+    ];
+
+    const way = wayToward(
+      self.position,
+      wand.landing,
+      obstacles,
+      bodyRadius + ai.wand.clearance,
+      memory.detour?.side
+    );
+
+    const sprint = self.stamina > tuning.defence.dodge.cost + ai.staminaReserve;
+
+    return { move: relativeTo(way, ahead), sprint };
+  };
+
   /** Where to walk this tick: keep within the band and strafe, or head for Cover. */
   const walk = (
     self: DuelistState,
@@ -623,6 +776,10 @@ export const createAiController = ({
     const ahead = locked
       ? direction(self.position, opponent.position)
       : forwardOf(self.aim.yaw);
+
+    if (self.looseWand) {
+      return toWand(self, self.looseWand, opponent, ahead, now);
+    }
 
     if (memory.cover && now >= memory.cover.until) {
       memory.cover = undefined;
@@ -737,6 +894,111 @@ export const createAiController = ({
     };
   };
 
+  /** The Spell Slot of the Special Spell `kind`, cast now: the attack under way is dropped and the next waits its pause. */
+  const castSpecial = (kind: SpecialSpellKind, now: number) => {
+    memory.attack = undefined;
+    memory.bait = undefined;
+    memory.nextAttackAt = now + between(random, profile.attackPause);
+
+    return slotOf(kind, tuning);
+  };
+
+  /** Baiting a Shield: Expelliarmus as soon as the Shield it drew drops, or once the bait has had its time. */
+  const baited = (
+    self: DuelistState,
+    opponent: DuelistState,
+    now: number
+  ): SpellSlot | undefined => {
+    const { bait } = memory;
+
+    if (!bait || memory.attack) {
+      return undefined;
+    }
+
+    if (opponent.shielding) {
+      memory.bait = { ...bait, sawShield: true };
+
+      return undefined;
+    }
+
+    if (!bait.sawShield && now < bait.until) {
+      return undefined;
+    }
+
+    memory.bait = undefined;
+
+    const still =
+      readySpecials(self, tuning).includes("expelliarmus") &&
+      opponent.dodgeSeconds === 0 &&
+      opponent.looseWand === null &&
+      !sightBlocked(self.position, opponent.position, arena.cover);
+
+    return still ? castSpecial("expelliarmus", now) : undefined;
+  };
+
+  /**
+   * A Special Spell to cast this tick, if any. Every `specials.lookSeconds`
+   * (sooner, after a reaction, when the opponent starts to Charge or drink
+   * within Depulso's reach) the AI looks for the one that fits the moment
+   * and, on its Difficulty's `chance`, casts it: the fitting one on its
+   * `sense`, else any it can pay for. Before an Expelliarmus it may first
+   * bait a Shield with a Stupefy and cast as the Shield drops. Never while
+   * Charging.
+   */
+  const specialFor = (
+    self: DuelistState,
+    opponent: DuelistState,
+    now: number
+  ): SpellSlot | undefined => {
+    if (memory.attack?.kind === "heavy") {
+      return undefined;
+    }
+
+    if (memory.bait) {
+      return baited(self, opponent, now);
+    }
+
+    if (now < memory.specialLookAt) {
+      return undefined;
+    }
+
+    memory.specialLookAt = now + ai.specials.lookSeconds;
+
+    const plausible = plausibleSpecials(self, opponent, arena, tuning);
+
+    if (plausible.length === 0 || random() >= profile.specials.chance) {
+      return undefined;
+    }
+
+    const kind =
+      random() < profile.specials.sense
+        ? fittingSpecial({
+            arena,
+            opponent,
+            reactionSeconds: profile.reactionSeconds.max,
+            self,
+            settings: tuning,
+          })
+        : plausible[Math.floor(random() * plausible.length)];
+
+    if (kind === undefined) {
+      return undefined;
+    }
+
+    if (kind === "expelliarmus" && random() < profile.specials.bait) {
+      // A single Stupefy to draw the Shield out first.
+      memory.attack = { kind: "light", left: 1, nextAt: now };
+      memory.bait = {
+        sawShield: false,
+        until: now + ai.specials.baitSeconds,
+      };
+
+      return undefined;
+    }
+
+    return castSpecial(kind, now);
+  };
+
   /**
    * The attack buttons this tick: a punish once its reaction is over, else
    * the next attack once its pause is, carried on until done. Defending
@@ -748,7 +1010,9 @@ export const createAiController = ({
     opponent: DuelistState,
     busy: boolean,
     now: number
-  ): Pick<Intent, "heavySpell" | "lightSpell"> => {
+  ): Pick<Intent, "heavySpell" | "lightSpell" | "spellSlots"> => {
+    const none = { ...idleSpells, heavySpell: false, lightSpell: false };
+
     if (busy) {
       memory.attack = undefined;
     }
@@ -763,25 +1027,138 @@ export const createAiController = ({
       !waiting &&
       memory.cover === undefined &&
       self.targetId === opponent.id &&
-      self.elevation === 0;
+      self.elevation === 0 &&
+      self.looseWand === null &&
+      self.drinking === null;
 
     if (!canAttack) {
-      return { heavySpell: false, lightSpell: false };
+      return none;
+    }
+
+    const special = specialFor(self, opponent, now);
+
+    if (special) {
+      return { ...none, spellSlots: { held: true, press: special } };
     }
 
     if (memory.punishAt !== undefined && now >= memory.punishAt) {
-      punish(opponent, now);
-    } else if (!memory.attack && now >= memory.nextAttackAt) {
+      punish(self, opponent, now);
+    } else if (!memory.attack && !memory.bait && now >= memory.nextAttackAt) {
       startAttack(self, opponent, now);
     }
 
-    return attackButtons(self, now);
+    return { ...attackButtons(self, now), ...idleSpells };
+  };
+
+  /**
+   * Low on Health with Wiggenweld left but no safe moment to drink it: once
+   * per such stretch, maybe head for Cover to drink there.
+   */
+  const hideToDrink = (
+    self: DuelistState,
+    opponent: DuelistState,
+    now: number
+  ) => {
+    if (memory.hidToDrink || memory.cover) {
+      return;
+    }
+
+    memory.hidToDrink = true;
+
+    const spot =
+      random() < profile.potions.seekCover
+        ? coverSpot(self, opponent)
+        : undefined;
+
+    if (spot) {
+      memory.cover = { spot, until: now + between(random, ai.cover.seconds) };
+      memory.attack = undefined;
+    }
+  };
+
+  /**
+   * The Potion Slot to drink from this tick, if any. Every
+   * `potions.lookSeconds`, with its hands free and no defence under way, the
+   * AI weighs its Potions: Wiggenweld at low Health when it is safe (else it
+   * may hide to drink); Swiftness to chase a Wand lying far off, or to get
+   * away at low Health with no Wiggenweld left; Strength while the opponent
+   * is Disarmed or its own Focus is full. Never with a Spell on its way.
+   */
+  const potionFor = (
+    self: DuelistState,
+    opponent: DuelistState,
+    snapshot: DuelSnapshot,
+    busy: boolean,
+    now: number
+  ): PotionSlot | undefined => {
+    const max = tuning.duelist.health;
+    const low = self.health <= max * profile.potions.wiggenweldBelow;
+
+    if (!low) {
+      memory.hidToDrink = false;
+    }
+
+    if (
+      busy ||
+      !handsFree(self) ||
+      memory.attack?.kind === "heavy" ||
+      now < memory.potionLookAt
+    ) {
+      return undefined;
+    }
+
+    memory.potionLookAt = now + ai.potions.lookSeconds;
+
+    // On its way: flying at the AI, or still homing on it (which may yet
+    // bend a Spell that would pass by onto it).
+    const incoming = snapshot.spells.some(
+      (spell) =>
+        spell.team !== self.team &&
+        (spell.homing?.targetId === self.id ||
+          threatOf(self, spell) !== undefined)
+    );
+
+    const safe = safeToDrink({
+      arena,
+      incoming,
+      opponent,
+      self,
+      settings: tuning,
+    });
+
+    const choice = potionToDrink({
+      incoming,
+      low,
+      opponent,
+      safe,
+      self,
+      settings: tuning,
+    });
+
+    if (choice === "hide") {
+      hideToDrink(self, opponent, now);
+
+      return undefined;
+    }
+
+    const chance =
+      choice === "wiggenweld" ? profile.potions.chance : profile.potions.boost;
+
+    if (choice === undefined || random() >= chance) {
+      return undefined;
+    }
+
+    memory.attack = undefined;
+    memory.bait = undefined;
+
+    return potionSlotOf(choice, tuning);
   };
 
   /** Everything the AI does while the Round is fought and it is free to act. */
   const fight = (
     self: DuelistState,
     opponent: DuelistState,
+    snapshot: DuelSnapshot,
     now: number
   ): Omit<Intent, "lockOn" | "look"> => {
     const walked = walk(self, opponent, now);
@@ -796,7 +1173,11 @@ export const createAiController = ({
       ? { ...walked, move: { x: 0, y: walked.move.y } }
       : walked;
 
-    const defending = defenceButtons(now);
+    // Disarmed, a Dodge carries it on toward its Wand.
+    const defending = defenceButtons(
+      now,
+      self.looseWand ? walked.move : undefined
+    );
 
     const busy =
       defending.shield === true ||
@@ -805,12 +1186,20 @@ export const createAiController = ({
       self.shielding ||
       self.dodgeSeconds > 0;
 
-    const intent = {
-      ...idleIntent,
-      ...walking,
-      ...attackFor(self, opponent, busy, now),
-      ...defending,
-    };
+    const potion = potionFor(self, opponent, snapshot, busy, now);
+
+    const intent = potion
+      ? {
+          ...idleIntent,
+          ...walking,
+          potionSlots: { held: true, press: potion },
+        }
+      : {
+          ...idleIntent,
+          ...walking,
+          ...attackFor(self, opponent, busy, now),
+          ...defending,
+        };
 
     memory.askedStride =
       Math.min(Math.hypot(intent.move.x, intent.move.y), 1) *
@@ -878,7 +1267,7 @@ export const createAiController = ({
     }
 
     watchSpells(self, snapshot, now);
-    watchOpponent(opponent, now);
+    watchOpponent(self, opponent, now);
     watchHealth(self, opponent, now);
     steerStrafe(self, now);
 
@@ -894,7 +1283,7 @@ export const createAiController = ({
       return { ...idleIntent, ...aiming };
     }
 
-    return { ...fight(self, opponent, now), ...aiming };
+    return { ...fight(self, opponent, snapshot, now), ...aiming };
   };
 
   return {

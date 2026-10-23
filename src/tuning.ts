@@ -41,6 +41,14 @@ export const tuning = {
      * once the crosshair is within `lockAngle` radians of the chest.
      */
     look: { gain: 8, lockAngle: 0.06, maxSpeed: 5 },
+    /**
+     * Potions. The AI weighs drinking one every `lookSeconds`. Drinking is
+     * safe only with no Spell on its way and the opponent unable to cast, or
+     * not Charging, beyond Depulso's reach and out of sight or at least
+     * `safeDistance` metres away. Swiftness is worth it to chase a Wand lying
+     * more than `chaseDistance` metres off.
+     */
+    potions: { chaseDistance: 5, lookSeconds: 0.3, safeDistance: 8 },
     profiles: {
       duelista: {
         attackPause: { max: 1.9, min: 0.8 },
@@ -53,9 +61,16 @@ export const tuning = {
         defendChance: 0.65,
         discipline: 0.4,
         heavyShare: 0.35,
+        potions: {
+          boost: 0.4,
+          chance: 0.6,
+          seekCover: 0.4,
+          wiggenweldBelow: 0.4,
+        },
         punishChance: 0.65,
         reactionSeconds: { max: 0.38, min: 0.22 },
         shieldLead: { max: 0.25, min: 0.05 },
+        specials: { bait: 0.2, chance: 0.4, sense: 0.75 },
         strafeChance: 0.7,
         strafeSpeed: 0.75,
       },
@@ -71,9 +86,16 @@ export const tuning = {
         defendChance: 0.88,
         discipline: 0.8,
         heavyShare: 0.4,
+        potions: {
+          boost: 0.8,
+          chance: 0.9,
+          seekCover: 0.8,
+          wiggenweldBelow: 0.45,
+        },
         punishChance: 0.95,
         reactionSeconds: { max: 0.25, min: 0.15 },
         shieldLead: { max: 0.13, min: 0.03 },
+        specials: { bait: 0.8, chance: 0.7, sense: 0.95 },
         strafeChance: 0.9,
         strafeSpeed: 1,
       },
@@ -99,12 +121,31 @@ export const tuning = {
         discipline: 0,
         /** Share of attacks that are a Charged Confringo; the rest are Stupefy bursts. */
         heavyShare: 0.3,
-        /** Chance to punish a Staggered opponent. */
+        /**
+         * Potions: it drinks Wiggenweld at or below `wiggenweldBelow` of full
+         * Health, on `chance` each time it weighs it and it is safe (else, once
+         * per stretch of low Health, it heads for Cover to drink on
+         * `seekCover`); Strength and Swiftness, when they make sense, on `boost`.
+         */
+        potions: {
+          boost: 0.1,
+          chance: 0.35,
+          seekCover: 0.1,
+          wiggenweldBelow: 0.3,
+        },
+        /** Chance to punish an opponent left open: Staggered, Petrified, Disarmed or drinking. */
         punishChance: 0.25,
         /** Seconds between noticing something (an incoming Spell, a Staggered opponent, a lost lock) and acting on it. */
         reactionSeconds: { max: 0.65, min: 0.4 },
         /** How long before a Spell lands the Shield goes up: within `defence.shield.parryWindow` it Parries. */
         shieldLead: { max: 0.45, min: 0.12 },
+        /**
+         * Special Spells: the chance, each time it looks for one, to cast at
+         * all; the chance it then picks the one that fits the moment (else
+         * any it can pay for); and the chance to bait a Shield with a
+         * Stupefy before an Expelliarmus.
+         */
+        specials: { bait: 0, chance: 0.1, sense: 0.35 },
         /** Chance to strafe (rather than stand) each time it picks, and at what share of full speed. */
         strafeChance: 0.45,
         strafeSpeed: 0.55,
@@ -112,6 +153,22 @@ export const tuning = {
     },
     /** The Shield stays up this long past the moment a Spell was due to land, then drops so the next one can be Parried afresh. */
     shieldHoldSeconds: 0.1,
+    /**
+     * Special Spells. The AI looks for one to cast every `lookSeconds` (and,
+     * after a reaction, as soon as the opponent starts to Charge or drink
+     * within Depulso's reach, `depulsoMargin` metres inside its range). An
+     * opponent within `cornered` metres of a wall, or whose body is within
+     * `coverBlastShare` of Incendio's blast radius of a column, is worth an
+     * Incendio. A Shield baited before an Expelliarmus has `baitSeconds` to
+     * go up and come down again.
+     */
+    specials: {
+      baitSeconds: 1.2,
+      cornered: 2.5,
+      coverBlastShare: 0.8,
+      depulsoMargin: 0.3,
+      lookSeconds: 0.4,
+    },
     /** Sprints to close the distance when this many metres beyond its band (and Stamina is above half). */
     sprintBeyond: 4,
     /** Never raises the Shield with less Stamina than this left, and never Dodges into less than this. */
@@ -128,6 +185,13 @@ export const tuning = {
     /** A Spell whose line passes within this many metres of the body (on top of both radii) is a threat to defend. */
     threatMargin: 0.2,
     waitSeconds: 0.2,
+    /**
+     * Disarmed, the AI walks for its Wand the short way round Cover,
+     * Obstructions and the opponent, keeping `clearance` metres (beyond its
+     * body) off each; stuck on the way, it goes round the other side for
+     * `detourSeconds`.
+     */
+    wand: { clearance: 0.3, detourSeconds: { max: 1.2, min: 0.6 } },
   },
 
   /**

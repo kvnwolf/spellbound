@@ -13,6 +13,7 @@ import type {
   DuelEvent,
   DuelistState,
   DuelSnapshot,
+  SpellState,
 } from "../duel/duel";
 import { distanceBetween } from "../duel/geometry";
 import { idleIntent } from "../duel/intent";
@@ -38,15 +39,22 @@ const seeds = (count: number) => Array.from({ length: count }, (_, i) => i + 1);
 interface Played {
   readonly snapshots: readonly DuelSnapshot[];
   readonly events: readonly DuelEvent[];
+  /** Tick by tick: the snapshot the Controllers decided from, and the events the tick produced. */
+  readonly ticks: readonly {
+    readonly seen: DuelSnapshot;
+    readonly events: readonly DuelEvent[];
+  }[];
 }
 
 /**
  * Runs a Duel between an AI of `difficulty` (seeded with `seed`) and a
  * scripted player, past the Round intro, for `seconds` of fighting (or until
- * the Duel is over). The player stands `gap` metres away.
+ * the Duel is over). The player stands `gap` metres away, the AI `back`
+ * metres further from the middle of the Arena.
  */
 const play = ({
   arena = openArena,
+  back = 0,
   difficulty,
   gap = 10,
   player = idleController,
@@ -56,6 +64,7 @@ const play = ({
   settings = tuning,
 }: {
   readonly arena?: ArenaLayout;
+  readonly back?: number;
   readonly difficulty: Difficulty;
   readonly gap?: number;
   readonly player?: Controller;
@@ -70,8 +79,8 @@ const play = ({
     arena,
     difficulty,
     duelists: [
-      { id: "player", spawn: { x: 0, z: gap / 2 }, team: "near" },
-      { id: "ai", spawn: { x: 0, z: -gap / 2 }, team: "far" },
+      { id: "player", spawn: { x: 0, z: gap / 2 - back }, team: "near" },
+      { id: "ai", spawn: { x: 0, z: -gap / 2 - back }, team: "far" },
     ],
     tuning: sturdy
       ? { ...settings, duelist: { ...settings.duelist, health: 100_000 } }
@@ -87,6 +96,7 @@ const play = ({
 
   const snapshots: DuelSnapshot[] = [];
   const events: DuelEvent[] = [];
+  const ticks: Played["ticks"][number][] = [];
   const fightTicks = ticksOf(seconds);
   let fought = 0;
 
@@ -104,9 +114,10 @@ const play = ({
 
     snapshots.push(tick.snapshot);
     events.push(...tick.events);
+    ticks.push({ events: tick.events, seen: snapshot });
   }
 
-  return { events, snapshots };
+  return { events, snapshots, ticks };
 };
 
 const ofType = <T extends DuelEvent["type"]>(
@@ -354,12 +365,16 @@ describe("AI Controller", () => {
 
       const kinds = new Set(casts.map((event) => event.spell.kind));
 
-      // Every cast homes on the player: it was cast Locked On to them.
+      // Every Spell that flies homes on the player: it was cast Locked On
+      // to them (Depulso's cone never flies).
       const homing = new Set(
-        casts.map((event) => event.spell.homing?.targetId)
+        casts
+          .filter((event) => event.spell.kind !== "depulso")
+          .map((event) => event.spell.homing?.targetId)
       );
 
-      expect(kinds).toStrictEqual(new Set(["confringo", "stupefy"]));
+      expect(kinds).toContain("confringo");
+      expect(kinds).toContain("stupefy");
       expect(homing).toStrictEqual(new Set(["player"]));
     }
   );
@@ -704,5 +719,583 @@ describe("AI in a Clash", () => {
       expect(clashWinner("maestro", seed)).toBe("ai");
       expect(clashWinner("novato", seed)).toBe("player");
     }
+  });
+});
+
+/** The courtyard's layout: columns of Cover and the fountain, an Obstruction, in the middle. */
+const courtyardLike: ArenaLayout = {
+  ...withColumns,
+  obstructions: [{ center: { x: 0, z: 0 }, radius: 1.65 }],
+};
+
+/** Expelliarmus for free and with no Cooldown, so the scripted player can keep casting it. */
+const spamExpelliarmus: Tuning = {
+  ...tuning,
+  expelliarmus: { ...tuning.expelliarmus, cooldownSeconds: 0, segments: 0 },
+};
+
+/**
+ * A scripted player who Locks On and keeps casting Expelliarmus (R2 + ○)
+ * 1.5 seconds after the last one, from two seconds into the fight, while it
+ * holds its own Wand and the AI holds theirs.
+ */
+const keepsDisarming = (): Controller => {
+  let tick = 0;
+  let due = ticksOf(2);
+
+  return {
+    intent: ({ self, snapshot }) => {
+      if (snapshot.round.phase === "fighting") {
+        tick += 1;
+      }
+
+      const me = find(snapshot, self);
+
+      if (
+        snapshot.spells.some(
+          (spell) => spell.casterId === self && spell.kind === "expelliarmus"
+        )
+      ) {
+        due = tick + ticksOf(1.5);
+      }
+
+      const cast =
+        tick >= due &&
+        me.looseWand === null &&
+        find(snapshot, "ai").looseWand === null;
+
+      return {
+        ...idleIntent,
+        lockOn: me.targetId === null && tick % 10 === 1,
+        spellSlots: { held: cast, press: cast ? "circle" : null },
+      };
+    },
+  };
+};
+
+const aiDisarmed = (each: DuelSnapshot) => find(each, "ai").looseWand !== null;
+
+/** Seconds from the AI's first Disarm until it held its Wand again, and how it got it back; null if never Disarmed and back. */
+const firstRecovery = (played: Played) => {
+  const from = played.snapshots.findIndex(aiDisarmed);
+
+  const back = played.snapshots.findIndex(
+    (each, index) => index > from && !aiDisarmed(each)
+  );
+
+  if (from === -1 || back === -1) {
+    return null;
+  }
+
+  const disarmAt = played.events.findIndex(
+    (event) => event.type === "disarm" && event.duelistId === "ai"
+  );
+
+  return {
+    how: ofType(played.events.slice(disarmAt), "wand-recovered").find(byAi)
+      ?.how,
+    seconds: (back - from) / tuning.tickRate,
+  };
+};
+
+describe("AI recovering its Wand", () => {
+  it.each(["novato", "duelista", "maestro"] as const)(
+    "walks to its Wand and picks it up well before it would return on its own on %s",
+    (difficulty) => {
+      const recoveries = [openArena, courtyardLike].flatMap((arena) =>
+        seeds(16).map((seed) =>
+          firstRecovery(
+            play({
+              arena,
+              difficulty,
+              player: keepsDisarming(),
+              seconds: 14,
+              seed,
+              settings: spamExpelliarmus,
+              sturdy: true,
+            })
+          )
+        )
+      );
+
+      const disarmed = recoveries.filter((each) => each !== null);
+
+      expect(disarmed.length).toBeGreaterThanOrEqual(4);
+
+      for (const recovery of disarmed) {
+        expect(recovery.how).toBe("pickup");
+        expect(recovery.seconds).toBeLessThan(
+          tuning.expelliarmus.wand.returnSeconds / 2
+        );
+      }
+    }
+  );
+});
+
+/** Depulso for free, so the AI can cast it without first earning Focus. */
+const freeDepulso: Tuning = {
+  ...tuning,
+  depulso: { ...tuning.depulso, segments: 0 },
+};
+
+/**
+ * Free Depulso, no Focus earned for Light Spell hits and no Stagger from the
+ * strong Stupefy: Depulso is the only Special Spell in play, and the AI
+ * cannot keep a player stepping in on it Staggered at bay.
+ */
+const onlyDepulso: Tuning = {
+  ...freeDepulso,
+  focus: { ...tuning.focus, gain: { ...tuning.focus.gain, lightSpellHit: 0 } },
+  stupefy: { ...tuning.stupefy, staggerSeconds: 0 },
+};
+
+/**
+ * A scripted player who Locks On and sprints at the AI, and once within 3 m
+ * Charges Confringo over and over (held 0.45 s, released for a tick).
+ */
+const chargingInClose = (): Controller => {
+  let tick = 0;
+
+  return {
+    intent: ({ self, snapshot }) => {
+      if (snapshot.round.phase === "fighting") {
+        tick += 1;
+      }
+
+      const me = find(snapshot, self);
+      const gap = distanceBetween(me.position, find(snapshot, "ai").position);
+      const close = gap <= 3 || me.chargeSeconds > 0;
+
+      return {
+        ...idleIntent,
+        heavySpell: close && tick % ticksOf(0.45) !== 0,
+        lockOn: me.targetId === null && tick % 10 === 1,
+        move: { x: 0, y: gap > 2.5 ? 1 : 0 },
+        sprint: !close,
+      };
+    },
+  };
+};
+
+/** The AI's casts of `kind`, each with the snapshot the AI decided it from. */
+const castsOf = ({ ticks }: Played, kind: string) =>
+  ticks.flatMap(({ events, seen }) =>
+    ofType(events, "spell-cast")
+      .filter(
+        (event) => event.spell.casterId === "ai" && event.spell.kind === kind
+      )
+      .map(() => seen)
+  );
+
+/**
+ * A scripted player who Locks On and, every 2.4 seconds, holds the Shield up
+ * for 1.2 s, then lowers it and taps Stupefy every 0.4 s.
+ */
+const shieldsAndCasts = (): Controller => {
+  let tick = 0;
+
+  return {
+    intent: ({ self, snapshot }) => {
+      if (snapshot.round.phase === "fighting") {
+        tick += 1;
+      }
+
+      const shielding = tick % ticksOf(2.4) < ticksOf(1.2);
+
+      return {
+        ...idleIntent,
+        lightSpell: !shielding && tick % ticksOf(0.4) === 0,
+        lockOn: find(snapshot, self).targetId === null && tick % 10 === 1,
+        shield: shielding,
+      };
+    },
+  };
+};
+
+const specialKinds = new Set([
+  "depulso",
+  "expelliarmus",
+  "incendio",
+  "petrificus",
+]);
+
+/** Events tick by tick, from the tick a Spell was cast on. */
+type EventsFrom = readonly (readonly DuelEvent[])[];
+
+/**
+ * Whether the AI's Special Spell `spell` paid off, from the events of the
+ * ticks from its cast on: Depulso hurt the player, Incendio burned them,
+ * Expelliarmus Disarmed them, or Petrificus froze them and another Spell of
+ * the AI's hit them before they could move again.
+ */
+const paidOff = (spell: SpellState, from: EventsFrom) => {
+  const within = (start: number, seconds: number) =>
+    from.slice(start, start + ticksOf(seconds)).flat();
+
+  const flight = within(0, 2);
+
+  if (spell.kind === "expelliarmus") {
+    return ofType(flight, "disarm").some(
+      (event) => event.casterId === "ai" && event.duelistId === "player"
+    );
+  }
+
+  if (spell.kind === "incendio") {
+    return ofType(flight, "explosion").some(
+      (event) => event.spell.id === spell.id && event.burned.includes("player")
+    );
+  }
+
+  const hitAt = from.findIndex((events) =>
+    ofType(events, "spell-hit").some(
+      (event) => event.spell.id === spell.id && event.targetId === "player"
+    )
+  );
+
+  if (hitAt === -1 || hitAt > ticksOf(2) || spell.kind !== "petrificus") {
+    return hitAt !== -1 && hitAt <= ticksOf(2);
+  }
+
+  // Frozen, then a little more for the follow-up's flight.
+  const frozen = within(hitAt + 1, tuning.petrificus.petrifiedSeconds + 0.3);
+
+  return ofType(frozen, "spell-hit").some(
+    (event) => event.spell.casterId === "ai" && event.targetId === "player"
+  );
+};
+
+/** Over seeded Duels against a player who Shields and casts by turns: the AI's Special Spells cast, and how many paid off. */
+const specialsOf = (difficulty: Difficulty) => {
+  let casts = 0;
+  let paid = 0;
+
+  for (const seed of seeds(10)) {
+    const { ticks } = play({
+      difficulty,
+      player: shieldsAndCasts(),
+      seconds: 30,
+      seed,
+      sturdy: true,
+    });
+
+    const perTick = ticks.map((each) => each.events);
+
+    for (const [index, events] of perTick.entries()) {
+      for (const event of ofType(events, "spell-cast")) {
+        if (
+          event.spell.casterId === "ai" &&
+          specialKinds.has(event.spell.kind)
+        ) {
+          casts += 1;
+          paid += paidOff(event.spell, perTick.slice(index)) ? 1 : 0;
+        }
+      }
+    }
+  }
+
+  return { casts, paidOff: paid };
+};
+
+/** How far apart the AI and the player stood, edge to edge. */
+const reachIn = (snapshot: DuelSnapshot) =>
+  distanceBetween(
+    find(snapshot, "ai").position,
+    find(snapshot, "player").position
+  ) - tuning.duelist.bodyRadius;
+
+describe("AI Special Spells", () => {
+  it.each(["duelista", "maestro"] as const)(
+    "blasts a player Charging up close with Depulso on %s",
+    (difficulty) => {
+      const trials = seeds(10).map((seed) =>
+        castsOf(
+          play({
+            back: 8.5,
+            difficulty,
+            gap: 5,
+            player: chargingInClose(),
+            seconds: 4,
+            seed,
+            settings: onlyDepulso,
+            sturdy: true,
+          }),
+          "depulso"
+        )
+      );
+
+      expect(trials.filter((casts) => casts.length > 0).length).toBeGreaterThan(
+        7
+      );
+
+      for (const seen of trials.flat()) {
+        expect(reachIn(seen)).toBeLessThan(tuning.depulso.range);
+      }
+    }
+  );
+
+  it.each(["novato", "duelista", "maestro"] as const)(
+    "never wastes Depulso on a player out of its reach on %s",
+    (difficulty) => {
+      for (const seed of seeds(5)) {
+        const casts = castsOf(
+          play({ difficulty, seconds: 15, seed, settings: freeDepulso }),
+          "depulso"
+        );
+
+        for (const seen of casts) {
+          expect(reachIn(seen)).toBeLessThan(tuning.depulso.range);
+        }
+      }
+    }
+  );
+
+  it("casts Special Spells far more often, and to far better effect, on Maestro than on Novato", () => {
+    const novato = specialsOf("novato");
+    const maestro = specialsOf("maestro");
+
+    expect(maestro.casts).toBeGreaterThan(novato.casts * 2);
+    expect(maestro.paidOff / maestro.casts).toBeGreaterThan(
+      novato.paidOff / novato.casts + 0.15
+    );
+  });
+});
+
+/**
+ * Hurts the AI first, then hands it the controls: the scripted player Locks
+ * On and Stupefies an AI standing idle until its Health is down to
+ * `health`, then the AI Controller (of `difficulty`, seeded with `seed`)
+ * takes over against `player` for `seconds`. Both stand 10 m apart.
+ */
+const afterHurt = ({
+  difficulty,
+  health = 25,
+  player,
+  seconds,
+  seed,
+}: {
+  readonly difficulty: Difficulty;
+  readonly health?: number;
+  readonly player: Controller;
+  readonly seconds: number;
+  readonly seed: number;
+}): Played => {
+  const duel = createDuel({
+    arena: openArena,
+    difficulty,
+    duelists: [
+      { id: "player", spawn: { x: 0, z: 5 }, team: "near" },
+      { id: "ai", spawn: { x: 0, z: -5 }, team: "far" },
+    ],
+    tuning,
+  });
+
+  const hurting = steadyCaster(0.3);
+
+  while (find(duel.snapshot(), "ai").health > health) {
+    const snapshot = duel.snapshot();
+
+    duel.step({
+      ai: idleIntent,
+      player: hurting.intent({ self: "player", snapshot }),
+    });
+  }
+
+  const ai = createAiController({
+    arena: openArena,
+    difficulty,
+    random: createRandom(seed),
+    tuning,
+  });
+
+  const snapshots: DuelSnapshot[] = [];
+  const events: DuelEvent[] = [];
+  const ticks: Played["ticks"][number][] = [];
+
+  for (let tick = 0; tick < ticksOf(seconds); tick += 1) {
+    const snapshot = duel.snapshot();
+
+    const stepped = duel.step({
+      ai: ai.intent({ self: "ai", snapshot }),
+      player: player.intent({ self: "player", snapshot }),
+    });
+
+    snapshots.push(stepped.snapshot);
+    events.push(...stepped.events);
+    ticks.push({ events: stepped.events, seen: snapshot });
+  }
+
+  return { events, snapshots, ticks };
+};
+
+/** The snapshots the AI decided from when it started drinking `kind`. */
+const drinksOf = ({ ticks }: Played, kind: string) =>
+  ticks.flatMap(({ events, seen }) =>
+    ofType(events, "potion-start")
+      .filter((event) => event.duelistId === "ai" && event.kind === kind)
+      .map(() => seen)
+  );
+
+/** A Spell of the player's in the air, flying toward the AI. */
+const incoming = (snapshot: DuelSnapshot) => {
+  const ai = find(snapshot, "ai").position;
+
+  return snapshot.spells.some(
+    (spell) =>
+      spell.casterId === "player" &&
+      (ai.x - spell.position.x) * spell.velocity.x +
+        (ai.z - spell.position.z) * spell.velocity.z >
+        0
+  );
+};
+
+describe("AI Potions", () => {
+  it.each(["novato", "duelista", "maestro"] as const)(
+    "drinks Wiggenweld at low Health when it is safe on %s",
+    (difficulty) => {
+      const healed = seeds(10).filter((seed) => {
+        const played = afterHurt({
+          difficulty,
+          player: idleController,
+          seconds: 4,
+          seed,
+        });
+
+        return ofType(played.events, "potion-drunk").some(
+          (event) => event.duelistId === "ai" && event.kind === "wiggenweld"
+        );
+      });
+
+      expect(healed.length).toBeGreaterThanOrEqual(9);
+    }
+  );
+
+  it.each(["novato", "duelista", "maestro"] as const)(
+    "never starts drinking with a Spell on its way on %s",
+    (difficulty) => {
+      const drinks = seeds(10).flatMap((seed) =>
+        drinksOf(
+          afterHurt({
+            difficulty,
+            player: steadyCaster(0.5),
+            seconds: 10,
+            seed,
+          }),
+          "wiggenweld"
+        )
+      );
+
+      // It does drink, between the player's Spells.
+      expect(drinks.length).toBeGreaterThan(0);
+
+      for (const seen of drinks) {
+        expect(incoming(seen)).toBeFalsy();
+      }
+    }
+  );
+
+  it("keeps its Wiggenweld while its Health is high", () => {
+    for (const seed of seeds(5)) {
+      const played = afterHurt({
+        difficulty: "maestro",
+        health: 90,
+        player: idleController,
+        seconds: 4,
+        seed,
+      });
+
+      expect(drinksOf(played, "wiggenweld")).toHaveLength(0);
+    }
+  });
+});
+
+/**
+ * A scripted player who Locks On and stands behind the Shield, lowering it
+ * only to drink Wiggenweld (L2 + □) every 3 seconds of the fight: a drink is
+ * the only opening it gives.
+ */
+const drinksNow = (): Controller => {
+  let tick = 0;
+
+  return {
+    intent: ({ self, snapshot }) => {
+      if (snapshot.round.phase === "fighting") {
+        tick += 1;
+      }
+
+      const me = find(snapshot, self);
+      const due = tick > 0 && tick % ticksOf(3) === 0;
+
+      return {
+        ...idleIntent,
+        lockOn: me.targetId === null && tick % 10 === 1,
+        potionSlots: { held: due, press: due ? "square" : null },
+        shield: !due && me.drinking === null,
+      };
+    },
+  };
+};
+
+/** A Shield that never tires, so the player can hide behind it all Duel. */
+const tirelessShield: Tuning = {
+  ...tuning,
+  defence: {
+    ...tuning.defence,
+    shield: { ...tuning.defence.shield, drain: 0 },
+  },
+};
+
+/**
+ * Per Difficulty, over seeded Duels, the share of the player's drinks the
+ * AI answered within 0.75 s of the drink starting (a reaction and, for a
+ * Confringo, its Charge) with a Spell, or that a Spell already on its way
+ * cut short: going for the opening, not a cast that happened to fall there.
+ */
+const drinksPunished = (difficulty: Difficulty) => {
+  let started = 0;
+  let answered = 0;
+
+  for (const seed of seeds(15)) {
+    const perTick = play({
+      difficulty,
+      player: drinksNow(),
+      seconds: 7,
+      seed,
+      settings: tirelessShield,
+      sturdy: true,
+    }).ticks.map((each) => each.events);
+
+    for (const [index, events] of perTick.entries()) {
+      if (
+        ofType(events, "potion-start").some(
+          (event) => event.duelistId === "player"
+        )
+      ) {
+        started += 1;
+
+        const soon = perTick.slice(index, index + ticksOf(0.75)).flat();
+
+        const went =
+          ofType(soon, "spell-cast").some(
+            (event) => event.spell.casterId === "ai"
+          ) ||
+          // A Spell already on its way cut it short first.
+          ofType(soon, "potion-interrupted").some(
+            (event) => event.duelistId === "player"
+          );
+
+        answered += went ? 1 : 0;
+      }
+    }
+  }
+
+  return answered / started;
+};
+
+describe("AI punishing an opening", () => {
+  it("goes for a drinking player at once nearly always on Maestro, far less on Novato", () => {
+    const maestro = drinksPunished("maestro");
+
+    expect(maestro).toBeGreaterThan(0.9);
+    expect(drinksPunished("novato")).toBeLessThan(maestro - 0.25);
   });
 });
