@@ -32,17 +32,16 @@ import {
 } from "./geometry";
 import type { Aim, GroundPoint, Point3 } from "./geometry";
 import { idleIntent } from "./intent";
-import type { Intent, Vec2, WheelIntent } from "./intent";
+import type { Intent, Vec2 } from "./intent";
 import {
+  boundTo,
   focusCost,
   readiness,
-  sliceAt,
   specialSpellKinds,
-  spellWheelSlices,
-} from "./spell-wheel";
-import type { SpecialSpellKind } from "./spell-wheel";
+} from "./spell-slots";
+import type { SpecialSpellKind, SpellSlot } from "./spell-slots";
 
-export type { SpecialSpellKind } from "./spell-wheel";
+export type { SpecialSpellKind, SpellSlot } from "./spell-slots";
 
 export type DuelistId = string;
 
@@ -145,14 +144,8 @@ export interface DuelistState {
   readonly focus: number;
   /** Seconds left before each Special Spell can be cast again; 0 when ready. */
   readonly cooldowns: Readonly<Record<SpecialSpellKind, number>>;
-  /**
-   * The Spell Wheel: open while R2 holds it, with the Special Spell the right
-   * stick picks (null with the stick centred, or on a locked slice).
-   */
-  readonly spellWheel: {
-    readonly open: boolean;
-    readonly selected: SpecialSpellKind | null;
-  };
+  /** The Spell Slots' modifier (R2) is held: a face button now casts from its slot. */
+  readonly spellSlotsHeld: boolean;
   /** Seconds left of an Incendio Burn, taking damage over time; 0 when not burning. */
   readonly burnSeconds: number;
   /** Seconds left Petrified by Petrificus Totalus, frozen and unable to act; 0 when not. */
@@ -534,12 +527,6 @@ interface Bookkeeping {
   verticalSpeed: number;
   /** Ticks to wait before Stamina regenerates again. */
   regenTicks: number;
-  /** R2 held the Spell Wheel open last tick: letting go of it casts. */
-  wheelHeld: boolean;
-  /** The Special Spell the stick picks on the open wheel; null for none. */
-  wheelPick: SpecialSpellKind | null;
-  /** Ticks the stick has rested at the centre of the open wheel. */
-  wheelRestTicks: number;
   /** Ticks left of each Special Spell's Cooldown. */
   cooldownTicks: Record<SpecialSpellKind, number>;
   /** Ticks left of an Incendio Burn. */
@@ -550,7 +537,7 @@ interface Bookkeeping {
 
 /**
  * What a Duelist lets go of this tick: a Light Spell, a Heavy Spell after
- * Charging for `chargeSeconds`, or a Special Spell from the Spell Wheel.
+ * Charging for `chargeSeconds`, or a Special Spell from a Spell Slot.
  */
 type Release =
   | { readonly kind: "stupefy" }
@@ -580,27 +567,14 @@ const freshBookkeeping = (): Bookkeeping => ({
   staggerTicks: 0,
   ticksSinceCast: Number.POSITIVE_INFINITY,
   verticalSpeed: 0,
-  wheelHeld: false,
-  wheelPick: null,
-  wheelRestTicks: 0,
 });
 
 const noNudge: Aim = { pitch: 0, yaw: 0 };
-
-const closedWheel: DuelistState["spellWheel"] = { open: false, selected: null };
-
-const wheelLetGo: WheelIntent = { held: false, pick: { x: 0, y: 0 } };
 
 /** A Special Spell leaving the Wand this tick, and the Focus it costs. */
 interface SpecialCast {
   readonly kind: SpecialSpellKind;
   readonly cost: number;
-}
-
-/** The Spell Wheel after one tick: what the snapshot shows, and the Special Spell let go of, if any. */
-interface WheelRead {
-  readonly state: DuelistState["spellWheel"];
-  readonly released: SpecialSpellKind | null;
 }
 
 /** Where a Duelist's Spells leave the Wand. */
@@ -814,7 +788,7 @@ export const createDuel = (config: DuelConfig): Duel => {
       petrifiedSeconds: 0,
       position: setup.spawn,
       shielding: false,
-      spellWheel: closedWheel,
+      spellSlotsHeld: false,
       sprinting: false,
       staggerSeconds: 0,
       stamina: tuning.defence.stamina.max,
@@ -2019,41 +1993,6 @@ export const createDuel = (config: DuelConfig): Duel => {
     return wantsToCast(book, pressed) ? { kind: "stupefy" } : undefined;
   };
 
-  /**
-   * The Spell Wheel for one tick: while R2 holds it open, the stick picks
-   * the slice it points at (a locked slice picks nothing), and once it has
-   * rested at the centre for longer than the grace, nothing is picked.
-   * Letting go of R2 returns what was picked, to be cast; with nothing
-   * picked, letting go cancels.
-   */
-  const readWheel = (book: Bookkeeping, wheel: WheelIntent): WheelRead => {
-    if (!wheel.held) {
-      const released = book.wheelHeld ? book.wheelPick : null;
-      book.wheelHeld = false;
-      book.wheelPick = null;
-      book.wheelRestTicks = 0;
-
-      return { released, state: closedWheel };
-    }
-
-    const slice = sliceAt(wheel.pick, tuning.spellWheel.pickDeflection);
-
-    if (slice === undefined) {
-      book.wheelRestTicks += 1;
-
-      if (book.wheelRestTicks > ticksOf(tuning.spellWheel.cancelGraceSeconds)) {
-        book.wheelPick = null;
-      }
-    } else {
-      book.wheelRestTicks = 0;
-      book.wheelPick = spellWheelSlices[slice] ?? null;
-    }
-
-    book.wheelHeld = true;
-
-    return { released: null, state: { open: true, selected: book.wheelPick } };
-  };
-
   /** The Special Spells' Cooldowns as the snapshot shows them, in seconds. */
   const cooldownsOf = (book: Bookkeeping) => ({
     incendio: book.cooldownTicks.incendio * tickSeconds,
@@ -2061,7 +2000,7 @@ export const createDuel = (config: DuelConfig): Duel => {
   });
 
   /**
-   * Whether a Special Spell let go of on the wheel leaves the Wand: only on
+   * Whether a Special Spell pressed from its slot leaves the Wand: only on
    * the floor, free to cast (not Dodging or behind the Shield), not in the
    * middle of a Charge, with the Focus to pay for it and off Cooldown.
    */
@@ -2081,23 +2020,26 @@ export const createDuel = (config: DuelConfig): Duel => {
     ) === "ready";
 
   /**
-   * The Special Spell a Duelist free to act casts this tick, if the wheel
-   * released one they can cast, with the Focus it costs. Its Cooldown starts
-   * as it leaves.
+   * The Special Spell a Duelist free to act casts this tick: the one bound
+   * to the Spell Slot they pressed, if the slot holds one they can cast, with
+   * the Focus it costs. Its Cooldown starts as it leaves. An empty slot, or a
+   * Special Spell short of Focus or cooling down, casts nothing.
    */
   const specialOf = (
     self: DuelistState,
     book: Bookkeeping,
     guard: Guard,
-    released: SpecialSpellKind | null
+    pressed: SpellSlot | null
   ): SpecialCast | undefined => {
-    if (released === null || !canCastSpecial(self, book, guard, released)) {
+    const kind = pressed === null ? null : boundTo(pressed, tuning);
+
+    if (kind === null || !canCastSpecial(self, book, guard, kind)) {
       return undefined;
     }
 
-    book.cooldownTicks[released] = ticksOf(tuning[released].cooldownSeconds);
+    book.cooldownTicks[kind] = ticksOf(tuning[kind].cooldownSeconds);
 
-    return { cost: focusCost(released, tuning), kind: released };
+    return { cost: focusCost(kind, tuning), kind };
   };
 
   /** Whether a standing Duelist is free to act: not Staggered, Petrified or knocked back. */
@@ -2148,21 +2090,17 @@ export const createDuel = (config: DuelConfig): Duel => {
 
       const canAct = phase === "fighting" && free(self, book);
 
-      // The wheel can be held open whenever the Duelist can look around;
-      // what it releases is only cast if they can act right now.
-      const wheel = readWheel(book, canLook ? intent.spellWheel : wheelLetGo);
-
       book.held = intent.lightSpell;
       book.heavyHeld = intent.heavySpell;
       countDown(book);
 
-      /** What the snapshot shows of the wheel, Cooldowns, Burn and Petrified, whatever the Duelist did. */
+      /** What the snapshot shows of the Spell Slots, Cooldowns, Burn and Petrified, whatever the Duelist did. */
       const status = (state: DuelistState): DuelistState => ({
         ...state,
         burnSeconds: book.burnTicks * tickSeconds,
         cooldowns: cooldownsOf(book),
         petrifiedSeconds: book.petrifiedTicks * tickSeconds,
-        spellWheel: wheel.state,
+        spellSlotsHeld: canLook && intent.spellSlots.held,
       });
 
       const target =
@@ -2185,10 +2123,10 @@ export const createDuel = (config: DuelConfig): Duel => {
         return status(sidelined(defended, book, obstacles));
       }
 
-      const special = specialOf(self, book, guard, wheel.released);
+      const special = specialOf(self, book, guard, intent.spellSlots.press);
 
-      // A Special Spell let go of on the wheel goes first; a Light Spell
-      // pressed on the same tick waits for its recovery.
+      // A Special Spell goes first; a Light Spell pressed on the same tick
+      // waits for its recovery.
       if (special) {
         book.queued ||= pressed;
       }

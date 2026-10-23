@@ -1,5 +1,5 @@
 /**
- * Focus, the Spell Wheel and the Special Spells (Incendio, Petrificus
+ * Focus, the Spell Slots and the Special Spells (Incendio, Petrificus
  * Totalus) through the Duel seam: drive `createDuel` with Intents, assert
  * snapshots and events. Same seam as `duel.test.ts` and `defence.test.ts`.
  */
@@ -10,7 +10,8 @@ import type { Tuning } from "../tuning";
 import { createDuel } from "./duel";
 import type { ArenaLayout, Duel, DuelEvent, DuelistState } from "./duel";
 import { idleIntent } from "./intent";
-import type { Intent, Vec2 } from "./intent";
+import type { Intent } from "./intent";
+import type { SpellSlot } from "./spell-slots";
 
 const openArena: ArenaLayout = {
   bounds: { halfDepth: 10, halfWidth: 10 },
@@ -113,23 +114,22 @@ const untilBoltWithin = (duel: Duel, seconds: number) => {
 /** Lets every Spell in flight land, and any Stagger or Petrified wear off. */
 const settle = (duel: Duel): DuelEvent[] => run(duel, secondsToTicks(2));
 
-/** The right stick on the Spell Wheel: Incendio's slice is to the right, Petrificus Totalus's to the left, the locked one at the top. */
-const toIncendio: Vec2 = { x: 1, y: 0 };
-const toPetrificus: Vec2 = { x: -1, y: 0 };
-const toLocked: Vec2 = { x: 0, y: 1 };
-const centred: Vec2 = { x: 0, y: 0 };
+/** The Spell Slots as the tuning binds them: △ Incendio, □ Petrificus Totalus, ○ kept for Expelliarmus, ✕ empty. */
+const toIncendio: SpellSlot = "triangle";
+const toPetrificus: SpellSlot = "square";
+const toReserved: SpellSlot = "circle";
+const toEmpty: SpellSlot = "cross";
 
-const wheel = (pick: Vec2, extra: Partial<Intent> = {}) =>
-  intent({ ...extra, spellWheel: { held: true, pick } });
+/** R2 held this tick, with `press` the slot whose face button went down on it. */
+const slot = (press: SpellSlot | null, extra: Partial<Intent> = {}) =>
+  intent({ ...extra, spellSlots: { held: true, press } });
 
-/**
- * Opens the Spell Wheel, holds the stick on `pick` for a moment, then lets
- * go of R2 (and the stick) on the same tick, as a player does.
- */
-const castFromWheel = (duel: Duel, pick: Vec2, who = "hero"): DuelEvent[] => [
-  ...run(duel, secondsToTicks(0.2), { [who]: wheel(pick) }),
-  ...run(duel, 1),
-];
+/** Holds R2 and presses `press`'s face button for a tick, then lets go of both. */
+const castFromSlot = (
+  duel: Duel,
+  press: SpellSlot,
+  who = "hero"
+): DuelEvent[] => [...run(duel, 1, { [who]: slot(press) }), ...run(duel, 1)];
 
 /** The hero lands Stupefies on the rival until their Focus reaches `points`. */
 const buildFocus = (duel: Duel, points: number) => {
@@ -223,40 +223,26 @@ describe("Focus", () => {
   });
 });
 
-describe("Spell Wheel", () => {
-  it("opens while R2 is held and shows the slice the right stick picks", () => {
+describe("Spell Slots", () => {
+  it("shows the modifier held, without casting anything by itself", () => {
     const duel = fight();
+    buildFocus(duel, focus.max);
 
-    run(duel, 2, { hero: wheel(centred) });
-    const opened = duelist(duel, "hero").spellWheel;
-    run(duel, 2, { hero: wheel(toIncendio) });
-    const incendioPicked = duelist(duel, "hero").spellWheel;
-    run(duel, 2, { hero: wheel(toPetrificus) });
-    const petrificusPicked = duelist(duel, "hero").spellWheel;
-    run(duel, 2, { hero: wheel(toLocked) });
-    const lockedPicked = duelist(duel, "hero").spellWheel;
+    const events = run(duel, secondsToTicks(0.3), { hero: slot(null) });
+    const held = duelist(duel, "hero").spellSlotsHeld;
     run(duel, 1);
 
-    expect(opened).toStrictEqual({ open: true, selected: null });
-    expect(incendioPicked).toStrictEqual({ open: true, selected: "incendio" });
-    expect(petrificusPicked).toStrictEqual({
-      open: true,
-      selected: "petrificus",
-    });
-    // Expelliarmus's slice is not in the game yet: it picks nothing.
-    expect(lockedPicked).toStrictEqual({ open: true, selected: null });
-    expect(duelist(duel, "hero").spellWheel).toStrictEqual({
-      open: false,
-      selected: null,
-    });
+    expect(held).toBeTruthy();
+    expect(duelist(duel, "hero").spellSlotsHeld).toBeFalsy();
+    expect(ofType(events, "spell-cast")).toStrictEqual([]);
   });
 
-  it("casts the picked Special Spell on release, spending its Focus and starting its Cooldown", () => {
+  it("casts the Special Spell bound to the pressed slot, spending its Focus and starting its Cooldown", () => {
     const duel = fight();
     buildFocus(duel, segmentCost(incendio.segments));
     const before = duelist(duel, "hero").focus;
 
-    const events = castFromWheel(duel, toIncendio);
+    const events = castFromSlot(duel, toIncendio);
 
     expect(ofType(events, "spell-cast")).toMatchObject([
       { spell: { casterId: "hero", kind: "incendio" } },
@@ -271,12 +257,26 @@ describe("Spell Wheel", () => {
     expect(duelist(duel, "hero").cooldowns.petrificus).toBe(0);
   });
 
+  it("binds △ to Incendio and □ to Petrificus Totalus", () => {
+    const duel = fight();
+    buildFocus(duel, focus.max);
+    const triangle = castFromSlot(duel, "triangle");
+    settle(duel);
+    buildFocus(duel, focus.max);
+    const casts = [...triangle, ...castFromSlot(duel, "square")];
+
+    expect(ofType(casts, "spell-cast")).toMatchObject([
+      { spell: { kind: "incendio" } },
+      { spell: { kind: "petrificus" } },
+    ]);
+  });
+
   it("aims a Special Spell like any other: at the crosshair, or the Target while Locked On", () => {
     const duel = fight();
     buildFocus(duel, segmentCost(petrificus.segments));
     run(duel, 1, { hero: intent({ lockOn: true }) });
 
-    const [cast] = ofType(castFromWheel(duel, toPetrificus), "spell-cast");
+    const [cast] = ofType(castFromSlot(duel, toPetrificus), "spell-cast");
 
     expect(cast?.spell.homing).toMatchObject({ targetId: "rival" });
     // Straight up the Arena at the rival.
@@ -284,62 +284,24 @@ describe("Spell Wheel", () => {
     expect(Math.abs(cast?.spell.velocity.x ?? 1)).toBeLessThan(1);
   });
 
-  it("cancels when R2 is released with the stick centred", () => {
-    const duel = fight();
-    buildFocus(duel, segmentCost(incendio.segments));
-    const before = duelist(duel, "hero").focus;
-
-    const events = [
-      ...run(duel, secondsToTicks(0.3), { hero: wheel(centred) }),
-      ...run(duel, 1),
-    ];
-
-    expect(ofType(events, "spell-cast")).toStrictEqual([]);
-    expect(duelist(duel, "hero").focus).toBe(before);
-  });
-
-  it("cancels when the stick goes back to the centre before R2 is released", () => {
-    const duel = fight();
-    buildFocus(duel, segmentCost(incendio.segments));
-
-    const events = [
-      ...run(duel, secondsToTicks(0.2), { hero: wheel(toIncendio) }),
-      ...run(duel, secondsToTicks(0.3), { hero: wheel(centred) }),
-      ...run(duel, 1),
-    ];
-
-    expect(ofType(events, "spell-cast")).toStrictEqual([]);
-  });
-
-  it("still casts when the stick slips back to the centre a moment before R2", () => {
-    const duel = fight();
-    buildFocus(duel, segmentCost(incendio.segments));
-
-    const events = [
-      ...run(duel, secondsToTicks(0.2), { hero: wheel(toIncendio) }),
-      ...run(duel, 2, { hero: wheel(centred) }),
-      ...run(duel, 1),
-    ];
-
-    expect(ofType(events, "spell-cast")).toMatchObject([
-      { spell: { kind: "incendio" } },
-    ]);
-  });
-
-  it("casts nothing from the locked slice", () => {
+  it("casts nothing from an empty slot, or ○'s, kept for Expelliarmus", () => {
     const duel = fight();
     buildFocus(duel, focus.max);
 
-    expect(ofType(castFromWheel(duel, toLocked), "spell-cast")).toStrictEqual(
-      []
-    );
+    const events = [
+      ...castFromSlot(duel, toReserved),
+      ...castFromSlot(duel, toEmpty),
+    ];
+
+    expect(ofType(events, "spell-cast")).toStrictEqual([]);
+    expect(duelist(duel, "hero").focus).toBe(focus.max);
   });
 
   it("refuses a Special Spell the Focus cannot pay for", () => {
     const duel = fight();
     buildFocus(duel, 1);
 
-    const events = castFromWheel(duel, toIncendio);
+    const events = castFromSlot(duel, toIncendio);
 
     expect(duelist(duel, "hero").focus).toBeLessThan(
       segmentCost(incendio.segments)
@@ -350,12 +312,12 @@ describe("Spell Wheel", () => {
   it("refuses a Special Spell while its Cooldown runs, but not the other one", () => {
     const duel = fight();
     buildFocus(duel, focus.max);
-    castFromWheel(duel, toPetrificus);
+    castFromSlot(duel, toPetrificus);
     settle(duel);
     buildFocus(duel, focus.max);
 
-    const again = castFromWheel(duel, toPetrificus);
-    const other = castFromWheel(duel, toIncendio);
+    const again = castFromSlot(duel, toPetrificus);
+    const other = castFromSlot(duel, toIncendio);
 
     expect(ofType(again, "spell-cast")).toStrictEqual([]);
     expect(ofType(other, "spell-cast")).toMatchObject([
@@ -366,13 +328,13 @@ describe("Spell Wheel", () => {
   it("allows the Special Spell again once its Cooldown is over", () => {
     const duel = fight();
     buildFocus(duel, segmentCost(petrificus.segments));
-    castFromWheel(duel, toPetrificus);
+    castFromSlot(duel, toPetrificus);
     run(duel, secondsToTicks(petrificus.cooldownSeconds));
     buildFocus(duel, segmentCost(petrificus.segments));
 
     expect(duelist(duel, "hero").cooldowns.petrificus).toBe(0);
     expect(
-      ofType(castFromWheel(duel, toPetrificus), "spell-cast")
+      ofType(castFromSlot(duel, toPetrificus), "spell-cast")
     ).toMatchObject([{ spell: { kind: "petrificus" } }]);
   });
 
@@ -381,24 +343,12 @@ describe("Spell Wheel", () => {
     buildFocus(duel, segmentCost(incendio.segments));
 
     const events = [
-      ...run(duel, secondsToTicks(0.2), { hero: wheel(toIncendio) }),
-      ...run(duel, 1, { hero: wheel(toIncendio, { jump: true }) }),
-      ...run(duel, 1),
+      ...run(duel, 1, { hero: intent({ jump: true }) }),
+      ...castFromSlot(duel, toIncendio),
     ];
 
     expect(ofType(events, "jump")).toHaveLength(1);
     expect(ofType(events, "spell-cast")).toStrictEqual([]);
-  });
-
-  it("keeps the Duel running while it is open: the Duelist still moves", () => {
-    const duel = fight();
-    const before = duelist(duel, "hero").position;
-
-    run(duel, secondsToTicks(0.5), {
-      hero: wheel(toIncendio, { move: { x: 1, y: 0 } }),
-    });
-
-    expect(duelist(duel, "hero").position.x).toBeGreaterThan(before.x + 1);
   });
 });
 
@@ -409,7 +359,7 @@ describe("Incendio", () => {
     const { health } = duelist(duel, "rival");
 
     const events = [
-      ...castFromWheel(duel, toIncendio),
+      ...castFromSlot(duel, toIncendio),
       ...run(duel, secondsToTicks(1)),
     ];
 
@@ -447,8 +397,8 @@ describe("Incendio", () => {
     run(duel, secondsToTicks(0.5), { rival: shield });
 
     const events = [
-      ...run(duel, secondsToTicks(0.2), {
-        hero: wheel(toIncendio),
+      ...run(duel, 1, {
+        hero: slot(toIncendio),
         rival: shield,
       }),
       ...run(duel, secondsToTicks(1), { rival: shield }),
@@ -475,7 +425,7 @@ describe("Incendio", () => {
     });
 
     const events = [
-      ...castFromWheel(duel, toIncendio),
+      ...castFromSlot(duel, toIncendio),
       ...run(duel, secondsToTicks(1)),
     ];
 
@@ -491,7 +441,7 @@ describe("Incendio", () => {
 /** The hero casts Petrificus Totalus at the rival; returns the events up to the tick it lands. */
 const petrify = (duel: Duel): DuelEvent[] => {
   buildFocus(duel, segmentCost(petrificus.segments));
-  const events = castFromWheel(duel, toPetrificus);
+  const events = castFromSlot(duel, toPetrificus);
 
   while (
     ofType(events, "spell-hit").length === 0 &&
@@ -566,8 +516,8 @@ describe("Petrificus Totalus", () => {
     run(duel, secondsToTicks(0.5), { rival: shield });
 
     const events = [
-      ...run(duel, secondsToTicks(0.2), {
-        hero: wheel(toPetrificus),
+      ...run(duel, 1, {
+        hero: slot(toPetrificus),
         rival: shield,
       }),
       ...run(duel, secondsToTicks(1), { rival: shield }),

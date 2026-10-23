@@ -43,17 +43,15 @@ export const text = {
     changeDifficulty: "Cambiar dificultad",
     rematch: "Revancha",
   },
-  /** The Special Spells, as the Spell Wheel and the HUD name them. */
+  /** The Special Spells, as the Spell Slots in the HUD name them. */
   specials: {
     expelliarmus: "Expelliarmus",
-    /** Label of the Focus meter. */
+    /** Accessible label of the Focus orbs. */
     focus: "Concentración",
     incendio: "Incendio",
-    /** On a Special Spell's slice that is not in the game yet. */
+    /** On a Spell Slot kept for a Special Spell that is not in the game yet. */
     locked: "Próximamente",
     petrificus: "Petrificus Totalus",
-    /** Under the open Spell Wheel. */
-    wheelHint: "Suelta R2 para lanzar · stick al centro para cancelar",
   },
   title: "Spellbound",
   unsupportedBrowser: {

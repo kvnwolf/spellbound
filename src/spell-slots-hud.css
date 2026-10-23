@@ -1,0 +1,222 @@
+/*
+ * The Spell Slots, bottom-right: a diamond laid out like the face buttons,
+ * with the three Focus orbs beside it. Same restrained style as the rest of
+ * the HUD: gold on translucent ink.
+ */
+.ss-panel {
+  position: absolute;
+  inset: auto clamp(1rem, 3vw, 1.5rem) clamp(1rem, 4vh, 2rem) auto;
+  display: flex;
+  gap: 0.9rem;
+  align-items: center;
+}
+
+/* Focus: three orbs stacked bottom to top, filling in turn. */
+.ss-focus {
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 0.45rem;
+}
+
+.ss-orb {
+  position: relative;
+  width: 1.05rem;
+  height: 1.05rem;
+  overflow: hidden;
+  border: 1px solid rgb(216 180 106 / 65%);
+  border-radius: 50%;
+  background: var(--ink);
+  box-shadow: 0 0 6px rgb(0 0 0 / 50%);
+}
+
+/* The orb fills from the bottom up. */
+.ss-orb::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 40% 35%, #f1e9ff, #8d6fe0 70%);
+  transform: scaleY(var(--fill, 0));
+  transform-origin: bottom;
+  transition: transform 120ms ease-out;
+}
+
+.ss-orb[data-full="true"] {
+  border-color: #e9c983;
+  box-shadow:
+    0 0 10px rgb(201 184 255 / 80%),
+    0 0 4px rgb(233 201 131 / 80%);
+}
+
+/* The diamond: △ top, □ left, ○ right, ✕ bottom. */
+.ss-diamond {
+  display: grid;
+  grid-template-areas:
+    ". triangle ."
+    "square . circle"
+    ". cross .";
+  grid-template-columns: repeat(3, 3.4rem);
+  grid-template-rows: repeat(3, 3.4rem);
+  place-items: center;
+  /* Room for the side slots' names, and growing from the corner it sits in. */
+  padding: 0 1.2rem 1.4rem;
+  transform-origin: right bottom;
+  opacity: 0.72;
+  transition:
+    opacity 120ms ease-out,
+    scale 120ms ease-out;
+}
+
+/* R2 held: the diamond comes forward, ready for a face button. */
+.ss-diamond[data-held="true"] {
+  opacity: 1;
+  scale: 1.08;
+}
+
+.ss-slot {
+  position: relative;
+  display: grid;
+  justify-items: center;
+}
+
+.ss-slot-triangle {
+  grid-area: triangle;
+}
+
+.ss-slot-square {
+  grid-area: square;
+}
+
+.ss-slot-circle {
+  grid-area: circle;
+}
+
+.ss-slot-cross {
+  grid-area: cross;
+}
+
+.ss-badge {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 2.9rem;
+  height: 2.9rem;
+  border: 1px solid var(--gold);
+  border-radius: 50%;
+  background: var(--ink);
+  box-shadow: 0 0 10px rgb(216 180 106 / 40%);
+  transition:
+    border-color 120ms ease-out,
+    box-shadow 120ms ease-out;
+}
+
+.ss-diamond[data-held="true"] .ss-slot[data-state="ready"] .ss-badge {
+  border-color: #f3d796;
+  box-shadow:
+    0 0 14px rgb(216 180 106 / 85%),
+    inset 0 0 10px rgb(216 180 106 / 35%);
+}
+
+/* The Cooldown: a dark sweep over the badge that uncovers clockwise as it recovers. */
+.ss-badge::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: conic-gradient(
+    rgb(5 6 14 / 80%) calc(var(--cooldown, 0) * 360deg),
+    transparent 0
+  );
+}
+
+.ss-timer {
+  position: absolute;
+  z-index: 1;
+  color: var(--parchment);
+  font-size: 1.05rem;
+}
+
+/* The face button, tucked against the badge's lower edge. */
+.ss-face {
+  position: absolute;
+  top: 2.25rem;
+  display: grid;
+  place-items: center;
+  width: 1.1rem;
+  height: 1.1rem;
+  border: 1px solid rgb(216 180 106 / 70%);
+  border-radius: 50%;
+  background: rgb(10 12 24 / 92%);
+  color: var(--parchment);
+  font-family: system-ui, sans-serif;
+  font-size: 0.62rem;
+  line-height: 1;
+}
+
+.ss-name {
+  position: absolute;
+  top: 3.4rem;
+  width: max-content;
+  max-width: 5.5rem;
+  color: var(--parchment);
+  font-size: 0.6rem;
+  letter-spacing: 0.08em;
+  line-height: 1.1;
+  text-align: center;
+  text-transform: uppercase;
+  opacity: 0;
+  transition: opacity 120ms ease-out;
+}
+
+/* The names show while R2 is held, when the player is choosing. */
+.ss-diamond[data-held="true"] .ss-name {
+  opacity: 0.9;
+}
+
+.ss-glyph {
+  width: 1.4rem;
+  height: 1.4rem;
+  fill: none;
+  stroke: var(--gold);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* Short of Focus or cooling down: greyed out. */
+.ss-slot[data-state="focus"] .ss-badge,
+.ss-slot[data-state="cooldown"] .ss-badge {
+  border-color: rgb(216 180 106 / 35%);
+  box-shadow: none;
+}
+
+/* Cooling down, the part already recovered shows warm against the dark sweep. */
+.ss-slot[data-state="cooldown"] .ss-badge {
+  background: rgb(216 180 106 / 28%);
+}
+
+.ss-slot[data-state="focus"] .ss-glyph,
+.ss-slot[data-state="cooldown"] .ss-glyph {
+  opacity: 0.45;
+}
+
+/* ○, kept for Expelliarmus: locked. */
+.ss-slot[data-state="locked"] {
+  opacity: 0.4;
+}
+
+.ss-slot[data-state="locked"] .ss-badge {
+  border-color: rgb(216 180 106 / 40%);
+  box-shadow: none;
+}
+
+/* An empty slot: a dashed ring. */
+.ss-slot[data-state="empty"] .ss-badge {
+  border-style: dashed;
+  border-color: rgb(216 180 106 / 35%);
+  background: rgb(10 12 24 / 35%);
+  box-shadow: none;
+}
+
+.ss-slot[data-state="empty"] .ss-face {
+  opacity: 0.5;
+}

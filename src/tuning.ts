@@ -507,14 +507,12 @@ export const tuning = {
       springFrequency: 30,
     },
     /**
-     * R2 holds the Spell Wheel open: it opens once the trigger travels past
-     * `open` and closes once it comes back under `close` (0 to 1), so a
-     * trigger resting near the line never flickers it. While it is open the
-     * right stick picks a slice instead of turning the camera, and once it
-     * closes the stick turns the camera again only after coming back under
-     * `stickRest` (so letting go never flings the view).
+     * R2 is the Spell Slots' modifier: it counts as held once the trigger
+     * travels past `hold` and until it comes back under `release` (0 to 1),
+     * so a trigger resting near the line never flickers it. While it is held
+     * the face buttons cast from their Spell Slots instead of their usual actions.
      */
-    spellWheel: { close: 0.15, open: 0.35, stickRest: 0.3 },
+    spellSlots: { hold: 0.35, release: 0.15 },
     /** Stick deflection below this radius reads as centred. */
     stickDeadZone: 0.12,
     /** Trigger travel below this value reads as released. */
@@ -700,12 +698,16 @@ export const tuning = {
   },
 
   /**
-   * The Spell Wheel, as the simulation reads it: the stick picks the slice it
-   * points at once pushed past `pickDeflection`; back at the centre for
-   * longer than `cancelGraceSeconds` it picks nothing, so releasing R2 then
-   * cancels. The grace forgives a stick let go a moment before the trigger.
+   * The Special Spell bound to each Spell Slot (one per face button), or
+   * null for an empty slot. ○ is kept for Expelliarmus, which is not in the
+   * game yet.
    */
-  spellWheel: { cancelGraceSeconds: 0.1, pickDeflection: 0.5 },
+  spellSlots: {
+    circle: null,
+    cross: null,
+    square: "petrificus",
+    triangle: "incendio",
+  },
 
   /** Stupefy, the Light Spell. Damage is in Health points. */
   stupefy: {

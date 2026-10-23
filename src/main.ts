@@ -44,7 +44,7 @@ import {
 } from "./screens/screens";
 import type { PadKind, ScreenEvent } from "./screens/screens";
 import { viewOf } from "./screens/view";
-import { createSpellWheelHud } from "./spell-wheel-hud";
+import { createSpellSlotsHud } from "./spell-slots-hud";
 import { tuning } from "./tuning";
 
 const localId: DuelistId = "local";
@@ -290,8 +290,8 @@ const start = async () => {
     roundsToWin: tuning.round.roundsToWin,
   });
 
-  // Focus, the Special Spells' Cooldowns and the Spell Wheel.
-  const specialsHud = createSpellWheelHud(hudElement, localId, tuning);
+  // Focus and the Spell Slots with their Cooldowns.
+  const specialsHud = createSpellSlotsHud(hudElement, localId, tuning);
 
   let clock = createFixedStepClock(tuning.tickRate);
 

@@ -313,77 +313,116 @@ describe(createHumanController, () => {
       look: { pitch: 0, yaw: 0 },
       move: { x: 0, y: 0 },
       shield: false,
-      spellWheel: { held: false, pick: { x: 0, y: 0 } },
+      spellSlots: { held: false, press: null },
       sprint: false,
       switchTarget: 0,
     });
   });
 
-  describe("R2 and the Spell Wheel", () => {
-    const { close, open } = tuning.input.spellWheel;
+  describe("R2 and the Spell Slots", () => {
+    const { hold, release } = tuning.input.spellSlots;
+    const faces = { circle: 1, cross: 0, square: 2, triangle: 3 } as const;
 
-    it("holds the wheel open while R2 is pulled, picking with the right stick", () => {
-      const { pad, tick } = holding([0, 0, 0, 0]);
+    it("presses a face button's Spell Slot while R2 is held, for the tick of the press only", () => {
+      const { pad, press, tick } = holding([0, 0, 0, 0]);
 
-      const before = tick();
       pull(pad, 1);
-      pad.axes = [0, 0, -1, 0];
-      const picking = tick();
-      pull(pad, 0);
-      const released = tick();
+      const armed = tick();
+      press(faces.triangle, true);
+      const pressed = tick();
+      const stillDown = tick();
 
-      expect(before.spellWheel.held).toBeFalsy();
-      expect(picking.spellWheel.held).toBeTruthy();
-      expect(picking.spellWheel.pick.x).toBeCloseTo(-1);
-      expect(picking.spellWheel.pick.y).toBeCloseTo(0);
-      expect(released.spellWheel.held).toBeFalsy();
+      expect(armed.spellSlots).toStrictEqual({ held: true, press: null });
+      expect(pressed.spellSlots).toStrictEqual({
+        held: true,
+        press: "triangle",
+      });
+      expect(stillDown.spellSlots).toStrictEqual({ held: true, press: null });
     });
 
-    it("opens past a light pull and only closes once R2 is nearly let go", () => {
+    it("withholds the face buttons' usual actions while they cast from their slots", () => {
+      const { pad, press, tick } = holding([0, 0, 0, 0]);
+
+      pull(pad, 1);
+      tick();
+
+      for (const index of Object.values(faces)) {
+        press(index, true);
+      }
+
+      const intent = tick();
+      // Still withheld after R2 is let go, until the buttons are.
+      pull(pad, 0);
+      const afterR2 = tick();
+
+      expect(intent).toMatchObject({
+        dodge: false,
+        heavySpell: false,
+        jump: false,
+        lightSpell: false,
+        spellSlots: { held: true, press: "triangle" },
+      });
+      expect(afterR2).toMatchObject({
+        dodge: false,
+        heavySpell: false,
+        jump: false,
+        lightSpell: false,
+        spellSlots: { held: false, press: null },
+      });
+    });
+
+    it("casts nothing from R2 alone, and the face buttons act as usual without it", () => {
+      const { pad, press, tick } = holding([0, 0, 0, 0]);
+
+      pull(pad, 1);
+      const r2Alone = tick();
+      pull(pad, 0);
+      tick();
+      press(faces.square, true);
+      const squarePressed = tick();
+
+      expect(r2Alone.spellSlots.press).toBeNull();
+      expect(squarePressed).toMatchObject({
+        lightSpell: true,
+        spellSlots: { held: false, press: null },
+      });
+    });
+
+    it("keeps a Charge going when R2 is pulled while △ is already held", () => {
+      const { pad, press, tick } = holding([0, 0, 0, 0]);
+
+      press(faces.triangle, true);
+      tick();
+      pull(pad, 1);
+      const intent = tick();
+
+      expect(intent.heavySpell).toBeTruthy();
+      expect(intent.spellSlots).toStrictEqual({ held: true, press: null });
+    });
+
+    it("holds R2 past a light pull and lets it go only once nearly released", () => {
       const { pad, tick } = holding([0, 0, 0, 0]);
 
-      pull(pad, open * 0.8);
+      pull(pad, hold * 0.8);
       const light = tick();
-      pull(pad, open * 1.2);
-      const opened = tick();
-      pull(pad, (open + close) / 2);
+      pull(pad, hold * 1.2);
+      const held = tick();
+      pull(pad, (hold + release) / 2);
       const easing = tick();
-      pull(pad, close * 0.5);
-      const closed = tick();
+      pull(pad, release * 0.5);
+      const letGo = tick();
 
       expect(
-        [light, opened, easing, closed].map((each) => each.spellWheel.held)
+        [light, held, easing, letGo].map((each) => each.spellSlots.held)
       ).toStrictEqual([false, true, true, false]);
     });
 
-    it("never turns the camera or switches Target while the wheel is open", () => {
-      const { pad, ticks } = holding([0, 0, 0, 0]);
-
-      ticks(2);
-      pull(pad, 1);
-      pad.axes = [0, 0, 1, 0];
-      const wheelOpen = ticks(ticksOf(0.5));
-
-      expect(wheelOpen.every((each) => each.look.yaw === 0)).toBeTruthy();
-      expect(wheelOpen.every((each) => each.look.pitch === 0)).toBeTruthy();
-      expect(wheelOpen.every((each) => each.switchTarget === 0)).toBeTruthy();
-    });
-
-    it("leaves the camera still after the wheel closes until the stick comes back to the centre", () => {
-      const { pad, ticks } = holding([0, 0, 0, 0]);
+    it("keeps turning the camera with the right stick while R2 is held", () => {
+      const { pad, tick } = holding([0, 0, 1, 0]);
 
       pull(pad, 1);
-      pad.axes = [0, 0, 1, 0];
-      ticks(10);
-      pull(pad, 0);
-      const stillPushed = ticks(10);
-      pad.axes = [0, 0, 0, 0];
-      ticks(2);
-      pad.axes = [0, 0, 1, 0];
-      const pushedAgain = ticks(5);
 
-      expect(stillPushed.every((each) => each.look.yaw === 0)).toBeTruthy();
-      expect(pushedAgain.at(-1)?.look.yaw).toBeGreaterThan(0);
+      expect(settle(tick).look.yaw).toBeCloseTo(maxYawSpeed);
     });
   });
 });

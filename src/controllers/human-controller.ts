@@ -1,6 +1,8 @@
 import type { DualSenseSnapshot } from "../dualsense/input";
 import { idleIntent } from "../duel/intent";
 import type { TargetSwitch, Vec2 } from "../duel/intent";
+import { spellSlots } from "../duel/spell-slots";
+import type { SpellSlot } from "../duel/spell-slots";
 import { tuning } from "../tuning";
 import type { Tuning } from "../tuning";
 import { createAimResponse } from "./aim-response";
@@ -63,6 +65,66 @@ const createFlickDetector = (
 };
 
 /**
+ * R2 and the face buttons, read for the Spell Slots. R2 is the modifier,
+ * held past `hold` until it comes back under `release`. A face button pressed
+ * while it is held is a press of that button's Spell Slot (one per tick,
+ * △ □ ○ ✕ in that order), and its usual action is withheld until the button
+ * is let go, even if R2 is let go first. A face button already held before
+ * R2 keeps its usual action, so pulling R2 mid-Charge never releases it.
+ */
+const createSlotReader = (settings: Tuning["input"]["spellSlots"]) => {
+  let held = false;
+  const down = { circle: false, cross: false, square: false, triangle: false };
+
+  const toSlot = {
+    circle: false,
+    cross: false,
+    square: false,
+    triangle: false,
+  };
+
+  return {
+    read: (pad: DualSenseSnapshot) => {
+      held = pad.triggers.r2 > (held ? settings.release : settings.hold);
+      let press: SpellSlot | null = null;
+
+      for (const slot of spellSlots) {
+        const now = pad.buttons[slot];
+
+        if (now && !down[slot] && held) {
+          toSlot[slot] = true;
+          press ??= slot;
+        } else if (!now) {
+          toSlot[slot] = false;
+        }
+
+        down[slot] = now;
+      }
+
+      return {
+        /** Each face button as its usual action sees it: down, unless it went to a slot. */
+        face: {
+          circle: down.circle && !toSlot.circle,
+          cross: down.cross && !toSlot.cross,
+          square: down.square && !toSlot.square,
+          triangle: down.triangle && !toSlot.triangle,
+        },
+        held,
+        press,
+      };
+    },
+    reset: () => {
+      held = false;
+
+      for (const slot of spellSlots) {
+        down[slot] = false;
+        toSlot[slot] = false;
+      }
+    },
+  };
+};
+
+/**
  * A human holding a DualSense. `readPad` returns this frame's DualSense
  * snapshot, or nothing while no DualSense is connected (the Duelist then idles).
  *
@@ -75,9 +137,9 @@ const createFlickDetector = (
  * - □: the Light Spell.
  * - △: the Heavy Spell, held to Charge and released to cast.
  * - ○: Dodge. ✕: jump. L1 (held): the Shield. R1 (held): sprint. L3 is unbound.
- * - R2 (held): the Spell Wheel. While it is open the right stick picks a
- *   slice instead of turning the camera (or nudging the Lock-on framing, or
- *   flicking), and letting go of R2 casts what it picks. The game never slows.
+ * - R2 (held): the Spell Slots' modifier. While it is held, pressing a face
+ *   button casts from its Spell Slot instead of its usual action (R2 alone
+ *   casts nothing); the right stick keeps turning the camera as usual.
  *
  * Everything advances once per Intent, which the Duel asks for every tick.
  */
@@ -89,13 +151,9 @@ export const createHumanController = (
   const tickSeconds = 1 / settings.tickRate;
   const aimResponse = createAimResponse(look);
   const flicks = createFlickDetector(flick, tickSeconds);
-  const wheel = settings.input.spellWheel;
+  const slots = createSlotReader(settings.input.spellSlots);
   let r3WasDown = false;
   let settleTicks = 0;
-  // The Spell Wheel is open (R2 held), and the right stick is the wheel's
-  // until it comes back to the centre after the wheel closes.
-  let wheelOpen = false;
-  let stickPicking = false;
 
   return {
     intent: () => {
@@ -103,9 +161,8 @@ export const createHumanController = (
 
       if (!pad) {
         aimResponse.reset();
+        slots.reset();
         r3WasDown = false;
-        wheelOpen = false;
-        stickPicking = false;
 
         return idleIntent;
       }
@@ -120,39 +177,22 @@ export const createHumanController = (
       const settling = settleTicks > 0;
       settleTicks = Math.max(settleTicks - 1, 0);
 
-      // R2 holds the Spell Wheel open, with some hysteresis on the trigger.
-      wheelOpen = pad.triggers.r2 > (wheelOpen ? wheel.close : wheel.open);
-
-      // While the wheel is open the right stick picks a slice instead of
-      // looking, and once it closes it only looks again after coming back
-      // to the centre, so letting go of R2 never flings the camera.
-      if (wheelOpen) {
-        stickPicking = true;
-      } else if (
-        Math.hypot(pad.rightStick.x, pad.rightStick.y) < wheel.stickRest
-      ) {
-        stickPicking = false;
-      }
-
-      if (settling || stickPicking) {
+      if (settling) {
         flicks.disarm();
       }
 
-      if (stickPicking) {
-        aimResponse.reset();
-      }
-
-      const stick = settling || stickPicking ? { x: 0, y: 0 } : pad.rightStick;
-
+      const stick = settling ? { x: 0, y: 0 } : pad.rightStick;
       const turn = aimResponse.step(stick, tickSeconds);
+      const { face, held, press } = slots.read(pad);
 
       return {
         // Buttons are passed on as held; the simulation finds the presses
-        // (and reads △'s hold over time to Charge Confringo).
-        dodge: pad.buttons.circle,
-        heavySpell: pad.buttons.triangle,
-        jump: pad.buttons.cross,
-        lightSpell: pad.buttons.square,
+        // (and reads △'s hold over time to Charge Confringo). A face button
+        // pressed while R2 is held went to its Spell Slot instead.
+        dodge: face.circle,
+        heavySpell: face.triangle,
+        jump: face.cross,
+        lightSpell: face.square,
         lockOn,
         look: {
           pitch: turn.y * look.maxPitchSpeed,
@@ -160,12 +200,9 @@ export const createHumanController = (
         },
         move: pad.leftStick,
         shield: pad.buttons.l1,
-        spellWheel: {
-          held: wheelOpen,
-          pick: wheelOpen ? pad.rightStick : { x: 0, y: 0 },
-        },
+        spellSlots: { held, press },
         sprint: pad.buttons.r1,
-        switchTarget: settling || stickPicking ? 0 : flicks.read(stick),
+        switchTarget: settling ? 0 : flicks.read(stick),
       };
     },
   };

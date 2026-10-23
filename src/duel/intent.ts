@@ -1,4 +1,5 @@
 import type { Aim } from "./geometry";
+import type { SpellSlot } from "./spell-slots";
 
 /** A 2D vector in controller space: x is right, y is up/forward. */
 export interface Vec2 {
@@ -7,14 +8,14 @@ export interface Vec2 {
 }
 
 /**
- * The Spell Wheel this tick: `held` while R2 holds it open, and `pick`, where
- * the right stick points (x right, y up; centred picks nothing). The
- * simulation reads it over time: releasing casts the Special Spell picked,
- * releasing with the stick centred cancels.
+ * The Spell Slots this tick: `held` while the modifier (R2, for a human) is
+ * held, and `press`, the slot whose face button was pressed this tick (for
+ * that single tick), or null. The simulation casts the Special Spell bound to
+ * a pressed slot, if it can be cast.
  */
-export interface WheelIntent {
+export interface SlotsIntent {
   readonly held: boolean;
-  readonly pick: Vec2;
+  readonly press: SpellSlot | null;
 }
 
 /** A Lock-on Target switch: to the next opponent on the left (-1) or right (1), or none (0). */
@@ -71,8 +72,8 @@ export interface Intent {
   readonly shield: boolean;
   /** The sprint button is down this tick: sprinting lasts while it is held and Stamina lasts. */
   readonly sprint: boolean;
-  /** The Spell Wheel, held open with a pick, or closed. */
-  readonly spellWheel: WheelIntent;
+  /** The Spell Slots: the modifier held, and a slot pressed this tick. */
+  readonly spellSlots: SlotsIntent;
 }
 
 /** The Intent of a Controller that does nothing. */
@@ -85,7 +86,7 @@ export const idleIntent: Intent = {
   look: { pitch: 0, yaw: 0 },
   move: { x: 0, y: 0 },
   shield: false,
-  spellWheel: { held: false, pick: { x: 0, y: 0 } },
+  spellSlots: { held: false, press: null },
   sprint: false,
   switchTarget: 0,
 };
