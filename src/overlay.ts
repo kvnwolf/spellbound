@@ -28,10 +28,11 @@ export const createOverlay = (element: HTMLElement) => {
   let shown: string | undefined;
 
   /**
-   * Hands menu.css the height of what this screen lays out under the logo
-   * (the veil's line, on the title), so it can centre the logo and that
-   * together on the screen. The click hint comes and goes on its own: it
-   * hangs below, uncounted.
+   * Hands menu.css the height of what this screen lays out under the logo,
+   * so it can centre the logo and that together on the screen. The title
+   * lays out only the veil's line, which menu.css already holds room for
+   * (as loading does, so the logo never moves between them). The click hint
+   * comes and goes on its own: it hangs below, uncounted.
    */
   const measure = () => {
     const laidOut = [...element.children].filter(
@@ -47,10 +48,12 @@ export const createOverlay = (element: HTMLElement) => {
       ...laidOut.map((child) => child.offsetTop + child.offsetHeight)
     );
 
-    const flow = laidOut.length > 0 ? bottom - top : 0;
-    const line = veil.classList.contains("shown") ? veilLine.offsetHeight : 0;
-
-    menu.style.setProperty("--content-height", `${String(flow + line)}px`);
+    if (veil.classList.contains("shown")) {
+      menu.style.removeProperty("--content-height");
+    } else {
+      const flow = laidOut.length > 0 ? bottom - top : 0;
+      menu.style.setProperty("--content-height", `${String(flow)}px`);
+    }
   };
 
   return {

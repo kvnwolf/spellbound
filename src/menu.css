@@ -22,9 +22,12 @@
   --logo-height: calc(var(--logo-width) / 4);
   /*
    * The logo and the screen's content under it centred together: overlay.ts
-   * measures the content (loading has none yet, the prompt's estimate).
+   * measures the content. Loading has none yet: it holds the title veil's
+   * one line (its size below), so the logo stays put when the title comes.
    */
-  --content-height: 4.5rem;
+  --veil-size: clamp(1.1rem, 2.4vw, 1.5rem);
+  --veil-line: calc(var(--veil-size) * 1.4);
+  --content-height: var(--veil-line);
   --logo-top: max(
     clamp(1rem, 4vh, 3rem),
     calc(50vh - (var(--logo-height) + 1.25rem + var(--content-height)) / 2)
@@ -391,15 +394,12 @@
   position: fixed;
   inset: 0;
   z-index: 2;
-  display: flex;
-  justify-content: center;
-  align-items: flex-start;
-  padding: calc(var(--logo-top) + var(--logo-height) + 1.25rem) 1rem 0;
+  padding: 0;
   color: var(--gold);
   border: none;
   background: rgb(4 6 14 / 45%);
   font: inherit;
-  font-size: clamp(1.1rem, 2.4vw, 1.5rem);
+  font-size: var(--veil-size);
   letter-spacing: 0.18em;
   text-align: center;
   text-shadow: 0 0 14px rgb(216 180 106 / 55%);
@@ -417,6 +417,16 @@
   opacity: 1;
   transition: opacity 600ms ease-out;
   animation: menu-veil-breathe 2.4s ease-in-out infinite;
+}
+
+/* Its line, just under the logo. */
+#overlay .overlay-veil span {
+  position: absolute;
+  top: calc(var(--logo-top) + var(--logo-height) + 1.25rem);
+  right: 1rem;
+  left: 1rem;
+  height: var(--veil-line);
+  line-height: 1.4;
 }
 
 #menu[data-intro="loading"] #overlay .overlay-veil {
