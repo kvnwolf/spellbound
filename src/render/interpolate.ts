@@ -3,7 +3,9 @@
  * display rate, so each frame blends the previous and current snapshots by
  * how far the clock is into the next tick (`alpha` in [0, 1]).
  */
+import { clashOpponentOf } from "../duel/duel";
 import type {
+  ClashState,
   Drinking,
   DuelistId,
   DuelistState,
@@ -24,7 +26,14 @@ export interface DuelistSample {
   readonly lockNudge: Aim;
   /** States are not blended: they switch on the tick that changes them. */
   readonly knockedOut: boolean;
+  /** Staggered by a strong Stupefy or a Backfire. */
   readonly staggered: boolean;
+  /** Sliding back from a Confringo or Depulso hit. */
+  readonly knockedBack: boolean;
+  /** Rooted in a Clash, Wand locked on the beam. */
+  readonly clashing: boolean;
+  /** Running at sprint speed. */
+  readonly sprinting: boolean;
   /** Charging a Heavy Spell: the Wand stays raised. */
   readonly charging: boolean;
   /** Height of the feet off the floor, mid-jump. */
@@ -35,6 +44,8 @@ export interface DuelistSample {
   readonly petrified: boolean;
   /** Disarmed: the Wand is out of the hand. */
   readonly disarmed: boolean;
+  /** Where the loose Wand is while Disarmed (flying, then on the floor), or null. */
+  readonly looseWand: Point3 | null;
   /** Focus points, for the full-Focus aura on the Wand. */
   readonly focus: number;
   /** The Potion being drunk and how long until it is down, for the vial at the lips. */
@@ -71,18 +82,22 @@ const blendDirection = (
 export const sampleDuelist = (
   previous: DuelistState,
   current: DuelistState,
-  alpha: number
+  alpha: number,
+  clash: ClashState | null = null
 ): DuelistSample => ({
   aim: lerpAim(previous.aim, current.aim, alpha),
   charging: current.chargeSeconds > 0,
+  clashing: clashOpponentOf(clash, current.id) !== undefined,
   disarmed: current.looseWand !== null,
   dodging: current.dodgeSeconds > 0,
   drinking: current.drinking,
   elevation: lerp(previous.elevation, current.elevation, alpha),
   facing: blendDirection(previous.facing, current.facing, alpha),
   focus: current.focus,
+  knockedBack: current.knockbackSeconds > 0,
   knockedOut: current.knockedOut,
   lockNudge: lerpAim(previous.lockNudge, current.lockNudge, alpha),
+  looseWand: current.looseWand?.position ?? null,
   petrified: current.petrifiedSeconds > 0,
   position: {
     x: lerp(previous.position.x, current.position.x, alpha),
@@ -90,8 +105,8 @@ export const sampleDuelist = (
   },
   potionEffects: current.potionEffects,
   shielding: current.shielding,
-  // A Confringo knockback rocks the Duelist back like a Stagger.
-  staggered: current.staggerSeconds > 0 || current.knockbackSeconds > 0,
+  sprinting: current.sprinting,
+  staggered: current.staggerSeconds > 0,
   targetId: current.targetId,
 });
 

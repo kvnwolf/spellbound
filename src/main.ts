@@ -275,30 +275,23 @@ const start = async () => {
     drinkSeconds: tuning.potions.drink.seconds,
   };
 
+  const viewSettings = {
+    aura: wandAura,
+    dodgeSeconds: tuning.defence.dodge.seconds,
+    duelist: tuning.duelist,
+    glow: tuning.lockOnGlow,
+    potion: potionLook,
+    stone: tuning.petrifiedLook,
+  };
+
   const views = new Map([
     [
       localId,
-      createDuelistView(
-        "#8a1c24",
-        tuning.lockOnGlow,
-        tuning.petrifiedLook,
-        tuning.duelist,
-        tuning.defence.dodge.seconds,
-        wandAura,
-        potionLook
-      ),
+      createDuelistView(localId, tuning.duelist.teamLooks.near, viewSettings),
     ],
     [
       opponentId,
-      createDuelistView(
-        "#1f5a3a",
-        tuning.lockOnGlow,
-        tuning.petrifiedLook,
-        tuning.duelist,
-        tuning.defence.dodge.seconds,
-        wandAura,
-        potionLook
-      ),
+      createDuelistView(opponentId, tuning.duelist.teamLooks.far, viewSettings),
     ],
   ]);
 
@@ -552,7 +545,7 @@ const start = async () => {
       const before =
         previous.duelists.find((each) => each.id === state.id) ?? state;
 
-      const sample = sampleDuelist(before, state, alpha);
+      const sample = sampleDuelist(before, state, alpha, current.clash);
 
       samples.set(state.id, sample);
       // The local Duelist's Lock-on Target glows round its silhouette,
@@ -707,18 +700,9 @@ const start = async () => {
 
     showCharge(current, events, seconds, inDuel);
 
-    // A cast moves the caster's Wand arm the way its Spell calls for; a
-    // Backfire drops it; a Dodge rolls the whole Duelist.
-    for (const event of events) {
-      if (event.type === "spell-cast") {
-        views.get(event.spell.casterId)?.cast(event.spell.kind);
-      } else if (event.type === "backfire") {
-        views.get(event.duelistId)?.backfire();
-      } else if (event.type === "dodge") {
-        views.get(event.duelistId)?.dodge(event.direction);
-      } else if (event.type === "potion-drunk") {
-        views.get(event.duelistId)?.drunk(event.kind);
-      }
+    // Casts, Backfires, Dodges, landings, hits and pickups play on the wizards.
+    for (const duelistView of views.values()) {
+      duelistView.handle(events);
     }
 
     looseWands.handle(events);

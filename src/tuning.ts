@@ -807,54 +807,426 @@ export const tuning = {
   },
 
   duelist: {
+    /**
+     * The procedural wizard's build, in metres in its own frame (+y up from
+     * the feet, +z the way it faces, +x to its left), about 1.72 m to the
+     * crown of the head. The pelvis stands `pelvisHeight` up; the chest
+     * bone sits `waist` above it, the base of the neck `torso` above that
+     * and the centre of the head `neck` higher still. Limb segments run
+     * joint to joint; `limbs` gives each one's radius at its upper and
+     * lower end (`sleeve` is the bell sleeve round the forearm, elbow to
+     * wrist).
+     */
+    body: {
+      ankleHeight: 0.08,
+      belt: { height: 0.02, radius: 0.168, thickness: 0.022 },
+      /** The torso coat's profile in the chest frame: [radius, height] pairs from below the waist up to the neck. */
+      coat: [
+        [0.158, -0.09],
+        [0.165, 0],
+        [0.19, 0.14],
+        [0.2, 0.23],
+        [0.178, 0.31],
+        [0.11, 0.355],
+        [0.06, 0.375],
+        [0, 0.38],
+      ],
+      eye: { depth: 0.86, height: 0.022, radius: 0.012, spread: 0.036 },
+      foot: { back: 0.05, height: 0.075, length: 0.25, width: 0.09 },
+      forearm: 0.26,
+      handRadius: 0.042,
+      handStretch: 1.35,
+      /** A pointed hat: brim, banded crown and a point that bends back and sways. */
+      hat: {
+        bandHeight: 0.04,
+        baseRadius: 0.118,
+        brimRadius: 0.23,
+        brimThickness: 0.016,
+        crown: 0.2,
+        height: 0.07,
+        midRadius: 0.075,
+        point: 0.28,
+      },
+      headRadius: 0.105,
+      headStretch: 1.1,
+      hipDrop: 0.03,
+      hipWidth: 0.095,
+      /** A hood: a shell open at the face (`opening` radians either side), reaching `reach` radians down from the crown, peaked at the back. */
+      hood: {
+        lift: 0.012,
+        opening: 0.95,
+        peakLength: 0.2,
+        peakRadius: 0.065,
+        peakTilt: 1.05,
+        radius: 0.138,
+        reach: 2.3,
+        stretch: 1.08,
+      },
+      limbs: {
+        forearm: [0.034, 0.03],
+        shin: [0.055, 0.042],
+        sleeve: [0.056, 0.092],
+        thigh: [0.078, 0.056],
+        upperArm: [0.06, 0.05],
+      },
+      neck: 0.14,
+      neckRadius: 0.045,
+      nose: { height: -0.01, length: 0.045, radius: 0.016 },
+      pelvisHeight: 0.93,
+      shin: 0.42,
+      shoulderHeight: 0.31,
+      shoulderPad: 0.062,
+      shoulderWidth: 0.185,
+      thigh: 0.42,
+      torso: 0.36,
+      /** The torso's depth front to back, as a share of its width. */
+      torsoDepth: 0.72,
+      upperArm: 0.28,
+      waist: 0.17,
+    },
     /** A Duelist's body is a circle on the Arena floor for collision. */
     bodyRadius: 0.45,
     /** Height of the chest above the floor; the aim point sits there. */
     chestHeight: 1.3,
+    /**
+     * The cloth: the robe's skirt hangs from the pelvis and a mantle from
+     * the shoulders. Both lag behind the body on a fixed-step spring (`drag`
+     * metres of swing per m/s, at most `maxSway`), the skirt flares with
+     * speed and tents over the legs (`legRadius` thick, the push spreading
+     * `legSpan` sideways), the mantle streams back and lifts (`mantleLift`
+     * of its swing) and flutters, and neither ever sinks below
+     * `floorClearance` over the floor. `bound` is the radius culling keeps.
+     */
+    cloth: {
+      bound: 1.8,
+      drag: 0.045,
+      /** Falling lifts the hem: this much extra flare per m/s downward. */
+      flarePerFall: 0.03,
+      flarePerSpeed: 0.022,
+      floorClearance: 0.015,
+      flutter: { amplitude: 0.035, speed: 9, waves: 2.2 },
+      /** Radians the hat's point bends back at rest, and swings per metre of the cloth spring. */
+      hatBend: 0.32,
+      hatSway: 1.1,
+      legRadius: 0.1,
+      legSpan: 0.28,
+      /** The cloth starts tenting over the legs this share of the way down the skirt. */
+      legTentFrom: 0.12,
+      mantle: {
+        bottomBack: 0.25,
+        bottomHalfWidth: 0.27,
+        columns: 7,
+        length: 0.82,
+        rows: 9,
+        top: 0.33,
+        topBack: 0.135,
+        topHalfWidth: 0.19,
+        wrap: 0.1,
+      },
+      mantleDrag: 0.06,
+      mantleLift: 0.25,
+      maxSway: 0.28,
+      ripple: { amplitude: 0.01, speed: 2.4, waves: 3 },
+      skirt: {
+        depthScale: 0.75,
+        flareCurve: 1.3,
+        hem: -0.66,
+        hemRadius: 0.31,
+        rings: 10,
+        segments: 28,
+        top: 0.12,
+        topRadius: 0.15,
+      },
+      /** Mass-normalised: stiffness s⁻², damping s⁻¹, stepped every `step` seconds (at most `maxSubsteps` a frame). */
+      spring: { damping: 8, maxSubsteps: 12, step: 1 / 120, stiffness: 55 },
+    },
+    /**
+     * Walking and running: a cycle that advances by the ground covered, so
+     * planted feet stay put. Each foot sweeps `sweepBase + sweepPerSpeed ×
+     * speed` metres (at most `maxSweep`) while planted for `walkStance` of
+     * the cycle, down to `runStance` from `runFrom` to `runAt` m/s, and
+     * swings forward lifted `liftBase + liftPerSweep × sweep` (peaking early
+     * by `liftSkew`), its toe dipping `footPitch` radians. Feet stand
+     * `footSpread` either side; side-stepping, they step `sideStep` as far
+     * as ahead and pass `footGap` ahead of and behind each other instead of
+     * through each other. The pelvis bobs `bob` metres at a run,
+     * leans `lean` radians per m/s into the motion (at most `maxLean`) and
+     * turns `hipTurn` with the stride while the chest turns back
+     * `counterTwist` of it; the free arm swings `armSwing` metres per metre
+     * of the opposite foot and lifts `runArmLift` at a run; the Wand hand
+     * bobs `wandBob`. Below `minSpeed` the Duelist stands: the planted foot
+     * stays put and each foot left out of place steps home in turn over
+     * `settleSeconds`, lifted `settleLift`. The speed eases at
+     * `speedSharpness` and the gait fades in at `weightSharpness`.
+     */
+    gait: {
+      armSwing: 0.26,
+      bob: 0.04,
+      counterTwist: 0.7,
+      footGap: 0.09,
+      footPitch: 0.5,
+      footSpread: 0.11,
+      hipTurn: 0.14,
+      lean: 0.035,
+      liftBase: 0.05,
+      liftPerSweep: 0.22,
+      liftSkew: 0.8,
+      maxLean: 0.3,
+      maxSweep: 0.85,
+      minSpeed: 0.3,
+      runArmLift: 0.2,
+      runAt: 5,
+      runFrom: 1.5,
+      runStance: 0.36,
+      settleLift: 0.08,
+      settleSeconds: 0.2,
+      sideStep: 0.55,
+      speedSharpness: 10,
+      sweepBase: 0.3,
+      sweepPerSpeed: 0.12,
+      walkStance: 0.6,
+      wandBob: 0.012,
+      weightSharpness: 8,
+    },
     health: 100,
     /** Spells hit a Duelist anywhere from the floor up to this height. */
     height: 2,
     /**
-     * The Dodge shown as a roll: the Duelist tucks down to `scale` of its
-     * size (and the arm folds `armTuck` radians down against the robe) over
-     * the first and last `tuckShare` of the Dodge, and somersaults `turns`
-     * times toward where it goes about `pivotHeight` (metres up the standing
+     * How the wizard is lit and dressed. The Team's colours are in
+     * `teamLooks`; this is what both share. Roughness is 0 (mirror) to 1;
+     * radiance is scene-linear HDR (above the bloom threshold glows). The
+     * Team rim is an edge light whose radiance grows with distance, from
+     * `rimNear` at `rimNearDistance` metres from the camera to `rimFar` at
+     * `rimFarDistance`, so the far Duelist reads against the dark walls
+     * while the near one is not washed out.
+     */
+    look: {
+      boots: "#2a2019",
+      bootsRoughness: 0.75,
+      clothRoughness: 0.82,
+      cuffTrimShare: 0.22,
+      eyes: "#15100c",
+      /** How much the robe's folds darken it toward the hem. */
+      foldDepth: 0.22,
+      hemTrimShare: 0.09,
+      mantleFolds: 5,
+      rimFar: 1.1,
+      rimFarDistance: 14,
+      rimNear: 0.25,
+      rimNearDistance: 4,
+      rimPower: 3.4,
+      skin: "#e0b48e",
+      skinRoughness: 0.62,
+      skirtFolds: 9,
+      stoneMottle: 0.25,
+      /** Mottling of the stone, cycles per metre. */
+      stoneMottleScale: 7,
+      stoneRoughness: 0.92,
+      tipRadiance: 3,
+      tipSize: 0.012,
+      trimRoughness: 0.45,
+      wandGripRadius: 0.014,
+      wandTipRadius: 0.007,
+      wood: "#8a6038",
+      woodRoughness: 0.5,
+    },
+    /**
+     * Poses, in the body frame (metres; +z ahead, +x to the left, so the
+     * Wand hand is at -x; leans are radians, forward positive). A hand is a
+     * point the arm reaches for; a `wand` is the direction the Wand points
+     * from it. Weights ease in and out at `sharpness` per second; one-shot
+     * motions (a landing, a flinch, a pickup, the Knockout) follow their own
+     * timelines.
+     */
+    poses: {
+      /** Idle: the chest rises `depth` (scale) and tips `pitch` radians `rate` times a second; the weight sways `sway` metres `swayRate` times a second. */
+      breath: {
+        depth: 0.025,
+        pitch: 0.02,
+        rate: 0.28,
+        sway: 0.012,
+        swayRate: 0.15,
+      },
+      /** Charging a Confringo: the Wand raised over the head, leaning back. */
+      charge: {
+        hand: [-0.17, 1.9, -0.02],
+        lean: -0.12,
+        leftHand: [0.26, 1.28, 0.3],
+        wand: [0.15, 0.6, -0.55],
+      },
+      /** A Clash: the Wand thrust at the beam in both hands, braced in a wide stance (front foot `front`, back foot `back` metres), trembling. */
+      clash: {
+        back: -0.2,
+        crouch: 0.12,
+        front: 0.24,
+        grip: [0.06, -0.035, -0.05],
+        hand: [-0.13, 1.36, 0.52],
+        lean: 0.16,
+        spread: 0.15,
+        tremble: 0.012,
+        trembleRate: 17,
+      },
+      /** Disarmed: the empty Wand hand reaches `reach` metres toward the loose Wand at `height`, grasping; for a Wand behind, it turns back no further than `behind` (the reach's share pointing ahead, -1 to 1). */
+      disarmed: {
+        behind: -0.3,
+        grasp: 0.04,
+        graspRate: 3.2,
+        height: 1.12,
+        lean: 0.1,
+        reach: 0.5,
+      },
+      /** Drinking: the Wand hand lowers; the free hand lifts the vial from `vialFrom` to `vialTo` and tips it `vialTip` radians; the head tips back `headBack`. */
+      drink: {
+        hand: [-0.3, 1.02, 0.2],
+        headBack: 0.42,
+        vialFrom: [0.28, 1.2, 0.3],
+        vialTip: 1.6,
+        vialTo: [0.12, 1.53, 0.17],
+        wand: [0.15, -0.5, 1],
+      },
+      /** Elbows bend toward these (the right one mirrored); knees toward `kneeHint`. */
+      elbowHint: [0.35, -1, -0.8],
+      /** Light and Special casts flick the Wand: `raise` radians up, `inward` across toward the aim, the hand reaching `reach` metres ahead. */
+      flicks: {
+        expelliarmus: { inward: 0.55, raise: 0.15, reach: 0.1 },
+        incendio: { inward: -0.2, raise: 0.75, reach: 0.06 },
+        petrificus: { inward: 0.15, raise: -0.35, reach: 0.12 },
+        stupefy: { inward: 0.12, raise: 0.55, reach: 0.05 },
+      },
+      /** A Spell landing: the chest snaps back `lean` and the head `head`, peaking at `peak` of `seconds`. */
+      flinch: { head: 0.25, lean: 0.24, peak: 0.18, seconds: 0.32 },
+      /** Airborne: the feet tuck up `tuck` metres and `tuckForward` ahead; the arms lift `arms`. */
+      jump: { arms: 0.12, tuck: 0.3, tuckForward: 0.1 },
+      kneeHint: [0.08, 0, 1],
+      /** A Confringo's knockback: sliding back on planted feet, leaning back, arms thrown forward. */
+      knockback: {
+        crouch: 0.14,
+        hand: [-0.35, 1.5, 0.38],
+        lean: -0.45,
+        leftHand: [0.35, 1.46, 0.36],
+      },
+      /** The Knockout: the knees buckle `buckle` metres over `buckleSeconds`, then the body topples onto its back over `fallSeconds`, raised `lift` so it lies on the floor, arms flung out. */
+      knockout: {
+        buckle: 0.3,
+        buckleSeconds: 0.28,
+        fallSeconds: 0.7,
+        hand: [-0.62, 1.2, -0.08],
+        leftHand: [0.62, 1.25, -0.08],
+        lift: 0.13,
+      },
+      /** Landing from a jump: the knees give `squash` metres, peaking at `peak` of `seconds`. */
+      land: { peak: 0.25, seconds: 0.3, squash: 0.15 },
+      /** Hanging free at the side, elbow soft. */
+      leftHand: [0.22, 0.93, 0.07],
+      /** Picking the Wand up off the floor: a crouch and a scoop, peaking at `peak` of `seconds`. */
+      pickup: {
+        crouch: 0.38,
+        hand: [-0.22, 0.32, 0.5],
+        lean: 0.75,
+        peak: 0.42,
+        seconds: 0.55,
+      },
+      /** Depulso: both hands shove forward. */
+      push: {
+        hand: [-0.2, 1.38, 0.62],
+        lean: 0.12,
+        leftHand: [0.16, 1.36, 0.6],
+      },
+      /** A Backfire: the Wand flung down and away, the chest hunched. */
+      recoil: {
+        hand: [-0.38, 1.05, 0.12],
+        hunch: 0.3,
+        wand: [-0.25, -0.8, -0.3],
+      },
+      /** The Wand's resting direction (the hand sits a Wand's length behind the `wandTip`). */
+      restWand: [0.2, 0.08, 1],
+      /** The Dodge roll's tuck: crouched, knees to the chest (`knees` = [up, ahead] metres), arms in. */
+      rollTuck: {
+        crouch: 0.32,
+        hand: [-0.16, 1.05, 0.32],
+        knees: [0.42, 0.28],
+        lean: 0.8,
+        leftHand: [0.16, 1.02, 0.3],
+      },
+      sharpness: 12,
+      /** Protego: the Wand held upright before the face, the free palm out, a little crouched and wide. */
+      shield: {
+        crouch: 0.05,
+        hand: [-0.1, 1.48, 0.36],
+        leftHand: [0.2, 1.34, 0.38],
+        spread: 0.06,
+        wand: [0.12, 1, 0.22],
+      },
+      /** A Stagger: rocked back, arms out, wobbling `wobble` radians `wobbleRate` times a second. */
+      stagger: {
+        hand: [-0.45, 1.5, 0.08],
+        head: -0.3,
+        lean: -0.38,
+        leftHand: [0.45, 1.45, 0.06],
+        wand: [-0.4, 0.7, -0.3],
+        wobble: 0.07,
+        wobbleRate: 7,
+      },
+      /** A Confringo's strike: the hand at its lowest, the Wand pointing along the aim. */
+      strike: { hand: [-0.2, 1.3, 0.55] },
+    },
+    /**
+     * The Dodge shown as a roll: the Duelist tucks into a ball (its tuck pose
+     * in `poses.rollTuck`) and shrinks to `scale` of its size over the first
+     * and last `tuckShare` of the Dodge, and somersaults `turns` times
+     * toward where it goes about `pivotHeight` (metres up the standing
      * body), never sinking through the floor.
      */
     roll: {
-      armTuck: 1.3,
-      pivotHeight: 1,
-      scale: 0.55,
+      pivotHeight: 0.8,
+      scale: 0.85,
       tuckShare: 0.25,
       turns: 1,
     },
+    /**
+     * Each Team's look: robe, mantle, trim and headwear colours (hex), the
+     * colour of its edge light and Wand bead, and whether it wears a pointed
+     * hat or a hood, so the two read apart at a glance.
+     */
+    teamLooks: {
+      far: {
+        headwear: "#16533a",
+        headwearKind: "hood",
+        mantle: "#123f2d",
+        rim: "#7ff0ff",
+        robe: "#1f7a52",
+        trim: "#cfd8e0",
+      },
+      near: {
+        headwear: "#7a141d",
+        headwearKind: "hat",
+        mantle: "#5c1018",
+        rim: "#ffb36b",
+        robe: "#a3222d",
+        trim: "#e3b255",
+      },
+    },
     walkSpeed: 4.5,
     /**
-     * The visible Wand. Idle, a right hand holds it out level, its tip on
-     * `wandTip` below. A Stupefy cast flicks the whole arm up by
-     * `flickRaise` radians and back over `flickSeconds` (a touch inward, by
-     * `flickInward`, toward the aim). Charging a Confringo raises the arm to
-     * `chargeRaise` radians (about overhead), easing there at
-     * `poseSharpness` per second; its cast then swings the arm down over
+     * The visible Wand. Idle, the right hand holds it out, its tip on
+     * `wandTip` below. A Stupefy cast flicks it up and back over
+     * `flickSeconds` (each Spell's flick is in `poses.flicks`). Charging a
+     * Confringo raises it over the head (`poses.charge`), easing there at
+     * `poseSharpness` per second; its cast then swings the Wand down over
      * `swingSeconds`, accelerating through pointing at the aim to
      * `swingFollowThrough` radians below it (turned `swingInward` toward the
      * aim) in the first `swingStrikeShare` of that time, then settling back
-     * to rest. A Backfire drops the arm to `recoilKick` radians below rest
-     * in the first `recoilDropShare` of `recoilSeconds` and settles it.
+     * to rest. A Backfire flings it down (`poses.recoil`) in the first
+     * `recoilDropShare` of `recoilSeconds` and settles it.
      */
     wand: {
-      chargeRaise: 1.55,
-      flickInward: 0.12,
-      flickRaise: 0.55,
       flickSeconds: 0.2,
       /** How long the Wand is, from the hand to the tip. */
       length: 0.4,
       poseSharpness: 14,
-      /** A Depulso cast thrusts the arm forward this many metres, levelled at the aim, and back over `pushSeconds`. */
-      pushReach: 0.22,
+      /** A Depulso cast shoves both hands forward (`poses.push`) and back over `pushSeconds`. */
       pushSeconds: 0.32,
       recoilDropShare: 0.35,
-      recoilKick: 0.25,
       recoilSeconds: 0.4,
       swingFollowThrough: 0.22,
       swingInward: 0.12,
