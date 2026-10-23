@@ -40,16 +40,6 @@
   background: linear-gradient(180deg, #d9675a, #9c2e27);
 }
 
-/* The local Duelist's Lock-on Target: gold. */
-.wh-opponent[data-locked="true"] .wh-bar {
-  border-color: rgb(233 201 131 / 80%);
-  box-shadow: 0 0 6px rgb(216 180 106 / 55%);
-}
-
-.wh-opponent[data-locked="true"] .wh-bar .health-bar-fill {
-  background: linear-gradient(180deg, #f3d796, #b98f45);
-}
-
 /* An opponent's Special Spell, named small over their bar. */
 .wh-spell {
   min-height: 1em;

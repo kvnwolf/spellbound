@@ -4,8 +4,8 @@
  *
  * - Above every opponent's head (never the local Duelist's or a teammate's),
  *   a small Health bar with no name and the same pale lag segment as the
- *   local bar, shown while they are on screen and standing. It turns gold
- *   while that opponent is the local Duelist's Lock-on Target. When they cast
+ *   local bar, shown while they are on screen and standing (Lock-on is marked
+ *   on the opponent's own silhouette, not on the bar). When they cast
  *   a Special Spell, its name shows small above the bar, so the player can
  *   read what is coming.
  * - At the impact point of every hit on an opponent, its own damage number
@@ -169,12 +169,6 @@ export const createWorldHud = (
     for (const opponent of opponents) {
       const view = barFor(opponent.id);
       view.bar.show(opponent.health, seconds);
-
-      const locked = String(self?.targetId === opponent.id);
-
-      if (view.root.dataset.locked !== locked) {
-        view.root.dataset.locked = locked;
-      }
 
       const sample = samples.get(opponent.id);
 
