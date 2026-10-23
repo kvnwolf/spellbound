@@ -4,7 +4,7 @@ import { bloom } from "three/addons/tsl/display/BloomNode.js";
  * on top (so the moon, flames, embers and every Spell's emissive glow without
  * a selection pass), a soft vignette, then the renderer's single tone map and
  * sRGB output conversion. It also switches on the moon's shadow map, and
- * after the first frame compiles every effect that has not drawn yet.
+ * warms up: draws a first frame, then compiles every effect not drawn yet.
  *
  * The scene pass and bloom render at the dynamic resolution scale (see
  * `resolution.ts`), driven by the GPU timer, and the output upscales them.
@@ -27,6 +27,12 @@ import { createResolutionControl } from "./resolution";
 export interface FramePipeline {
   /** Renders one frame of `scene` through the camera given at creation. */
   readonly render: () => void;
+  /**
+   * Renders the first frame (which sets the scene pass up), then compiles
+   * everything that has not drawn yet, reporting the share done; resolves
+   * when nothing is left to compile on first sight.
+   */
+  readonly warm: (progress?: (share: number) => void) => Promise<void>;
   /** The scene's current resolution scale, 0..1 per axis. */
   readonly scale: () => number;
   /** GPU frame timings, when the GPU has timestamp queries. */
@@ -87,7 +93,6 @@ export const createFramePipeline = (
   const size = new Vector2();
   let pixels = 0;
   let applied = 0;
-  let warmed = false;
 
   /** Follows canvas resizes and scale changes; targets resize on the next render. */
   const applyScale = () => {
@@ -109,26 +114,25 @@ export const createFramePipeline = (
     return scale;
   };
 
+  const render = () => {
+    const scale = applyScale();
+    pipeline.render();
+    drawnAt.set(renderer.info.frame, scale);
+
+    if (drawnAt.size > 600) {
+      drawnAt.clear();
+    }
+
+    gpuTimer?.frameEnd();
+  };
+
   return {
     gpuTimer,
-    render: () => {
-      const scale = applyScale();
-      pipeline.render();
-      drawnAt.set(renderer.info.frame, scale);
-
-      if (drawnAt.size > 600) {
-        drawnAt.clear();
-      }
-
-      gpuTimer?.frameEnd();
-
-      // After the first frame (which sets the scene pass up), compile
-      // everything that has not drawn yet, in the background.
-      if (!warmed) {
-        warmed = true;
-        void prewarm(renderer, scene, camera, scenePass.renderTarget);
-      }
-    },
+    render,
     scale: () => applied,
+    warm: async (progress) => {
+      render();
+      await prewarm(renderer, scene, camera, scenePass.renderTarget, progress);
+    },
   };
 };

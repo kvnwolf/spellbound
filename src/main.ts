@@ -4,10 +4,11 @@
  * that steps the fixed-rate simulation, feeds its events to the VFX, HUD and
  * camera, and renders interpolated snapshots at display rate.
  */
-import "./style.css";
 import { createActivationHint } from "./activation-hint";
 import { courtyard, courtyardSpawns } from "./arena/courtyard";
 import { createDuelAudio } from "./audio/audio";
+import { menuSoundFor } from "./audio/cues";
+import type { MenuSound } from "./audio/cues";
 import { createClashHud } from "./clash-hud";
 import type { Controller } from "./controllers/controller";
 import { createHumanController } from "./controllers/human-controller";
@@ -80,7 +81,7 @@ const element = <T extends HTMLElement>(
 const start = async () => {
   // Loading, from the first paint: the renderer, the wizard (most of the
   // bytes) and the shaders, then the menus.
-  const loading = createLoadingScreen(element("#loading", HTMLElement));
+  const loading = createLoadingScreen(element("#menu", HTMLElement));
   const canvas = element("#scene", HTMLCanvasElement);
   const overlay = createOverlay(element("#overlay", HTMLElement));
   const renderer = await createWebGPURenderer(canvas);
@@ -112,6 +113,8 @@ const start = async () => {
   const effects = createDualSenseEffects(activationHint);
   const haptics = createHapticsDirector(localId, tuning);
   let lastPad: PadKind = "none";
+  // This frame's menu sounds, felt on the DualSense as well.
+  let menuSounds: MenuSound[] = [];
 
   // The DualSense is read once per frame; the human Controller reads that
   // frame's snapshot for every tick run during the frame.
@@ -396,6 +399,8 @@ const start = async () => {
   // A collapsed (hidden or zero-size) page keeps the last valid size and skips
   // rendering, so the WebGPU swapchain never sees a 0-sized texture.
   let hasArea = false;
+  // Resized since the last frame drawn: the frame's targets are still the old size.
+  let resized = false;
 
   const resize = () => {
     const { innerHeight: height, innerWidth: width } = window;
@@ -407,6 +412,7 @@ const start = async () => {
 
     renderer.setSize(width, height);
     rig.resize(width / height);
+    resized = true;
   };
 
   resize();
@@ -469,6 +475,11 @@ const start = async () => {
       const before = screens.screen;
       send(event);
       audio.menu(before, screens.screen, event);
+      const sound = menuSoundFor(before, screens.screen, event);
+
+      if (sound) {
+        menuSounds.push(sound);
+      }
     }
 
     const { screen } = screens;
@@ -643,8 +654,18 @@ const start = async () => {
   };
 
   // Every shader the courtyard and the wizards need, before the first frame.
-  await renderer.compileAsync(scene, rig.camera);
-  loading.progress(1);
+  await renderer.compileAsync(scene, rig.camera, null, ({ loaded, total }) => {
+    loading.progress(
+      stages.wizard + ((stages.shaders - stages.wizard) * loaded) / total
+    );
+  });
+
+  // The first frame, then every effect not drawn yet, still behind the
+  // loading screen: the menus never draw the scene, so the first frame of a
+  // Duel would otherwise be the one compiling it all.
+  await frame.warm((share) => {
+    loading.progress(stages.shaders + (1 - stages.shaders) * share);
+  });
   loading.done();
 
   // `?perf`: frame, CPU and per-pass GPU timings in the corner.
@@ -664,6 +685,7 @@ const start = async () => {
         : undefined;
 
     // The screens act first, so everything below sees the screen this frame ends on.
+    menuSounds = [];
     const screen = syncScreens(scan.kind, seconds);
 
     // The Duel only advances on its own screen: never behind a menu, the
@@ -686,7 +708,13 @@ const start = async () => {
     const { alpha, events } = advance(simSeconds);
 
     effects.send(
-      haptics.frame({ events, live: playing, seconds, snapshot: current }),
+      haptics.frame({
+        events,
+        live: playing,
+        menu: menuSounds,
+        seconds,
+        snapshot: current,
+      }),
       scan.kind === "dualsense" ? scan.gamepad : undefined
     );
 
@@ -752,8 +780,12 @@ const start = async () => {
       reticleElement.hidden = true;
     }
 
-    if (hasArea) {
+    // The menus are opaque: behind them the scene is not drawn, but for one
+    // frame after a resize, so the first frame of a Duel never has to
+    // reallocate the frame's targets.
+    if (hasArea && (view === undefined || resized)) {
       frame.render();
+      resized = false;
     }
 
     probe?.end(frame.scale());

@@ -1199,6 +1199,17 @@ export const tuning = {
         stupefy: { b: 0, g: 0, r: 255 },
       },
     },
+    /**
+     * The menus, kept subtle: a faint tick on the light motor as the
+     * highlight moves (once per step, none at either end of the list), a
+     * short, firmer pulse as a choice is taken (✕) and a softer one going
+     * back (○).
+     */
+    menu: {
+      back: { left: 0, right: 0.32, seconds: 0.06 },
+      confirm: { left: 0.08, right: 0.45, seconds: 0.07 },
+      move: { left: 0, right: 0.28, seconds: 0.045 },
+    },
     /** A sharp, short pulse on a Parry. */
     parry: { left: 0.2, right: 1, seconds: 0.09 },
     /** A cold, light buzz for as long as the local Duelist is Petrified. */
@@ -1367,11 +1378,12 @@ export const tuning = {
 
   /**
    * The loading screen's progress bar: the share of it done once the
-   * renderer is up (`renderer`) and once the wizard has downloaded
-   * (`wizard`, filling in between by its bytes); compiling the shaders
-   * fills the rest.
+   * renderer is up (`renderer`), once the wizard has downloaded (`wizard`,
+   * filling in between by its bytes) and once the courtyard's and the
+   * wizards' shaders are compiled (`shaders`); compiling every effect not
+   * drawn yet fills the rest.
    */
-  loading: { stages: { renderer: 0.1, wizard: 0.8 } },
+  loading: { stages: { renderer: 0.1, shaders: 0.9, wizard: 0.8 } },
 
   /** Lock-on: R3 locks a Duelist onto an opponent, who becomes their Target. */
   lockOn: {

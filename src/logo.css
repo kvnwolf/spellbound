@@ -1,8 +1,10 @@
 /*
  * The Spellbound logo (its SVG lives in index.html): the name over two
  * Spells meeting in a Clash, crimson from the left, emerald from the right.
- * Linked from index.html so it styles the loading screen's first paint;
- * `--progress` (0 to 1) grows the beams toward the flare while loading.
+ * Linked from index.html so it styles the loading screen's first paint.
+ * While loading (`#menu[data-intro="loading"]`), `--progress` (0 to 1) grows
+ * the beams and the flare stays dark; when they meet (`data-intro="clash"`)
+ * the Clash bursts, a flash, a shockwave and sparks, and the flare lights.
  */
 @import "@fontsource-variable/cinzel/wght.css";
 
@@ -10,14 +12,13 @@
   --progress: 1;
 
   display: block;
-  width: min(40rem, 86vw);
+  width: 100%;
   height: auto;
-  margin: 0 auto;
   overflow: visible;
 }
 
 /* Loading starts with the beams drawn in. */
-#loading .logo {
+#menu[data-intro="loading"] .logo {
   --progress: 0;
 }
 
@@ -31,7 +32,7 @@
 .logo-beam {
   transform: scaleX(var(--progress));
   transform-box: fill-box;
-  transition: transform 160ms ease-out;
+  transition: transform var(--clash-delay, 160ms) ease-out;
 }
 
 .logo-beam line {
@@ -48,12 +49,28 @@
   filter: drop-shadow(0 0 6px rgb(63 174 122 / 80%));
 }
 
+/* The flare lights up on contact, then pulses gently. */
 .logo-flare {
-  opacity: var(--progress);
   filter: drop-shadow(0 0 10px rgb(255 240 200 / 90%));
-  animation: logo-flare 1.6s ease-in-out infinite alternate;
   transform-box: fill-box;
   transform-origin: center;
+  animation:
+    logo-flare-light 520ms cubic-bezier(0.2, 0.9, 0.3, 1.3)
+      var(--clash-delay, 0ms) both,
+    logo-flare 1.6s ease-in-out calc(var(--clash-delay, 0ms) + 520ms) infinite
+      alternate;
+}
+
+#menu[data-intro="loading"] .logo-flare {
+  opacity: 0;
+  animation: none;
+}
+
+@keyframes logo-flare-light {
+  from {
+    opacity: 0;
+    transform: scale(0.1);
+  }
 }
 
 @keyframes logo-flare {
@@ -62,8 +79,104 @@
   }
 }
 
+/* The burst: every part rests invisible and plays once, on contact. */
+.logo-burst > circle,
+.logo-sparks line {
+  opacity: 0;
+  transform-box: view-box;
+  transform-origin: 320px 118px;
+}
+
+#menu[data-intro="clash"] .logo-flash {
+  animation: logo-flash 560ms ease-out var(--clash-delay) both;
+}
+
+#menu[data-intro="clash"] .logo-shockwave {
+  animation: logo-shockwave 820ms cubic-bezier(0.1, 0.7, 0.3, 1)
+    var(--clash-delay) both;
+}
+
+#menu[data-intro="clash"] .logo-sparks line {
+  animation: logo-spark 620ms cubic-bezier(0.15, 0.8, 0.35, 1)
+    var(--clash-delay) both;
+}
+
+/* Every other spark flies a little further. */
+#menu[data-intro="clash"] .logo-sparks line:nth-child(odd) {
+  --reach: 120px;
+}
+
+#menu[data-intro="clash"] .logo-beam {
+  animation: logo-beam-surge 620ms ease-out var(--clash-delay) both;
+}
+
+@keyframes logo-flash {
+  from {
+    opacity: 1;
+    transform: scale(0.15);
+  }
+
+  25% {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+    transform: scale(2.4);
+  }
+}
+
+@keyframes logo-shockwave {
+  from {
+    opacity: 0.95;
+    stroke-width: 6;
+    transform: scale(0.3);
+  }
+
+  to {
+    opacity: 0;
+    stroke-width: 0.4;
+    transform: scale(7);
+  }
+}
+
+@keyframes logo-spark {
+  from {
+    opacity: 1;
+    transform: rotate(var(--angle)) translateX(0);
+  }
+
+  /* Gone before the screen under the logo has faded in. */
+  45% {
+    opacity: 0.7;
+  }
+
+  to {
+    opacity: 0;
+    transform: rotate(var(--angle)) translateX(var(--reach, 84px));
+  }
+}
+
+@keyframes logo-beam-surge {
+  15% {
+    filter: brightness(1.8) drop-shadow(0 0 14px rgb(255 240 200 / 90%));
+  }
+}
+
+/* No burst motion: the flare and the screen only fade in. */
 @media (prefers-reduced-motion: reduce) {
-  .logo-flare {
+  #menu[data-intro="clash"] :is(.logo-flash, .logo-shockwave, .logo-beam),
+  #menu[data-intro="clash"] .logo-sparks line {
     animation: none;
+  }
+
+  .logo-flare {
+    animation: logo-flare-light 520ms ease-out var(--clash-delay, 0ms) both;
+  }
+
+  @keyframes logo-flare-light {
+    from {
+      opacity: 0;
+    }
   }
 }

@@ -5,57 +5,40 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Spellbound</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <!-- Linked, not imported, so the loading screen shows from the first paint. -->
+    <link rel="stylesheet" href="/src/style.css" />
+    <link rel="stylesheet" href="/src/menu.css" />
     <link rel="stylesheet" href="/src/logo.css" />
-    <!-- The loading screen's own look, inline so it shows from the first paint. -->
-    <style>
-      html,
-      body {
-        margin: 0;
-        height: 100%;
-        background: #0b1020;
-      }
-
-      #loading {
-        position: fixed;
-        inset: 0;
-        z-index: 10;
-        display: grid;
-        place-content: center;
-        gap: 1.4rem;
-        padding: 2rem;
-        color: #efe4c8;
-        font-family:
-          "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
-        text-align: center;
-        background: radial-gradient(ellipse at center, #141b33, #0b1020 70%);
-      }
-
-      #loading[hidden] {
-        display: none;
-      }
-    </style>
   </head>
   <body>
     <canvas id="scene"></canvas>
     <div id="reticle" hidden></div>
     <div id="charge-ring" hidden></div>
     <div id="hud" hidden></div>
-    <section id="overlay" hidden></section>
-    <section
-      id="loading"
-      role="progressbar"
-      aria-valuemin="0"
-      aria-valuemax="100"
-      aria-valuenow="0"
-    >
-      <h1>
-        <!-- The logo; the menus clone it (overlay.ts). -->
+    <!--
+      The menu frame (menu.css): the opaque backdrop, the logo in its one
+      fixed place, and the screen's own content below it. It is the loading
+      screen from the first paint, then every menu, the pause and the result.
+    -->
+    <section id="menu" data-intro="loading">
+      <!-- The gilt frame round the screen, one ornament per corner (menu.css). -->
+      <div class="menu-frame" aria-hidden="true">
+        <span></span><span></span><span></span><span></span>
+      </div>
+      <h1 class="menu-logo">
         <svg
           class="logo"
           viewBox="0 0 640 160"
           role="img"
           aria-label="Spellbound"
         >
+          <defs>
+            <radialGradient id="logo-flash-fill">
+              <stop offset="0" stop-color="#ffffff" />
+              <stop offset="0.35" stop-color="#fff2cc" stop-opacity="0.9" />
+              <stop offset="1" stop-color="#d8b46a" stop-opacity="0" />
+            </radialGradient>
+          </defs>
           <text
             class="logo-word"
             x="320"
@@ -102,6 +85,123 @@
               stroke-width="1.6"
             />
           </g>
+          <!-- The Clash bursting as the beams meet (logo.css plays it once). -->
+          <g class="logo-burst" aria-hidden="true">
+            <circle
+              class="logo-flash"
+              cx="320"
+              cy="118"
+              r="60"
+              fill="url(#logo-flash-fill)"
+            />
+            <circle
+              class="logo-shockwave"
+              cx="320"
+              cy="118"
+              r="24"
+              fill="none"
+              stroke="#ffe3a6"
+              stroke-width="3"
+            />
+            <g class="logo-sparks" stroke-linecap="round" stroke-width="2.4">
+              <line
+                x1="332"
+                y1="118"
+                x2="362"
+                y2="118"
+                stroke="#fff6dc"
+                style="--angle: 8deg"
+              />
+              <line
+                x1="332"
+                y1="118"
+                x2="356"
+                y2="118"
+                stroke="#d9473c"
+                style="--angle: 38deg"
+              />
+              <line
+                x1="332"
+                y1="118"
+                x2="366"
+                y2="118"
+                stroke="#3fae7a"
+                style="--angle: 72deg"
+              />
+              <line
+                x1="332"
+                y1="118"
+                x2="354"
+                y2="118"
+                stroke="#d8b46a"
+                style="--angle: 104deg"
+              />
+              <line
+                x1="332"
+                y1="118"
+                x2="362"
+                y2="118"
+                stroke="#d9473c"
+                style="--angle: 140deg"
+              />
+              <line
+                x1="332"
+                y1="118"
+                x2="356"
+                y2="118"
+                stroke="#fff6dc"
+                style="--angle: 172deg"
+              />
+              <line
+                x1="332"
+                y1="118"
+                x2="366"
+                y2="118"
+                stroke="#3fae7a"
+                style="--angle: 196deg"
+              />
+              <line
+                x1="332"
+                y1="118"
+                x2="354"
+                y2="118"
+                stroke="#d8b46a"
+                style="--angle: 228deg"
+              />
+              <line
+                x1="332"
+                y1="118"
+                x2="362"
+                y2="118"
+                stroke="#d9473c"
+                style="--angle: 262deg"
+              />
+              <line
+                x1="332"
+                y1="118"
+                x2="356"
+                y2="118"
+                stroke="#3fae7a"
+                style="--angle: 290deg"
+              />
+              <line
+                x1="332"
+                y1="118"
+                x2="366"
+                y2="118"
+                stroke="#fff6dc"
+                style="--angle: 318deg"
+              />
+              <line
+                x1="332"
+                y1="118"
+                x2="354"
+                y2="118"
+                stroke="#d8b46a"
+                style="--angle: 346deg"
+              />
+            </g>
+          </g>
           <g class="logo-flare">
             <circle cx="320" cy="118" r="20" fill="#fff0c8" opacity="0.22" />
             <path
@@ -112,6 +212,16 @@
           </g>
         </svg>
       </h1>
+      <!-- Loading: the beams growing toward their Clash are the bar. -->
+      <div
+        id="loading"
+        role="progressbar"
+        aria-valuemin="0"
+        aria-valuemax="100"
+        aria-valuenow="0"
+      ></div>
+      <!-- The screen's own content, under the logo (overlay.ts). -->
+      <div id="overlay" hidden></div>
     </section>
     <script type="module" src="/src/main.ts"></script>
   </body>

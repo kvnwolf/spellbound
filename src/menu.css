@@ -1,0 +1,372 @@
+/*
+ * The menu frame (its markup is `#menu` in index.html): the loading screen,
+ * every menu, the pause, the result and the disconnect prompt share it. An
+ * opaque backdrop (no scene behind it), the logo in one fixed place, and the
+ * screen's own content (`#overlay`, drawn by overlay.ts) laid out below the
+ * logo, so no screen's content can move it. A new menu screen only fills
+ * `#overlay`. Linked from index.html so the loading screen's first paint has it.
+ */
+#menu {
+  /*
+   * Where the logo sits: the same on every screen. Short screens shrink it,
+   * so the longest menu still fits under it.
+   */
+  --logo-width: min(40rem, 86vw, 72vh);
+  --logo-top: clamp(1rem, 8vh, 7rem);
+  --logo-height: calc(var(--logo-width) / 4);
+  /* The Clash point, the flare's centre (118 of the logo's 160 units down). */
+  --clash-y: calc(var(--logo-top) + var(--logo-height) * 0.7375);
+  /* The beams' last stretch of growth (logo.css) before they meet. */
+  --clash-delay: 160ms;
+
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  overflow: hidden;
+  color: var(--parchment);
+  text-align: center;
+  background:
+    /* Vignette. */
+    radial-gradient(
+      ellipse 90% 85% at 50% 45%,
+      transparent 55%,
+      rgb(2 4 10 / 70%) 100%
+    ),
+    /* The Clash's warm light on the room. */
+    radial-gradient(
+      circle at 50% var(--clash-y),
+      rgb(216 180 106 / 10%),
+      transparent min(30rem, 60vw)
+    ),
+    /* A woven arcane texture, barely there. */
+    repeating-linear-gradient(
+      45deg,
+      rgb(216 180 106 / 2.5%) 0 1px,
+      transparent 1px 26px
+    ),
+    repeating-linear-gradient(
+      -45deg,
+      rgb(216 180 106 / 2.5%) 0 1px,
+      transparent 1px 26px
+    ),
+    radial-gradient(
+      ellipse 120% 90% at 50% 30%,
+      #1a2344,
+      #111832 40%,
+      #0b1020 75%,
+      #070a16
+    );
+}
+
+#menu[hidden] {
+  display: none;
+}
+
+/* A faint magic circle round the Clash point. */
+#menu::before {
+  position: absolute;
+  top: var(--clash-y);
+  left: 50%;
+  width: min(115vmin, 60rem);
+  aspect-ratio: 1;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' fill='none' stroke='%23d8b46a'%3E%3Ccircle cx='50' cy='50' r='49' stroke-width='.2'/%3E%3Ccircle cx='50' cy='50' r='46.6' stroke-width='1.4' stroke-dasharray='.2 1.6'/%3E%3Ccircle cx='50' cy='50' r='44' stroke-width='.25'/%3E%3Cpath d='M50 6L88.1 72H11.9ZM50 94L11.9 28H88.1Z' stroke-width='.18'/%3E%3Ccircle cx='50' cy='50' r='30' stroke-width='.2'/%3E%3Ccircle cx='50' cy='50' r='28.4' stroke-width='.8' stroke-dasharray='.2 3.3'/%3E%3Ccircle cx='50' cy='50' r='12' stroke-width='.2'/%3E%3C/svg%3E")
+    center / contain no-repeat;
+  opacity: 0.09;
+  translate: -50% -50%;
+  animation: menu-circle 240s linear infinite;
+  content: "";
+  pointer-events: none;
+}
+
+/* It turns, too slowly to watch. */
+@keyframes menu-circle {
+  to {
+    rotate: 1turn;
+  }
+}
+
+/* The light of the Clash bursting, over the whole room for a moment. */
+#menu::after {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    circle at 50% var(--clash-y),
+    rgb(255 206 120 / 34%),
+    rgb(210 130 50 / 8%) 12rem,
+    transparent 30rem
+  );
+  opacity: 0;
+  mix-blend-mode: plus-lighter;
+  content: "";
+  pointer-events: none;
+}
+
+/* A thin gilt frame inset from the screen's edge, an ornament in each corner. */
+.menu-frame {
+  --corner: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48' fill='none' stroke='%23d8b46a' stroke-opacity='.7'%3E%3Cpath d='M.5 44V.5H44'/%3E%3Cpath d='M6.5 26V6.5H26' stroke-width='.6' stroke-opacity='.4'/%3E%3Cpath d='M12 8l4 4-4 4-4-4z' fill='%23d8b46a' fill-opacity='.7' stroke='none'/%3E%3C/svg%3E");
+
+  position: absolute;
+  inset: clamp(0.5rem, 1.6vmin, 1.25rem);
+  border: 1px solid rgb(216 180 106 / 16%);
+  pointer-events: none;
+}
+
+.menu-frame span {
+  position: absolute;
+  width: clamp(2rem, 4vmin, 3rem);
+  aspect-ratio: 1;
+  margin: -1px;
+  background: var(--corner) center / contain no-repeat;
+}
+
+.menu-frame span:nth-child(1) {
+  top: 0;
+  left: 0;
+}
+
+.menu-frame span:nth-child(2) {
+  top: 0;
+  right: 0;
+  scale: -1 1;
+}
+
+.menu-frame span:nth-child(3) {
+  bottom: 0;
+  left: 0;
+  scale: 1 -1;
+}
+
+.menu-frame span:nth-child(4) {
+  right: 0;
+  bottom: 0;
+  scale: -1 -1;
+}
+
+.menu-logo {
+  position: absolute;
+  top: var(--logo-top);
+  right: 0;
+  left: 0;
+  z-index: 1;
+  width: var(--logo-width);
+  margin: 0 auto;
+}
+
+/* The screen's content: from just under the logo, never over the disclaimer. */
+#overlay {
+  position: absolute;
+  inset: calc(var(--logo-top) + var(--logo-height) + 1.25rem) 0 4.5rem;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  align-items: center;
+  padding: 0 1rem;
+  overflow-y: auto;
+}
+
+#overlay[hidden],
+#overlay [hidden] {
+  display: none;
+}
+
+/* A screen's own title (the title screens have only the logo), between gold rules. */
+#overlay h2 {
+  display: flex;
+  gap: 1.2rem;
+  align-items: center;
+  margin: 0;
+  color: var(--gold);
+  font-family: "Cinzel Variable", "Iowan Old Style", Palatino, serif;
+  font-size: clamp(1.5rem, 3.6vw, 2.4rem);
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-shadow: 0 0 18px rgb(216 180 106 / 35%);
+}
+
+#overlay h2::before,
+#overlay h2::after {
+  width: clamp(2rem, 8vw, 5rem);
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgb(216 180 106 / 70%));
+  content: "";
+}
+
+#overlay h2::after {
+  background: linear-gradient(90deg, rgb(216 180 106 / 70%), transparent);
+}
+
+#overlay p {
+  margin: 0;
+  font-size: clamp(1rem, 2.4vw, 1.4rem);
+  letter-spacing: 0.03em;
+}
+
+/* The highlighted entry carries the gold marker. */
+#overlay ul {
+  display: grid;
+  gap: 0.35rem;
+  min-width: min(22rem, 80vw);
+  margin: 0.5rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+#overlay li {
+  position: relative;
+  padding: 0.5rem 2.2rem;
+  color: rgb(239 228 200 / 65%);
+  border: 1px solid transparent;
+  background: transparent;
+  font-size: clamp(1.1rem, 2.4vw, 1.5rem);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  transition:
+    color 120ms ease-out,
+    background 120ms ease-out,
+    border-color 120ms ease-out;
+}
+
+#overlay li.selected {
+  color: var(--gold);
+  border-color: rgb(216 180 106 / 75%);
+  background: var(--ink);
+  box-shadow: 0 0 18px rgb(216 180 106 / 18%);
+  text-shadow: 0 0 12px rgb(216 180 106 / 45%);
+}
+
+#overlay li.selected::before,
+#overlay li.selected::after {
+  position: absolute;
+  inset-block-start: 50%;
+  width: 0.55rem;
+  height: 0.55rem;
+  background: var(--gold);
+  box-shadow: 0 0 8px rgb(216 180 106 / 80%);
+  translate: 0 -50%;
+  rotate: 45deg;
+  content: "";
+}
+
+#overlay li.selected::before {
+  inset-inline-start: 0.9rem;
+}
+
+#overlay li.selected::after {
+  inset-inline-end: 0.9rem;
+}
+
+/* An entry whose screen has not landed yet: listed, but dim and never highlighted. */
+#overlay li.disabled {
+  color: rgb(239 228 200 / 25%);
+}
+
+#overlay .overlay-hint {
+  margin-top: 0.5rem;
+  color: rgb(239 228 200 / 55%);
+  font-size: 0.95rem;
+  letter-spacing: 0.16em;
+  white-space: pre;
+}
+
+/* The click-to-activate hint is for the connect prompt and the root menus, small and quiet under them. */
+#overlay .overlay-effects {
+  margin-top: 0.5rem;
+  color: rgb(239 228 200 / 50%);
+  font-size: 0.9rem;
+  letter-spacing: 0.06em;
+}
+
+#overlay:not(
+    [data-screen="connect"],
+    [data-screen="main"],
+    [data-screen="difficulty"]
+  )
+  .overlay-effects {
+  display: none;
+}
+
+/* The fan-game disclaimer: small, at the foot of the screen. */
+#overlay .overlay-legal {
+  position: fixed;
+  right: 0;
+  bottom: 1rem;
+  left: 0;
+  max-width: 52rem;
+  margin: 0 auto;
+  padding: 0 1rem;
+  color: rgb(239 228 200 / 40%);
+  font-size: 0.7rem;
+  line-height: 1.4;
+}
+
+/*
+ * The intro (index.html's data-intro): "loading" while the beams grow, then
+ * "clash" as they meet. The Clash bursts (logo.css) and its light reveals the
+ * screen under the logo; loading-screen.ts drops data-intro once that is done.
+ */
+#menu[data-intro="loading"] #overlay {
+  visibility: hidden;
+}
+
+#menu[data-intro="clash"]::after {
+  animation: menu-clash-light 900ms ease-out var(--clash-delay) both;
+}
+
+#menu[data-intro="clash"] #overlay > * {
+  animation: menu-reveal 700ms ease-out both;
+  animation-delay: calc(var(--clash-delay) + 280ms);
+}
+
+#menu[data-intro="clash"] #overlay > :is(ul, .overlay-hint, .overlay-effects) {
+  animation-delay: calc(var(--clash-delay) + 420ms);
+}
+
+/* The last to arrive: loading-screen.ts ends the intro on its animationend. */
+#menu[data-intro="clash"] #overlay > .overlay-legal {
+  animation-name: menu-reveal-last;
+  animation-delay: calc(var(--clash-delay) + 560ms);
+}
+
+@keyframes menu-clash-light {
+  12% {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes menu-reveal {
+  from {
+    opacity: 0;
+    translate: 0 0.6rem;
+  }
+}
+
+@keyframes menu-reveal-last {
+  from {
+    opacity: 0;
+    translate: 0 0.6rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #menu::before,
+  #menu[data-intro="clash"]::after {
+    animation: none;
+  }
+
+  @keyframes menu-reveal {
+    from {
+      opacity: 0;
+    }
+  }
+
+  @keyframes menu-reveal-last {
+    from {
+      opacity: 0;
+    }
+  }
+}

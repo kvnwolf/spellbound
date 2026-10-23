@@ -4,10 +4,13 @@
  * stateful across frames (rumble pulses and lightbar flashes fade over
  * time); the caller feeds it one frame at a time and sends the result to the
  * controller, through WebHID or the Gamepad API's dual-rumble fallback.
+ * The menus are felt too: a tick as the highlight moves, a pulse as a choice
+ * is taken or a step back.
  * Every strength, length and colour comes from `tuning.haptics`, the
  * lightbar's per-Spell colours included: the LED gets its own palette, not the
  * on-screen one.
  */
+import type { MenuSound } from "../audio/cues";
 import { chargeLevel, chargeStage } from "../duel/charge";
 import type { ChargeStage } from "../duel/charge";
 import type {
@@ -48,6 +51,8 @@ export interface HapticsFrame {
   readonly live: boolean;
   /** Real seconds since the last frame. */
   readonly seconds: number;
+  /** The menus' sounds this frame (see `menuSoundFor`), felt as well as heard, live or not. */
+  readonly menu?: readonly MenuSound[];
 }
 
 export interface HapticsDirector {
@@ -147,6 +152,8 @@ export const createHapticsDirector = (
   const spellColor = (kind: SpellKind) => settings.lightbar.spells[kind];
 
   let pulses: ActivePulse[] = [];
+  /** The menus' pulses: kept apart, since leaving the Duel does not cut them. */
+  let menuPulses: ActivePulse[] = [];
   let castFlash = noFlash();
   let hitFlash = noFlash();
   /** Where the local Duelist's Charge stood last frame. */
@@ -286,12 +293,20 @@ export const createHapticsDirector = (
     }
   };
 
+  const menuPulseFor = ({ kind }: MenuSound): RumblePulse => {
+    if (kind === "menu-move") {
+      return settings.menu.move;
+    }
+
+    return kind === "menu-back" ? settings.menu.back : settings.menu.confirm;
+  };
+
   /** The stronger of every pulse and steady rumble, on each motor. */
   const rumble = (steady: readonly Motors[]): Motors => {
     let left = 0;
     let right = 0;
 
-    for (const { age, pulse } of pulses) {
+    for (const { age, pulse } of [...pulses, ...menuPulses]) {
       const tremble = pulse.tremble
         ? 1 -
           pulse.tremble.depth *
@@ -354,10 +369,15 @@ export const createHapticsDirector = (
   };
 
   return {
-    frame: ({ events, live, seconds, snapshot }) => {
-      for (const pulse of pulses) {
+    frame: ({ events, live, menu = [], seconds, snapshot }) => {
+      for (const pulse of [...pulses, ...menuPulses]) {
         pulse.age += seconds;
       }
+
+      menuPulses = [
+        ...menuPulses.filter(({ age, pulse }) => age < pulse.seconds),
+        ...menu.map((sound) => ({ age: 0, pulse: menuPulseFor(sound) })),
+      ];
 
       castFlash.age += seconds;
       hitFlash.age += seconds;

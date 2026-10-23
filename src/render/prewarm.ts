@@ -15,7 +15,8 @@ import type { Camera, RenderTarget, Scene, WebGPURenderer } from "three/webgpu";
  *
  * The objects to compile are gathered synchronously, so the scene is only
  * revealed for the length of this call; the compiling itself runs in the
- * background, a few objects per frame, and the promise resolves when it is done.
+ * background, a few objects per frame, reporting the share done to
+ * `progress`, and the promise resolves when it is done.
  *
  * One gap: three.js draws a double-sided transparent material in two passes
  * (back faces, then front) by flipping its `side` for each, and the deferred
@@ -26,7 +27,8 @@ export const prewarm = async (
   renderer: WebGPURenderer,
   scene: Scene,
   camera: Camera,
-  target: RenderTarget
+  target: RenderTarget,
+  progress?: (share: number) => void
 ): Promise<void> => {
   const restore: (() => void)[] = [];
 
@@ -57,7 +59,15 @@ export const prewarm = async (
   try {
     renderer.setRenderTarget(target);
     renderer.setMRT(null);
-    compiled = renderer.compileAsync(scene, camera);
+    compiled = renderer.compileAsync(
+      scene,
+      camera,
+      null,
+      progress &&
+        (({ loaded, total }) => {
+          progress(loaded / total);
+        })
+    );
   } finally {
     renderer.setRenderTarget(previousTarget);
     renderer.setMRT(previousMrt);

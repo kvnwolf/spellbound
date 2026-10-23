@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import { courtyard, courtyardSpawns } from "../arena/courtyard";
+import { menuSoundFor } from "../audio/cues";
+import type { MenuSound } from "../audio/cues";
 import { createDuel } from "../duel/duel";
 import type {
   ClashState,
@@ -11,6 +13,8 @@ import type {
   SpellState,
 } from "../duel/duel";
 import type { Point3 } from "../duel/geometry";
+import { reduceScreens } from "../screens/screens";
+import type { MenuInput, Screen } from "../screens/screens";
 import { tuning } from "../tuning";
 import type { Tuning } from "../tuning";
 import { createHapticsDirector } from "./haptics";
@@ -54,6 +58,11 @@ const haptics: Tuning["haptics"] = {
       petrificus: { b: 255, g: 128, r: 64 },
       stupefy: { b: 0, g: 0, r: 255 },
     },
+  },
+  menu: {
+    back: { left: 0, right: 0.3, seconds: 0.1 },
+    confirm: { left: 0.2, right: 0.6, seconds: 0.1 },
+    move: { left: 0, right: 0.2, seconds: 0.05 },
   },
   parry: { left: 0.2, right: 1, seconds: 0.1 },
   petrified: { left: 0, right: 0.3 },
@@ -166,11 +175,16 @@ const direct = () => {
   return (
     events: readonly DuelEvent[] = [],
     seconds = 0,
-    options: { live?: boolean; snapshot?: DuelSnapshot } = {}
+    options: {
+      live?: boolean;
+      menu?: readonly MenuSound[];
+      snapshot?: DuelSnapshot;
+    } = {}
   ) =>
     director.frame({
       events,
       live: options.live ?? true,
+      menu: options.menu,
       seconds,
       snapshot: options.snapshot ?? snapshot,
     });
@@ -688,5 +702,70 @@ describe("adaptive triggers", () => {
         snapshot: withLocal({ spellSlotsHeld: true }),
       }).triggers
     ).toStrictEqual(free);
+  });
+});
+
+/** What one menu input on `screen` is felt as: the screens step, and the menu sound it makes (if any) goes to the director. */
+const press = (screen: Screen, input: MenuInput) => {
+  const after = reduceScreens(
+    { runs: 0, screen },
+    { input, type: "input" },
+    settings.screens
+  ).screen;
+
+  const sound = menuSoundFor(screen, after, { input, type: "input" });
+
+  return direct()([], 0, { live: false, menu: sound ? [sound] : [] });
+};
+
+const main = (selected: "duel" | "practice"): Screen => ({
+  kind: "main",
+  selected,
+});
+
+describe("the menus", () => {
+  it("ticks lightly as the highlight moves, behind the menus where nothing else rumbles", () => {
+    expect(press(main("duel"), "down").rumble).toStrictEqual({
+      left: 0,
+      right: 0.2,
+    });
+  });
+
+  it("ticks once per step, each step its own tick", () => {
+    const frame = direct();
+    const step = { kind: "menu-move" } as const;
+
+    expect(frame([], 0, { live: false, menu: [step] }).rumble.right).toBe(0.2);
+    expect(frame([], 0.05, { live: false, menu: [step] }).rumble.right).toBe(
+      0.2
+    );
+  });
+
+  it("does not tick when the highlight is already at the end of the list", () => {
+    expect(press(main("duel"), "up").rumble).toStrictEqual(silence);
+    // Below Práctica are only entries not available yet: the end, too.
+    expect(press(main("practice"), "down").rumble).toStrictEqual(silence);
+  });
+
+  it("pulses firmer on a choice taken, softer on a step back", () => {
+    expect(press(main("duel"), "confirm").rumble).toStrictEqual({
+      left: 0.2,
+      right: 0.6,
+    });
+    expect(
+      press({ kind: "rivals", selected: "idle" }, "back").rumble
+    ).toStrictEqual({ left: 0, right: 0.3 });
+  });
+
+  it("feels nothing for a step back with nowhere to go", () => {
+    expect(press(main("duel"), "back").rumble).toStrictEqual(silence);
+  });
+
+  it("fades each pulse out over its length, even as the Duel it started begins", () => {
+    const frame = direct();
+    frame([], 0, { live: false, menu: [{ kind: "menu-confirm" }] });
+
+    expect(frame([], 0.05).rumble).toStrictEqual({ left: 0.1, right: 0.3 });
+    expect(frame([], 0.05).rumble).toStrictEqual(silence);
   });
 });

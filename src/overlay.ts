@@ -2,19 +2,15 @@ import type { ScreenView } from "./screens/view";
 import { text } from "./text";
 
 /**
- * The full-screen panel over the scene: the title, the menus, the pause and
- * the unsupported-browser message, drawn from a `ScreenView`.
+ * A screen's content in the menu frame (`#menu`, menu.css), under the logo:
+ * the menus, the pause, the result and the unsupported-browser message,
+ * drawn from a `ScreenView`. The frame is opaque, so while it shows nothing
+ * of the scene does; hiding it leaves the Duel and its HUD.
  */
 export const createOverlay = (element: HTMLElement) => {
-  const heading = document.createElement("h1");
-  // The logo from the loading screen's markup (index.html) stands in for the
-  // plain title, its beams drawn in full (no loading `--progress` carried over).
-  const logo = document.querySelector("#loading .logo")?.cloneNode(true);
-
-  if (logo instanceof SVGElement) {
-    logo.style.removeProperty("--progress");
-  }
-
+  const menu = element.closest<HTMLElement>("#menu") ?? element;
+  // The title screens' heading is the logo itself; the others get their own.
+  const heading = document.createElement("h2");
   const body = document.createElement("p");
   const items = document.createElement("ul");
   const hint = document.createElement("p");
@@ -28,7 +24,7 @@ export const createOverlay = (element: HTMLElement) => {
 
   return {
     hide: () => {
-      element.hidden = true;
+      menu.hidden = true;
       shown = undefined;
     },
     show: (view: ScreenView) => {
@@ -41,9 +37,8 @@ export const createOverlay = (element: HTMLElement) => {
 
       shown = key;
       element.dataset.screen = view.screen;
-      heading.replaceChildren(
-        view.heading === text.title && logo ? logo : view.heading
-      );
+      heading.textContent = view.heading;
+      heading.hidden = view.heading === text.title;
       body.textContent = view.body ?? "";
       body.hidden = view.body === undefined;
       hint.textContent = view.hint ?? "";
@@ -61,6 +56,7 @@ export const createOverlay = (element: HTMLElement) => {
       );
       items.hidden = view.items === undefined;
       element.hidden = false;
+      menu.hidden = false;
     },
   };
 };
