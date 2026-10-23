@@ -1,7 +1,8 @@
 /**
  * A development-only panel, shown and hidden with the P key, that changes
  * the movement tuning live while playing. Changes survive a reload (browser
- * storage) and "Copiar" puts them on the clipboard as `path: value` lines to
+ * storage), a value locked with its padlock is left alone by "Restablecer",
+ * and "Copiar" puts them on the clipboard as `path: value` lines to
  * carry into `tuning.ts`. Its labels are a developer's, not the player's,
  * so they stay here rather than in `text.ts`.
  */
@@ -176,13 +177,24 @@ const defaults = new Map(knobs.map((each) => [each, each.get()]));
 /** The knobs moved off their defaults. */
 const changes = () => knobs.filter((each) => each.get() !== defaults.get(each));
 
-/** Saved as `path=value` lines. */
+/** The knobs locked: kept through "Restablecer" and their sliders still. */
+const locked = new Set<Knob>();
+
+/** Saved as `path=value` lines, `path=value=locked` for a locked one. */
 const save = () => {
   try {
     localStorage.setItem(
       storageKey,
-      changes()
-        .map((each) => `${each.path}=${String(each.get())}`)
+      knobs
+        .flatMap((each) => {
+          const value = `${each.path}=${String(each.get())}`;
+
+          if (locked.has(each)) {
+            return [`${value}=locked`];
+          }
+
+          return each.get() === defaults.get(each) ? [] : [value];
+        })
         .join("\n")
     );
   } catch {
@@ -200,12 +212,16 @@ const restore = () => {
   }
 
   for (const line of saved.split("\n")) {
-    const [path, text = ""] = line.split("=");
+    const [path, text = "", flag] = line.split("=");
     const value = Number(text);
     const found = knobs.find((each) => each.path === path);
 
     if (found !== undefined && text !== "" && Number.isFinite(value)) {
       found.set(value);
+
+      if (flag === "locked") {
+        locked.add(found);
+      }
     }
   }
 };
@@ -222,22 +238,39 @@ const rows = knobs.map((each) => {
   const name = document.createElement("span");
   const shown = document.createElement("span");
   const slider = document.createElement("input");
+  const lock = document.createElement("button");
 
   row.style.cssText =
-    "display:grid;grid-template-columns:1fr 44px;gap:2px 8px;margin-bottom:8px";
+    "display:grid;grid-template-columns:1fr 44px 28px;gap:2px 8px;margin-bottom:8px";
+  lock.style.cssText = "grid-row:span 2;padding:0;font:inherit;cursor:pointer";
   name.textContent = each.label;
   shown.style.textAlign = "right";
   slider.type = "range";
   slider.min = String(each.min);
   slider.max = String(each.max);
   slider.step = String(each.step);
-  slider.style.gridColumn = "1 / -1";
 
   const show = () => {
     slider.value = String(each.get());
     shown.textContent = String(each.get());
     shown.style.color = each.get() === defaults.get(each) ? "" : "#ffb36b";
+    slider.disabled = locked.has(each);
+    lock.textContent = locked.has(each) ? "🔒" : "🔓";
+    lock.title = locked.has(each) ? "Desbloquear" : "Bloquear";
   };
+
+  lock.addEventListener("click", (event) => {
+    event.preventDefault();
+
+    if (locked.has(each)) {
+      locked.delete(each);
+    } else {
+      locked.add(each);
+    }
+
+    save();
+    show();
+  });
 
   slider.addEventListener("input", () => {
     each.set(Number(slider.value));
@@ -245,7 +278,8 @@ const rows = knobs.map((each) => {
     show();
   });
 
-  row.append(name, shown, slider);
+  slider.style.gridColumn = "1 / 3";
+  row.append(name, shown, lock, slider);
 
   return { row, show };
 });
@@ -280,7 +314,9 @@ const copy = button("Copiar", () => {
 
 const reset = button("Restablecer", () => {
   for (const [each, value] of defaults) {
-    each.set(value);
+    if (!locked.has(each)) {
+      each.set(value);
+    }
   }
 
   save();
