@@ -2103,10 +2103,13 @@ export const createDuel = (config: DuelConfig): Duel => {
   const locksIntoClash = (draft: Draft) => (a: SpellState, b: SpellState) =>
     draft.round.phase === "fighting" &&
     draft.clash === null &&
-    a.kind === "confringo" &&
-    b.kind === "confringo" &&
-    a.charge >= 1 &&
-    b.charge >= 1 &&
+    [a, b].every(
+      (spell) =>
+        spell.kind === "confringo" &&
+        spell.charge >= 1 &&
+        // A Disarmed caster has no Wand to hold the beam with.
+        books(spell.casterId).wand === undefined
+    ) &&
     angleBetween(unit3(a.velocity), unit3(scale(b.velocity, -1))) <=
       tuning.clash.maxAngle;
 
@@ -2321,6 +2324,24 @@ export const createDuel = (config: DuelConfig): Duel => {
       !standing(first) ||
       !standing(second)
     ) {
+      endClash(draft, clash, "interrupted", null, clash.point);
+
+      return;
+    }
+
+    // A Duelist Disarmed mid-Clash (by a Spell already in the air) loses
+    // their half of the beam: the other side's drives through.
+    const firstArmed = books(first.duelistId).wand === undefined;
+    const secondArmed = books(second.duelistId).wand === undefined;
+
+    if (firstArmed !== secondArmed) {
+      const [winner, loser] = firstArmed ? [first, second] : [second, first];
+      winClash(draft, damage, clash, winner, loser);
+
+      return;
+    }
+
+    if (!firstArmed) {
       endClash(draft, clash, "interrupted", null, clash.point);
 
       return;

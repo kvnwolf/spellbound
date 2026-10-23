@@ -498,3 +498,90 @@ describe("A Clash nobody wins", () => {
     expect(duel.snapshot().clash).toBeNull();
   });
 });
+
+/**
+ * The hero and the rival 10 m apart, with an ally of the hero's off to the
+ * side who can cast Expelliarmus at the rival for free (no Focus, almost no
+ * Cooldown), past the Round intro.
+ */
+const fightWithDisarmingAlly = (): Duel => {
+  const free: Tuning = {
+    ...tuning,
+    expelliarmus: { ...tuning.expelliarmus, cooldownSeconds: 0.1, segments: 0 },
+  };
+
+  const duel = createDuel({
+    arena: openArena,
+    duelists: [
+      { id: "hero", spawn: { x: 0, z: 5 }, team: "gryffindor" },
+      { id: "rival", spawn: { x: 0, z: -5 }, team: "slytherin" },
+      { id: "ally", spawn: { x: -9, z: 4 }, team: "gryffindor" },
+    ],
+    tuning: free,
+  });
+
+  while (duel.snapshot().round.phase === "intro") {
+    duel.step({});
+  }
+
+  return duel;
+};
+
+/** The ally's Expelliarmus, from its Spell Slot (R2 + ○). */
+const allyDisarms = intent({ spellSlots: { held: true, press: "circle" } });
+
+describe("A Clash and the Wand", () => {
+  it("does not start from a Confringo whose caster was Disarmed while it flew", () => {
+    const duel = fightWithDisarmingAlly();
+    const charge = secondsToTicks(full);
+    const events: DuelEvent[] = [];
+
+    // Both Charge and release together; early on, the ally casts
+    // Expelliarmus, which lands on the rival after the release but before
+    // the Confringos meet.
+    for (let tick = 0; tick < charge + 1; tick += 1) {
+      const held = tick < charge ? chargeHeavy : idleIntent;
+      events.push(
+        ...duel.step({
+          ally: tick === 8 ? allyDisarms : idleIntent,
+          hero: held,
+          rival: held,
+        }).events
+      );
+    }
+
+    events.push(...run(duel, secondsToTicks(1)));
+
+    const [disarmed] = ofType(events, "disarm");
+    const [cancelled] = ofType(events, "spells-cancelled");
+    expect(disarmed?.duelistId).toBe("rival");
+    expect(cancelled?.spells.map((spell) => spell.kind)).toStrictEqual([
+      "confringo",
+      "confringo",
+    ]);
+    expect(ofType(events, "clash-start")).toStrictEqual([]);
+  });
+
+  it("goes to the other side when a Duelist in it is Disarmed: the beam drives through", () => {
+    const duel = fightWithDisarmingAlly();
+    bothRelease(duel, full, full);
+    expect(duel.snapshot().clash).not.toBeNull();
+
+    const events = [
+      ...run(duel, 1, { ally: allyDisarms }),
+      ...run(duel, secondsToTicks(1)),
+    ];
+
+    expect(ofType(events, "disarm")).toMatchObject([{ duelistId: "rival" }]);
+    expect(ofType(events, "clash-end")).toMatchObject([
+      { outcome: "won", winnerId: "hero" },
+    ]);
+    expect(
+      ofType(events, "spell-hit").filter((hit) => hit.targetId === "rival")
+    ).toMatchObject([
+      // The Disarm first, then the hero's Confringo through the dropped beam.
+      { spell: { kind: "expelliarmus" } },
+      { spell: { casterId: "hero", empowered: true, kind: "confringo" } },
+    ]);
+  });
+});
