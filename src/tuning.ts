@@ -1642,6 +1642,32 @@ export const tuning = {
     exposure: 1.25,
     /** MSAA samples for the scene pass (1 disables it). */
     msaaSamples: 4,
+    /**
+     * Dynamic resolution: the scene renders at a scale of the canvas's
+     * physical pixels (per axis) and is upscaled. The scale never exceeds
+     * what fits `maxPixels`, and drops (to `minScale` at most) only while
+     * measured GPU frame time runs over `budgetMs`.
+     */
+    resolution: {
+      /** GPU milliseconds per frame to stay under: 60 fps allows 16.7, the rest is headroom for spikes. */
+      budgetMs: 12,
+      /** Steps back up after `calmWindows` windows in a row under this share of the budget. */
+      calmShare: 0.8,
+      calmWindows: 3,
+      /** False pins the scale to the pixel cap. */
+      dynamic: true,
+      /** Most physical pixels the scene pass draws; a 4K frame is 8.3 million. */
+      maxPixels: 8_300_000,
+      minScale: 0.5,
+      /** Which quantile of a window's GPU times is judged against the budget. */
+      quantile: 0.75,
+      /** Windows ignored right after a change, while new targets settle. */
+      settleWindows: 1,
+      /** Scales move in steps of this much. */
+      step: 0.05,
+      /** Frames per judged window. */
+      windowFrames: 30,
+    },
     /** Darkening of the frame's corners (0 none .. 1 strong). */
     vignette: 0.35,
   },
