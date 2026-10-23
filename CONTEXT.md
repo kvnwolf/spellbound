@@ -75,12 +75,12 @@ The Spell a Duelist Charges before releasing it.
 _Avoid_: Heavy attack, strong spell
 
 **Special Spell**:
-A Spell chosen from the Spell Wheel that costs Focus and has its own Cooldown.
+A Spell bound to a Spell Slot that costs Focus and has its own Cooldown.
 _Avoid_: Ultimate, skill
 
-**Spell Wheel**:
-The radial selection a Duelist holds open to pick and cast a Special Spell.
-_Avoid_: Spell menu, selector
+**Spell Slot**:
+One of the four face-button positions a Special Spell is bound to; holding R2 and pressing that face button casts it.
+_Avoid_: Spell Wheel, quick slot, spell menu
 
 **Charge**:
 Holding the Heavy Spell to build its power before releasing it.
@@ -143,12 +143,12 @@ The Duelist's casting implement; while Disarmed it lies on the Arena floor until
 ### Potions
 
 **Potion**:
-A limited-use consumable a Duelist drinks from the Potion Wheel, leaving them briefly vulnerable; charges refill each Round.
+A limited-use consumable a Duelist drinks from a Potion Slot, leaving them briefly vulnerable; charges refill each Round.
 _Avoid_: Item, consumable, buff
 
-**Potion Wheel**:
-The radial selection a Duelist holds open to pick and drink a Potion.
-_Avoid_: Item menu, inventory
+**Potion Slot**:
+One of the four face-button positions a Potion is bound to; holding L2 and pressing that face button drinks it.
+_Avoid_: Potion Wheel, item menu, inventory
 
 **Wiggenweld**:
 A Potion that restores part of the drinker's Health at once.
