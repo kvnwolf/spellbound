@@ -128,6 +128,25 @@ describe("Jump", () => {
     expect(duelist(duel, "hero").elevation).toBe(0);
   });
 
+  it("is snappy, not floaty: back on the floor 2 × speed / gravity after the take-off, in well under a second", () => {
+    const duel = fight();
+    const airSeconds = (2 * jump.speed) / jump.gravity;
+    const airTicks = secondsToTicks(airSeconds);
+
+    const flight = [
+      ...run(duel, 1, { hero: intent({ jump: true }) }),
+      ...run(duel, airTicks - 2),
+    ];
+
+    const landing = run(duel, 4);
+
+    expect(airSeconds).toBeLessThan(0.65);
+    expect(ofType(flight, "land")).toStrictEqual([]);
+    expect(ofType(landing, "land")).toStrictEqual([
+      { duelistId: "hero", type: "land" },
+    ]);
+  });
+
   it("cannot jump again in the air", () => {
     const duel = fight();
     tap(duel, { jump: true });

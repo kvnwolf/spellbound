@@ -1,10 +1,10 @@
 import { clone } from "three/addons/utils/SkeletonUtils.js";
 /**
  * One Duelist's wizard: a copy of the rigged CC0 model (`wizard-assets.ts`)
- * dressed for its Team, with what the packs do not have made in code and
- * attached to the rig's joints: the Wand in the right hand, the vial in the
- * left, a pointed hat on the head (or the outfit's own hood) and a robe
- * skirt hung from the pelvis, whose vertices the view drapes every frame.
+ * dressed for its Team in the outfit's own clothes (the far Team keeps the
+ * outfit's hood), with what the packs do not have made in code and
+ * attached to the rig's joints: the Wand in the right hand and the vial in
+ * the left.
  *
  * Every surface reads one shared set of causes, so its PBR channels agree:
  * the model's own texture maps (colour, normals, roughness), the Team's
@@ -14,34 +14,39 @@ import { clone } from "three/addons/utils/SkeletonUtils.js";
  * light round the silhouette that adds the Team's own edge light, the
  * Lock-on glow, the Petrified rim and any Potion's aura. Everything is
  * dielectric: with no environment map at night, a metal would render black.
+ *
+ * The rim is a cue for the body's outline, so it reads a smoothed normal:
+ * mostly the limbs' own (out from the bone each vertex hangs on, the way a
+ * capsule round that bone would face; the view moves the bones' segments
+ * every frame), a little of the mesh's. The model's small, sharply curved
+ * parts (straps, buckles, seams, fingers, folds) turn their own normals
+ * edge-on within a pixel, and a rim read from them alone sparkles into
+ * pixel-sized lines and dots that MSAA cannot smooth (it shades once a
+ * pixel); the limbs' normal keeps the edge light on the silhouette.
  */
 import {
+  attribute,
+  cameraPosition,
   color,
   float,
-  fwidth,
   max,
   mix,
   mx_noise_float,
-  normalView,
+  normalWorldGeometry,
   positionGeometry,
   positionView,
-  positionViewDirection,
-  sin,
+  positionWorld,
   smoothstep,
   texture,
   uniform,
-  uv,
+  uniformArray,
+  varying,
   vec3,
 } from "three/tsl";
 import {
   Bone,
-  BufferAttribute,
-  BufferGeometry,
   Color,
-  ConeGeometry,
   CylinderGeometry,
-  DoubleSide,
-  DynamicDrawUsage,
   Group,
   Matrix4,
   Mesh,
@@ -50,7 +55,6 @@ import {
   Object3D,
   Quaternion,
   SkinnedMesh,
-  Sphere,
   SphereGeometry,
   Vector3,
 } from "three/webgpu";
@@ -74,19 +78,6 @@ export interface WizardUniforms {
   /** The full-Focus aura in the Wand's wood. */
   readonly auraStrength: { value: number };
   readonly vialTint: { value: Color };
-}
-
-/**
- * The robe's skirt: a grid of `columns` by `rows` vertices, rings from the
- * waist (row 0) to the hem, whose rest positions the view deforms into
- * `positions` every frame, in the frame of `mesh` (upright, +z ahead).
- */
-export interface Skirt {
-  readonly mesh: Mesh;
-  readonly positions: Float32Array;
-  readonly rest: Float32Array;
-  readonly columns: number;
-  readonly rows: number;
 }
 
 /** The joints the view poses after the clips, by role. */
@@ -117,11 +108,9 @@ export interface WizardRig {
   readonly tip: Object3D;
   /** The vial the left hand raises while drinking. */
   readonly vial: Group;
-  /** The bendable top of a pointed hat (null under the hood), swayed by the cloth. */
-  readonly hatTip: Object3D | null;
-  /** The robe skirt, or null for a Team without one. */
-  readonly skirt: Skirt | null;
   readonly uniforms: WizardUniforms;
+  /** Moves the rim's limb segments onto the pose just drawn; call after posing. */
+  readonly updateRim: () => void;
 }
 
 /** The settings the wizard's surfaces read. */
@@ -146,65 +135,6 @@ const shadowed = <T extends Mesh>(mesh: T): T => {
   mesh.receiveShadow = true;
 
   return mesh;
-};
-
-/** Fresnel: 1 where the surface turns away from the camera (the silhouette), sharper with `power`. */
-const silhouette = (power: number) =>
-  normalView.dot(positionViewDirection).saturate().oneMinus().pow(power);
-
-/** An open grid: indices and uvs fixed, positions rewritten every frame. */
-const clothGeometry = (columns: number, rows: number) => {
-  const geometry = new BufferGeometry();
-  const positions = new Float32Array(columns * rows * 3);
-  const attribute = new BufferAttribute(positions, 3);
-  attribute.setUsage(DynamicDrawUsage);
-  const uvs = new Float32Array(columns * rows * 2);
-  const indices: number[] = [];
-
-  for (let row = 0; row < rows; row += 1) {
-    for (let column = 0; column < columns; column += 1) {
-      const at = row * columns + column;
-      uvs[at * 2] = column / (columns - 1);
-      uvs[at * 2 + 1] = row / (rows - 1);
-
-      if (row < rows - 1 && column < columns - 1) {
-        const below = at + columns;
-        indices.push(at, below, at + 1, at + 1, below, below + 1);
-      }
-    }
-  }
-
-  geometry.setAttribute("position", attribute);
-  geometry.setAttribute("uv", new BufferAttribute(uvs, 2));
-  geometry.setIndex(indices);
-
-  return { geometry, positions };
-};
-
-/** The skirt at rest: rings from the waist (row 0) to the hem, each a closed loop (the seam column repeats). */
-const skirtRest = (skirt: Duelist["cloth"]["skirt"]) => {
-  const columns = skirt.segments + 1;
-  const rest = new Float32Array(columns * skirt.rings * 3);
-
-  for (let row = 0; row < skirt.rings; row += 1) {
-    const t = row / (skirt.rings - 1);
-
-    const radius =
-      skirt.topRadius +
-      (skirt.hemRadius - skirt.topRadius) * t ** skirt.flareCurve;
-
-    const y = skirt.top + (skirt.hem - skirt.top) * t;
-
-    for (let column = 0; column < columns; column += 1) {
-      const angle = (column / skirt.segments) * Math.PI * 2;
-      const at = (row * columns + column) * 3;
-      rest[at] = radius * Math.sin(angle);
-      rest[at + 1] = y;
-      rest[at + 2] = radius * Math.cos(angle) * skirt.depthScale;
-    }
-  }
-
-  return { columns, rest, rows: skirt.rings };
 };
 
 const isSkinned = (node: Object3D): node is SkinnedMesh =>
@@ -234,9 +164,6 @@ const mount = (
   joint.add(part);
 };
 
-const vector = ([x, y, z]: readonly [number, number, number]) =>
-  new Vector3(x, y, z);
-
 export const createWizardRig = (
   assets: WizardAssets,
   team: TeamLook,
@@ -256,36 +183,137 @@ export const createWizardRig = (
 
   const { petrify } = uniforms;
 
-  // One rim of light for every surface: the Team's own edge light (so the
-  // far Duelist reads against the dark walls), the Lock-on glow, the cold
-  // Petrified rim and a Potion's aura.
-  const rim = color(team.rim)
-    .mul(silhouette(look.rimPower))
-    .mul(
-      mix(
-        float(look.rimNear),
-        float(look.rimFar),
-        smoothstep(
-          look.rimNearDistance,
-          look.rimFarDistance,
-          positionView.length()
+  const model = clone(assets.template);
+  model.updateMatrixWorld(true);
+
+  const meshes = new Map<string, SkinnedMesh>();
+
+  model.traverse((node) => {
+    if (isSkinned(node)) {
+      meshes.set(node.name, node);
+    }
+  });
+
+  // Every mesh is bound to the one skin, so they share its joint order.
+  const [first] = meshes.values();
+
+  if (!first) {
+    throw new Error("The wizard has no skinned mesh");
+  }
+
+  const { bones } = first.skeleton;
+
+  // Each joint's segment in the world, from the joint to its first child
+  // joint (a joint with none carries on from its parent), written every frame.
+  const segmentStarts = bones.map(() => new Vector3());
+  const segmentEnds = bones.map(() => new Vector3());
+  const starts = uniformArray<"vec3">(segmentStarts, "vec3");
+  const ends = uniformArray<"vec3">(segmentEnds, "vec3");
+
+  const childOf = bones.map(
+    (joint) => joint.children.find((child) => isBone(child)) ?? null
+  );
+
+  const updateLimbs = () => {
+    for (const [index, joint] of bones.entries()) {
+      const start = segmentStarts[index];
+      const end = segmentEnds[index];
+      const child = childOf[index];
+
+      if (!start || !end) {
+        continue;
+      }
+
+      joint.getWorldPosition(start);
+
+      if (child) {
+        child.getWorldPosition(end);
+      } else if (joint.parent) {
+        joint.parent.getWorldPosition(end);
+        end.lerp(start, 1 + look.limbTipReach);
+      } else {
+        end.copy(start);
+      }
+    }
+  };
+
+  updateLimbs();
+
+  // The limbs' normal, per vertex: out from the closest point on the
+  // segment of each joint that moves the vertex, weighted as the skin weighs
+  // them, so it is smooth along a limb and across its joints.
+  const skinIndex = attribute("skinIndex", "uvec4");
+  const skinWeight = attribute("skinWeight", "vec4");
+  let limbSum: Node<"vec3"> = vec3(0, 0, 0);
+
+  for (const lane of ["x", "y", "z", "w"] as const) {
+    const start = starts.element(skinIndex[lane]);
+    const span = ends.element(skinIndex[lane]).sub(start);
+    const fromStart = positionWorld.sub(start);
+
+    const along = fromStart.dot(span).div(span.dot(span).max(1e-6)).saturate();
+
+    const radial = fromStart.sub(span.mul(along));
+    limbSum = limbSum.add(
+      radial.div(radial.length().max(1e-4)).mul(skinWeight[lane])
+    );
+  }
+
+  const limbNormal = varying(limbSum, "v_limbNormal");
+  const toCamera = cameraPosition.sub(positionWorld).normalize();
+
+  /**
+   * The rim of light round a silhouette seen along `normal` (world): the
+   * Team's own edge light (so the far Duelist reads against the dark
+   * walls), the Lock-on glow, the cold Petrified rim and a Potion's aura.
+   */
+  const rimOf = (normal: Node<"vec3">) => {
+    const edge = normal.dot(toCamera).saturate().oneMinus().toVar();
+    /** Fresnel: 1 where the surface turns away from the camera, sharper with `power`. */
+    const silhouette = (power: number) => edge.pow(power);
+
+    return color(team.rim)
+      .mul(silhouette(look.rimPower))
+      .mul(
+        mix(
+          float(look.rimNear),
+          float(look.rimFar),
+          smoothstep(
+            look.rimNearDistance,
+            look.rimFarDistance,
+            positionView.length()
+          )
         )
       )
-    )
-    .mul(petrify.oneMinus())
-    .add(
-      color(glow.color)
-        .mul(silhouette(glow.power))
-        .mul(uniforms.glowStrength.mul(glow.radiance))
-    )
-    .add(
-      color(stone.rimColor)
-        .mul(silhouette(stone.rimPower))
-        .mul(petrify.mul(stone.rimRadiance))
-    )
-    .add(
-      uniforms.potionTint.mul(silhouette(potion.power)).mul(uniforms.potionGlow)
-    );
+      .mul(petrify.oneMinus())
+      .add(
+        color(glow.color)
+          .mul(silhouette(glow.power))
+          .mul(uniforms.glowStrength.mul(glow.radiance))
+      )
+      .add(
+        color(stone.rimColor)
+          .mul(silhouette(stone.rimPower))
+          .mul(petrify.mul(stone.rimRadiance))
+      )
+      .add(
+        uniforms.potionTint
+          .mul(silhouette(potion.power))
+          .mul(uniforms.potionGlow)
+      );
+  };
+
+  // The body's rim reads the limbs' smooth normal, with a little of the
+  // mesh's own; the Wand, a plain stick, reads its own.
+  const bodyRim = rimOf(
+    mix(
+      normalWorldGeometry,
+      limbNormal.normalize(),
+      look.rimSmoothing
+    ).normalize()
+  );
+
+  const stickRim = rimOf(normalWorldGeometry);
 
   // Stone, mottled at a low frequency in the model's rest frame (the
   // geometry before skinning) so it holds still on the figure.
@@ -301,8 +329,7 @@ export const createWizardRig = (
   const surface = (
     base: Node<"vec3">,
     roughness: Node<"float">,
-    normals: Texture | null = null,
-    twoSided = false
+    normals: Texture | null = null
   ) => {
     const material = new MeshStandardNodeMaterial();
     material.colorNode = mix(base, stoneColor, petrify);
@@ -312,26 +339,11 @@ export const createWizardRig = (
       petrify
     );
     material.metalnessNode = float(0);
-    material.emissiveNode = rim;
+    material.emissiveNode = bodyRim;
     material.normalMap = normals;
-
-    if (twoSided) {
-      material.side = DoubleSide;
-    }
 
     return material;
   };
-
-  const model = clone(assets.template);
-  model.updateMatrixWorld(true);
-
-  const meshes = new Map<string, SkinnedMesh>();
-
-  model.traverse((node) => {
-    if (isSkinned(node)) {
-      meshes.set(node.name, node);
-    }
-  });
 
   // The model's own texture maps, read before its materials are replaced.
   const loaded = new Map(
@@ -398,12 +410,14 @@ export const createWizardRig = (
     );
   };
 
+  const { hood } = team;
+
   const dress = new Map([
     ["Brows", () => textured("Brows", look.skinRoughness)],
     ["Eyes", () => textured("Eyes", 0.3)],
     ["Face", () => textured("Face", look.skinRoughness)],
     ["Hands", () => textured("Hands", look.skinRoughness)],
-    ["Hood", () => outfitMaterial(team.headwear)],
+    ["Hood", () => outfitMaterial(hood ?? team.cloth)],
     ["Outfit", () => outfitMaterial(team.cloth)],
   ]);
 
@@ -420,7 +434,7 @@ export const createWizardRig = (
     shadowed(mesh);
 
     if (name === "Hood") {
-      mesh.visible = team.headwearKind === "hood";
+      mesh.visible = hood !== null;
     }
   }
 
@@ -454,13 +468,11 @@ export const createWizardRig = (
   const at = (name: string) => bone(name).getWorldPosition(new Vector3());
 
   // --- The Wand, in the right fist.
-  const surfaceOf = (hex: string, roughness: number, twoSided = false) =>
-    surface(rgb(hex), float(roughness), null, twoSided);
 
   // The Wand's own wood, glowing scarlet from within while the Focus is full,
   // with a bead of the Team's colour at the tip.
-  const wood = surfaceOf(look.wood, look.woodRoughness);
-  wood.emissiveNode = rim.add(
+  const wood = surface(rgb(look.wood), float(look.woodRoughness));
+  wood.emissiveNode = stickRim.add(
     color(aura.color).mul(float(aura.radiance).mul(uniforms.auraStrength))
   );
   const bead = new MeshStandardNodeMaterial({ roughness: 0.3 });
@@ -495,7 +507,7 @@ export const createWizardRig = (
   const fistOf = (side: "l" | "r") => {
     const wrist = at(`hand_${side}`);
     const knuckle = at(`middle_01_${side}`);
-    const along = knuckle.clone().sub(wrist).normalize();
+    const fingers = knuckle.clone().sub(wrist).normalize();
 
     const across = at(`index_01_${side}`)
       .sub(at(`pinky_01_${side}`))
@@ -507,7 +519,7 @@ export const createWizardRig = (
       .lerp(knuckle, duelist.grip.palmAlong)
       .addScaledVector(new Vector3(0, -1, 0), duelist.grip.palmDepth);
 
-    return { across, along, palm };
+    return { across, fingers, palm };
   };
 
   const rightFist = fistOf("r");
@@ -515,7 +527,7 @@ export const createWizardRig = (
   // The Wand leaves the fist between the thumb and the index, tipped toward the fingers.
   const wandAxis = rightFist.across
     .clone()
-    .addScaledVector(rightFist.along, duelist.grip.tilt)
+    .addScaledVector(rightFist.fingers, duelist.grip.tilt)
     .normalize();
 
   mount(
@@ -550,121 +562,12 @@ export const createWizardRig = (
     new Quaternion().setFromUnitVectors(new Vector3(0, 1, 0), leftFist.across)
   );
 
-  // --- A pointed hat on the head: brim, banded crown and a point that bends back and sways.
-  const trimmedCloth = (base: string, trimShare: number, folds: number) => {
-    const along = uv().y;
-    const edge = float(1 - trimShare);
-    const width = fwidth(along).max(1e-4);
-    const band = smoothstep(edge.sub(width), edge.add(width), along);
-
-    const fold = sin(uv().x.mul(Math.PI * 2 * folds))
-      .mul(0.5)
-      .add(0.5)
-      .mul(along.mul(look.foldDepth))
-      .oneMinus();
-
-    return surface(
-      mix(rgb(base), rgb(team.metal), band).mul(fold),
-      float(look.clothRoughness),
-      null,
-      true
-    );
-  };
-
-  let hatTip: Object3D | null = null;
-
-  if (team.headwearKind === "hat") {
-    const { hat } = duelist;
-    const felt = surfaceOf(team.headwear, look.clothRoughness, true);
-    const band = surfaceOf(team.metal, look.trimRoughness);
-    const crown = new Group();
-
-    const brim = shadowed(
-      new Mesh(
-        new CylinderGeometry(
-          hat.brimRadius,
-          hat.brimRadius,
-          hat.brimThickness,
-          28
-        ),
-        felt
-      )
-    );
-
-    const ribbon = shadowed(
-      new Mesh(
-        new CylinderGeometry(
-          hat.baseRadius,
-          hat.baseRadius,
-          hat.bandHeight,
-          24
-        ),
-        band
-      )
-    );
-
-    ribbon.position.y = hat.bandHeight / 2;
-
-    const cone = shadowed(
-      new Mesh(
-        new CylinderGeometry(
-          hat.midRadius,
-          hat.baseRadius,
-          hat.crown,
-          24,
-          1,
-          true
-        ),
-        felt
-      )
-    );
-
-    cone.position.y = hat.crown / 2;
-    // The top cone bends back from a pivot on the crown, and sways.
-    const bend = new Object3D();
-    bend.position.y = hat.crown;
-
-    const point = shadowed(
-      new Mesh(new ConeGeometry(hat.midRadius, hat.point, 20, 1, true), felt)
-    );
-
-    point.position.y = hat.point / 2;
-    bend.add(point);
-    crown.add(brim, ribbon, cone, bend);
-    crown.rotation.x = -hat.tilt;
-    const hatFrame = new Object3D();
-    hatFrame.add(crown);
-    mount(joints.head, hatFrame, vector(hat.mount));
-    hatTip = bend;
-  }
-
-  // --- The robe skirt, hung from the pelvis.
-  let skirt: Skirt | null = null;
-
-  if (team.skirt) {
-    const grid = skirtRest(duelist.cloth.skirt);
-    const { geometry, positions } = clothGeometry(grid.columns, grid.rows);
-    // The cloth moves every frame; one generous bound keeps it from being culled.
-    geometry.boundingSphere = new Sphere(new Vector3(), duelist.cloth.bound);
-
-    const mesh = shadowed(
-      new Mesh(
-        geometry,
-        trimmedCloth(team.cloth, look.hemTrimShare, look.skirtFolds)
-      )
-    );
-
-    mount(joints.pelvis, mesh, at("pelvis"));
-    skirt = { ...grid, mesh, positions };
-  }
-
   return {
-    hatTip,
     joints,
     model,
-    skirt,
     tip,
     uniforms,
+    updateRim: updateLimbs,
     vial,
     wand,
     wandStick,

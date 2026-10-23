@@ -33,7 +33,7 @@ export const tuning = {
      * `minWarning` it is too late to jump, and a Spell coming in higher than
      * `maxHeight` (metres above the feet) cannot be jumped: the AI does something else.
      */
-    jump: { lead: 0.44, maxHeight: 1.7, minWarning: 0.34 },
+    jump: { lead: 0.3, maxHeight: 1.45, minWarning: 0.2 },
     /**
      * Before Locking On the AI turns its free aim toward the opponent's
      * chest like a right stick: the turn rate is `gain` times the angle left
@@ -725,14 +725,14 @@ export const tuning = {
     jump: {
       /** Stamina a jump costs; refused with less than this left. */
       cost: 12,
-      /** Downward acceleration while airborne, m/s². */
-      gravity: 18,
+      /** Downward acceleration while airborne, m/s²: about four times the Earth's, so the jump is snappy, not floaty. */
+      gravity: 42,
       /**
-       * Upward launch speed, m/s. With `gravity` the feet clear about 1.8 m
-       * at the apex, about 0.9 s in the air: high enough to let a chest-high
-       * bolt pass under, if timed.
+       * Upward launch speed, m/s. With `gravity` the feet clear about 1.65 m
+       * at the apex after 0.3 s, about 0.58 s in the air: still high enough
+       * to let a chest-high bolt pass under, if timed.
        */
-      speed: 8,
+      speed: 12.2,
     },
     shield: {
       /** Stamina drained every second the Shield is up. */
@@ -823,45 +823,6 @@ export const tuning = {
     /** Height of the chest above the floor; the aim point sits there. */
     chestHeight: 1.3,
     /**
-     * The robe skirt (made in code, for Teams that wear one): it hangs from
-     * the pelvis, lags behind the body on a fixed-step spring (`drag`
-     * metres of swing per m/s, at most `maxSway`), flares with speed, tents
-     * over the legs (`legRadius` thick, the push spreading `legSpan`
-     * sideways, from `legTentFrom` of the way down) and never sinks below
-     * `floorClearance` over the floor. The hat's point bends back
-     * `hatBend` radians and sways `hatSway` per metre of its own spring
-     * (`hatDrag`). `bound` is the radius culling keeps.
-     */
-    cloth: {
-      bound: 1.8,
-      drag: 0.045,
-      /** Falling lifts the hem: this much extra flare per m/s downward. */
-      flarePerFall: 0.03,
-      flarePerSpeed: 0.022,
-      floorClearance: 0.015,
-      hatBend: 0.32,
-      hatDrag: 0.06,
-      hatSway: 1.1,
-      legRadius: 0.11,
-      legSpan: 0.28,
-      legTentFrom: 0.12,
-      maxSway: 0.28,
-      ripple: { amplitude: 0.01, speed: 2.4, waves: 3 },
-      /** In the pelvis frame (metres; +y up, +z ahead): from the waist (`top`) to the hem. */
-      skirt: {
-        depthScale: 0.8,
-        flareCurve: 1.3,
-        hem: -0.68,
-        hemRadius: 0.33,
-        rings: 10,
-        segments: 28,
-        top: 0.16,
-        topRadius: 0.19,
-      },
-      /** Mass-normalised: stiffness s⁻², damping s⁻¹, stepped every `step` seconds (at most `maxSubsteps` a frame). */
-      spring: { damping: 8, maxSubsteps: 12, step: 1 / 120, stiffness: 55 },
-    },
-    /**
      * How the Wand sits in the right fist and the vial in the left: in the
      * palm (`palmAlong` of the way from the wrist to the knuckles,
      * `palmDepth` metres below them), the Wand leaving the fist between
@@ -869,18 +830,6 @@ export const tuning = {
      * metres out of the little-finger side.
      */
     grip: { butt: 0.03, palmAlong: 0.55, palmDepth: 0.035, tilt: 0.6 },
-    /** A pointed hat: brim at `mount` (the model's rest frame, metres), tipped back `tilt` radians; banded crown and a point that bends back and sways. */
-    hat: {
-      bandHeight: 0.04,
-      baseRadius: 0.122,
-      brimRadius: 0.25,
-      brimThickness: 0.016,
-      crown: 0.2,
-      midRadius: 0.078,
-      mount: [0, 1.76, -0.02],
-      point: 0.3,
-      tilt: 0.12,
-    },
     health: 100,
     /** Spells hit a Duelist anywhere from the floor up to this height. */
     height: 2,
@@ -895,15 +844,16 @@ export const tuning = {
      * radiance grows with distance, from `rimNear` at `rimNearDistance`
      * metres from the camera to `rimFar` at `rimFarDistance`, so the far
      * Duelist reads against the dark walls while the near one is not washed
-     * out.
+     * out. The rim reads a smoothed normal: `rimSmoothing` of it is the
+     * limbs' (out from the bone each vertex hangs on, a bone with no child
+     * reaching on `limbTipReach` of its parent's length), the rest the
+     * mesh's own, so small, sharply curved parts do not sparkle into pixel
+     * dots.
      */
     look: {
       clothLuminance: 0.057,
       clothMask: [0.003, 0.015],
-      clothRoughness: 0.82,
-      /** How much the robe's folds darken it toward the hem. */
-      foldDepth: 0.22,
-      hemTrimShare: 0.09,
+      limbTipReach: 0.5,
       metalLuminance: 0.29,
       metalRoughness: 0.38,
       rimFar: 1.1,
@@ -911,15 +861,14 @@ export const tuning = {
       rimNear: 0.25,
       rimNearDistance: 4,
       rimPower: 3.4,
+      rimSmoothing: 0.85,
       skinRoughness: 0.62,
-      skirtFolds: 9,
       stoneMottle: 0.25,
       /** Mottling of the stone, cycles per metre. */
       stoneMottleScale: 7,
       stoneRoughness: 0.92,
       tipRadiance: 3,
       tipSize: 0.012,
-      trimRoughness: 0.45,
       wandGripRadius: 0.014,
       wandTipRadius: 0.007,
       wood: "#8a6038",
@@ -938,19 +887,31 @@ export const tuning = {
       /** Drinking: the left wrist goes to `lips` (metres from the head joint, the Duelist's frame) and the head tips back up to `headBack` radians as the vial empties. */
       drink: { headBack: 0.45, lips: [0.03, -0.02, 0.2] },
       /**
-       * Walking and running: the clip cycles advance by the ground covered
-       * (so planted feet stay put, whatever the speed); walk, jog and
-       * sprint each play alone, handing over to the next across the
-       * `crossovers` speed bands (m/s); the speed eases at `speedSharpness` and the gait fades
-       * in at `gaitSharpness` above `minSpeed`. Moving off the facing, the
-       * legs turn toward the motion (at most `maxTwist`, easing at
-       * `twistSharpness`) while the spine turns the chest back; past
-       * `backFrom` off the facing (back under `backTo`) the legs walk
+       * Walking and running. The clips' own strides are long and slow (their
+       * jog covers 2.9 m a step at 1.5 steps a second at our running
+       * speed), so the gait sets its own: a cadence in steps a second of
+       * `base + perSpeed × speed` (m/s), `walk` for the walk clip and `run`
+       * for the jog and the sprint, and the stride that, at that cadence,
+       * covers the ground actually travelled. The clip cycles advance at the
+       * cadence and the legs reach by IK to the stride (scaled on the clip's
+       * own, between `stride[0]` and `stride[1]` of it), so planted feet stay
+       * put at any speed; the pelvis keeps `bob` of the clip's bounce. Walk,
+       * jog and sprint each play alone, handing over to the next across the
+       * `crossovers` speed bands (m/s); the speed eases at `speedSharpness`
+       * and the gait fades in at `gaitSharpness` above `minSpeed`. Moving off
+       * the facing, the legs turn toward the motion (at most `maxTwist`,
+       * easing at `twistSharpness`) while the spine turns the chest back;
+       * past `backFrom` off the facing (back under `backTo`) the legs walk
        * backwards instead.
        */
       gait: {
         backFrom: 1.95,
         backTo: 1.7,
+        bob: 0.45,
+        cadence: {
+          run: { base: 2.45, perSpeed: 0.12 },
+          walk: { base: 1.3, perSpeed: 0.35 },
+        },
         crossovers: [
           [1.6, 2.4],
           [5.6, 6.8],
@@ -959,10 +920,26 @@ export const tuning = {
         maxTwist: 1.6,
         minSpeed: 0.3,
         speedSharpness: 10,
+        stride: [0.4, 1.3],
         twistSharpness: 10,
       },
       /** The head looks this share of the aim's pitch. */
       headPitch: 0.5,
+      /**
+       * A jump: the take-off plays `Jump_Start` from `takeoff.from` to
+       * `takeoff.to` seconds of the clip over the first `takeoff.seconds` in
+       * the air (the push off the floor and the legs tucking), then the air
+       * pose (`Jump_Loop`); falling, the legs reach for the floor
+       * (`Jump_Land`'s first pose) over the last `reach` metres. Airborne
+       * poses ease at `sharpness`. The landing (`shots.land`) takes
+       * `landWeight` of `Jump_Land`'s crouch.
+       */
+      jump: {
+        landWeight: 0.5,
+        reach: 0.7,
+        sharpness: 30,
+        takeoff: { from: 0.04, seconds: 0.26, to: 0.36 },
+      },
       /** The Knockout: `Death01` held lying from `lieAt` seconds; getting up (`LayToIdle`) fades out over its last `riseFadeSeconds`. */
       knockout: { lieAt: 1.9, riseFadeSeconds: 0.35 },
       /**
@@ -984,7 +961,7 @@ export const tuning = {
         cast: { from: 0, peak: 0.25, seconds: 0.4, to: 0.5 },
         flinch: { from: 0, peak: 0.2, seconds: 0.36, to: 0.33 },
         knockback: { from: 0.09, peak: 0.3, seconds: 0.35, to: 0.16 },
-        land: { from: 0.05, peak: 0.2, seconds: 0.45, to: 0.7 },
+        land: { from: 0.05, peak: 0.25, seconds: 0.3, to: 0.45 },
         parry: { from: 0.1, peak: 0.3, seconds: 0.4, to: 0.6 },
         pickup: { from: 0, peak: 0.42, seconds: 0.55, to: 0.83 },
         push: { from: 0, peak: 0.25, seconds: 0.32, to: 0 },
@@ -999,32 +976,31 @@ export const tuning = {
     teamLooks: {
       far: {
         cloth: "#1f7a52",
-        headwear: "#16533a",
-        headwearKind: "hood",
+        /** The outfit's hood, in this colour; null leaves it off. */
+        hood: "#16533a",
         metal: "#cfd8e0",
         rim: "#7ff0ff",
-        skirt: false,
       },
       near: {
         cloth: "#a3222d",
-        headwear: "#7a141d",
-        headwearKind: "hat",
+        hood: null,
         metal: "#e3b255",
         rim: "#ffb36b",
-        skirt: true,
       },
     },
     walkSpeed: 4.5,
     /**
-     * The visible Wand and the right arm that holds it. The arm reaches
-     * (two-bone IK after the clips) so the Wand tip sits exactly on
-     * `wandTip` below whenever the Wand is held ready, cast from, Charged,
-     * Shielded with or locked in a Clash, pointing along `rest`, `charge`,
-     * `shield` or the aim (a Clash); the lock eases in and out at
-     * `lockSharpness` per second and snaps on at every cast. A Light or
-     * Special cast flicks it (`flicks`: `raise` radians up, `inward` across,
-     * the hand reaching `reach` metres ahead) over `flickSeconds` from the
-     * tip, so the Spell leaves the Wand as it starts. Elbows bend toward
+     * The visible Wand and the right arm that holds it. At rest, walking or
+     * running the arm hangs with the clips, the Wand held low. It rises (by
+     * two-bone IK after the clips) to cast, Charge, Shield or Parry and in
+     * a Clash, so the Wand tip sits exactly on `wandTip` below, pointing
+     * along `rest`, `charge`, `shield` or the aim (a Clash); it snaps up at
+     * every cast (so the Spell leaves the drawn tip), eases up at
+     * `lockSharpness` per second, stays up `hold` seconds after the last
+     * cast or Parry and lowers again at `lowerSharpness`. A Light or Special
+     * cast flicks it (`flicks`: `raise` radians up, `inward` across, the hand
+     * reaching `reach` metres ahead) over `flickSeconds` from the tip, so
+     * the Spell leaves the Wand as it starts. Elbows bend toward
      * `elbowHint`. Disarmed, the empty hand reaches `reach` metres toward
      * the loose Wand at `height`, grasping, turning back no further than
      * `behind` (the reach's share pointing ahead, -1 to 1). In a Clash the
@@ -1048,9 +1024,11 @@ export const tuning = {
         petrificus: { inward: 0.15, raise: -0.35, reach: 0.12 },
         stupefy: { inward: 0.12, raise: 0.55, reach: 0.05 },
       },
+      hold: 0.5,
       /** How long the Wand is, from the grip to the tip. */
       length: 0.4,
       lockSharpness: 14,
+      lowerSharpness: 6,
       rest: [0.2, 0.08, 1],
       shield: [0.1, 0.42, 0.9],
     },

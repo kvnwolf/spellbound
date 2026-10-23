@@ -1,13 +1,11 @@
 /**
  * The motion maths behind the wizard, free of meshes: easing curves, the
- * dt-correct exponential follow every pose weight eases with, two-bone IK
- * for the arms, and a fixed-step spring for the cloth's lag.
+ * dt-correct exponential follow every pose weight eases with, and two-bone
+ * IK for the arms and legs.
  *
  * Lengths are metres; the IK takes its points in any one frame.
  */
 import { Vector3 } from "three/webgpu";
-
-import type { Tuning } from "../tuning";
 
 /** Clamps to [0, 1]. */
 export const unit = (value: number) => Math.min(Math.max(value, 0), 1);
@@ -105,60 +103,4 @@ export const solveLimb = (
   end.copy(root).addScaledVector(scratchAxis, reach);
 
   return Math.max(wanted - reach, 0);
-};
-
-/** A damped spring's state on three axes, stepped at a fixed rate. */
-export interface Spring {
-  /** Where it is now, between its last two fixed steps. */
-  readonly position: Vector3;
-  /** Steps it toward `target` (held over the interval) by `seconds`. */
-  readonly advance: (target: Vector3, seconds: number) => void;
-  /** Puts it at rest on `target` at once. */
-  readonly reset: (target: Vector3) => void;
-}
-
-/**
- * A mass-normalised spring (`stiffness` s⁻², `damping` s⁻¹) advanced on its
- * own fixed step, so the cloth swings the same at any frame rate; it is
- * drawn between its last two steps.
- */
-export const createSpring = (
-  settings: Tuning["duelist"]["cloth"]["spring"]
-) => {
-  const { damping, maxSubsteps, step, stiffness } = settings;
-  const previous = new Vector3();
-  const current = new Vector3();
-  const velocity = new Vector3();
-  const position = new Vector3();
-  const acceleration = new Vector3();
-  let owed = 0;
-
-  const spring: Spring = {
-    advance: (target, seconds) => {
-      owed = Math.min(owed + seconds, step * maxSubsteps);
-
-      while (owed >= step) {
-        previous.copy(current);
-        acceleration
-          .subVectors(target, current)
-          .multiplyScalar(stiffness)
-          .addScaledVector(velocity, -damping);
-        velocity.addScaledVector(acceleration, step);
-        current.addScaledVector(velocity, step);
-        owed -= step;
-      }
-
-      position.lerpVectors(previous, current, owed / step);
-    },
-    position,
-    reset: (target) => {
-      previous.copy(target);
-      current.copy(target);
-      position.copy(target);
-      velocity.set(0, 0, 0);
-      owed = 0;
-    },
-  };
-
-  return spring;
 };

@@ -10,8 +10,9 @@ import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
  * - each locomotion clip measured on this very skeleton: how far the body
  *   travels over one cycle (from the planted foot sliding back under it),
  *   so the view advances it by the ground actually covered and the feet do
- *   not slide, and where in the cycle the left foot is furthest ahead, so
- *   cycles of different clips blend in step;
+ *   not slide, where in the cycle the left foot is furthest ahead, so
+ *   cycles of different clips blend in step, and the pelvis's mean height,
+ *   about which the view damps the clip's bounce;
  * - the right hand's fist (`Grip`), as local rotations per finger joint.
  *
  * Geometry and animation are Meshopt-compressed; the decoder runs on the
@@ -61,6 +62,8 @@ export interface Stride {
   readonly cycle: number;
   /** The cycle's share (0 to 1) at which the left foot is furthest ahead. */
   readonly offset: number;
+  /** The pelvis's mean height over the cycle, metres above the feet's floor. */
+  readonly pelvis: number;
 }
 
 export interface WizardAssets {
@@ -99,6 +102,8 @@ const measure = (template: Object3D, clip: AnimationClip): Stride => {
   mixer.clipAction(clip).play();
 
   const feet = ["ball_l", "ball_r"].map((name) => body.getObjectByName(name));
+  const hips = body.getObjectByName("pelvis");
+  let pelvis = 0;
   const samples = 60;
   const step = clip.duration / samples;
   const at = new Vector3();
@@ -112,6 +117,9 @@ const measure = (template: Object3D, clip: AnimationClip): Stride => {
       foot?.getWorldPosition(at);
       track[side]?.push({ y: at.y, z: at.z });
     }
+
+    hips?.getWorldPosition(at);
+    pelvis += at.y / samples;
   }
 
   let distance = 0;
@@ -146,12 +154,23 @@ const measure = (template: Object3D, clip: AnimationClip): Stride => {
     }
   }
 
-  return { cycle: speed * clip.duration, offset: ahead / samples };
+  return { cycle: speed * clip.duration, offset: ahead / samples, pelvis };
 };
 
-export const loadWizardAssets = async (url: string): Promise<WizardAssets> => {
+/** Loads the wizard from `url`, telling `onProgress` the share (0 to 1) of its bytes downloaded so far. */
+export const loadWizardAssets = async (
+  url: string,
+  onProgress?: (share: number) => void
+): Promise<WizardAssets> => {
   const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
-  const gltf = await loader.loadAsync(url);
+
+  const gltf = await loader.loadAsync(url, (event) => {
+    if (event.lengthComputable && event.total > 0) {
+      onProgress?.(event.loaded / event.total);
+    }
+  });
+
+  onProgress?.(1);
   const template = gltf.scene;
   const clips = new Map<string, ClipHalves>();
   const grip = new Map<string, Quaternion>();
