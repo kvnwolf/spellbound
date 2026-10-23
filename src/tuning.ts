@@ -46,6 +46,96 @@ export const tuning = {
     friction: 0.55,
   },
 
+  /**
+   * Synthesised sound. Volumes are linear gains (0 to 1). Every sound goes
+   * through the master volume, a compressor and a soft ceiling, so nothing
+   * clips however many play at once.
+   */
+  audio: {
+    /** The Duel's sounds go through `sfx`, with the courtyard's reverb; countdown, call-out stingers and menus through `ui`, dry. */
+    buses: { sfx: 1, ui: 0.7 },
+    /** The loudest any sample can reach after the soft clip (0.89 is about -1 dBFS). */
+    ceiling: 0.89,
+    /** Gentle glue first, then the ceiling: peaks are held under 0 dBFS. */
+    compressor: {
+      attack: 0.003,
+      /** Decibels. */
+      knee: 6,
+      ratio: 12,
+      release: 0.25,
+      /** Decibels. */
+      threshold: -12,
+    },
+    /** Held sounds (Charge, Shield, Burn) follow their state with this time constant, seconds. */
+    loopGlide: 0.04,
+    /** Held sounds fade out over this long once their state ends, seconds. */
+    loopRelease: 0.18,
+    /** Overall volume. */
+    master: 0.8,
+    /** One-shot sounds playing at once; more are dropped until some end. */
+    maxVoices: 48,
+    /** Silences everything (the engine still follows the Duel). */
+    muted: false,
+    /** The courtyard's stone: a synthesised reverb tail. */
+    reverb: {
+      /** How fast the tail dies (higher is faster). */
+      decay: 3.2,
+      /** Length of the tail. */
+      seconds: 1.9,
+      /** Share of every Duel sound sent to the reverb. */
+      send: 0.18,
+    },
+    /** The soft clip is transparent below this level and rounds off above it. */
+    softClipKnee: 0.7,
+    /** Where sounds come from, relative to the camera (see `audio/spatial.ts`). */
+    spatial: {
+      maxPan: 0.75,
+      minGain: 0.22,
+      opponentGain: 0.8,
+      refDistance: 5,
+      rolloff: 0.45,
+    },
+    /** Each sound's own level before placement, so the mix balances by ear. */
+    volumes: {
+      backfire: 0.75,
+      burn: 0.22,
+      charge: 0.3,
+      "charge-ready": 0.3,
+      "confringo-blast": 0.85,
+      "confringo-cast": 0.55,
+      countdown: 0.5,
+      dodge: 0.32,
+      "duel-end": 0.6,
+      "duel-start": 0.6,
+      fizzle: 0.22,
+      "incendio-cast": 0.5,
+      "incendio-explosion": 0.95,
+      jump: 0.2,
+      knockout: 0.85,
+      land: 0.32,
+      "lock-off": 0.18,
+      "lock-on": 0.2,
+      "menu-back": 0.3,
+      "menu-confirm": 0.35,
+      "menu-move": 0.22,
+      "overcharge-warning": 0.38,
+      parry: 0.6,
+      "perfect-dodge": 0.4,
+      "perfect-release": 0.5,
+      "petrificus-cast": 0.45,
+      petrify: 0.6,
+      "petrify-break": 0.45,
+      "round-end": 0.5,
+      shield: 0.14,
+      "shield-block": 0.55,
+      "shield-raise": 0.32,
+      "spells-cancelled": 0.45,
+      "stamina-short": 0.28,
+      "stupefy-cast": 0.38,
+      "stupefy-hit": 0.5,
+    },
+  },
+
   camera: {
     /**
      * At full Charge the field of view widens by `degrees`, easing in and out

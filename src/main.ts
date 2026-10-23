@@ -6,6 +6,7 @@
  */
 import "./style.css";
 import { courtyard, courtyardSpawns } from "./arena/courtyard";
+import { createDuelAudio } from "./audio/audio";
 import type { Controller } from "./controllers/controller";
 import { idleController } from "./controllers/controller";
 import { createDebugCasterController } from "./controllers/debug-caster";
@@ -246,6 +247,14 @@ const start = async () => {
 
   const frame = createFramePipeline(renderer, scene, rig.camera, tuning.render);
 
+  // Synthesised sound, heard from the camera; silent until the first click or keypress.
+  const audio = createDuelAudio({
+    camera: rig.camera,
+    localId,
+    overlay: element("#overlay", HTMLElement),
+    settings: tuning,
+  });
+
   const reticleElement = element("#reticle", HTMLElement);
 
   const reticle = createReticle(
@@ -364,7 +373,9 @@ const start = async () => {
     }
 
     for (const event of menuInput.read(pad, seconds)) {
+      const before = screens.screen;
       send(event);
+      audio.menu(before, screens.screen, event);
     }
 
     const { screen } = screens;
@@ -559,6 +570,7 @@ const start = async () => {
 
     const samples = showDuelists(alpha, seconds);
     worldHud.show(current, events, samples, rig.camera, seconds);
+    audio.frame({ events, live: playing, snapshot: current });
 
     if (!inDuel) {
       reticleElement.hidden = true;

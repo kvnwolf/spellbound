@@ -42,6 +42,8 @@ export const text = {
     changeDifficulty: "Cambiar dificultad",
     rematch: "Revancha",
   },
+  /** On the connect prompt and the Difficulty select until the sound is on: browsers start it on a click or keypress. */
+  soundHint: "Haz clic en la página para activar el sonido",
   /** The Special Spells, as the Spell Slots in the HUD (and over an opponent's Health bar) name them. */
   specials: {
     expelliarmus: "Expelliarmus",
