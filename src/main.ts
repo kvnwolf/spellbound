@@ -264,7 +264,7 @@ const start = async () => {
 
   const frame = createFramePipeline(renderer, scene, rig.camera, tuning.render);
 
-  // Synthesised sound, heard from the camera; silent until the first click or keypress.
+  // Sampled sound and music, heard from the camera; silent until the first click or keypress.
   const audio = createDuelAudio({
     camera: rig.camera,
     hint: activationHint,
@@ -603,7 +603,12 @@ const start = async () => {
 
     const samples = showDuelists(alpha, seconds);
     worldHud.show(current, events, samples, rig.camera, seconds);
-    audio.frame({ events, live: playing, snapshot: current });
+    audio.frame({
+      events,
+      live: playing,
+      screen: screens.screen,
+      snapshot: current,
+    });
 
     if (!inDuel) {
       reticleElement.hidden = true;

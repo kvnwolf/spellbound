@@ -170,15 +170,43 @@ export const tuning = {
   },
 
   /**
-   * Synthesised sound. Volumes are linear gains (0 to 1). Every sound goes
-   * through the master volume, a compressor and a soft ceiling, so nothing
-   * clips however many play at once.
+   * Sound: the approved samples in `public/audio`, music and ambience
+   * included. Volumes are linear gains. Every sound goes through the master
+   * volume, a compressor and a soft ceiling, so nothing clips however many
+   * play at once.
    */
   audio: {
-    /** The Duel's sounds go through `sfx`, with the courtyard's reverb; countdown, call-out stingers and menus through `ui`, dry. */
-    buses: { sfx: 1, ui: 0.7 },
+    /** The ambience fades in and out over this long, seconds. */
+    ambienceFade: 2.5,
+    /**
+     * The Duel's sounds go through `sfx`, with the courtyard's reverb;
+     * countdown, call-out stingers and menus through `ui`, dry; the themes
+     * and the Duel's fanfares through `music`; the courtyard at night through
+     * `ambience`.
+     */
+    buses: { ambience: 0.8, music: 0.7, sfx: 1, ui: 1 },
     /** The loudest any sample can reach after the soft clip (0.89 is about -1 dBFS). */
     ceiling: 0.89,
+    /**
+     * A Charging Wand's roar follows its Charge: from `empty` at its start
+     * to `full` once it is full; Overcharge opens the filter further and
+     * quickens and deepens a tremolo from `calm` to `frantic` as Backfiring nears.
+     */
+    chargeLoop: {
+      /** Volume share at the start of a Charge (all of it once full). */
+      emptyGain: 0.35,
+      /** Low-pass cutoff, Hz. */
+      lowpass: { empty: 700, full: 6000, overcharge: 12_000 },
+      /** Playback rate: the roar rises in pitch as it fills. */
+      rate: { empty: 0.8, full: 1.25 },
+      /** Tremolo rate (Hz) and depth (share of the volume). */
+      tremolo: {
+        calmDepth: 0.05,
+        calmRate: 3,
+        franticDepth: 0.5,
+        franticRate: 23,
+      },
+    },
     /** Gentle glue first, then the ceiling: peaks are held under 0 dBFS. */
     compressor: {
       attack: 0.003,
@@ -189,6 +217,19 @@ export const tuning = {
       /** Decibels. */
       threshold: -12,
     },
+    /** Under the pause menu (or "Reconecta tu mando") music and ambience drop to `gain` and are muffled below `lowpass` Hz, easing over `seconds`. */
+    dim: { gain: 0.35, lowpass: 900, seconds: 0.4 },
+    /** The music dips to `gain` under the Knockout and the Round and Duel stingers: in over `attack`, held `hold`, back over `release`, seconds. */
+    duck: { attack: 0.08, gain: 0.35, hold: 1.6, release: 0.8 },
+    /** How sounds bigger than usual play. */
+    emphasis: {
+      /** An empowered (Perfect Release) Confringo's extra volume. */
+      empoweredGain: 1.2,
+      /** Every third Stupefy, and a heavy Spell on a Shield: louder by `gain` and lower by `rate`. */
+      heavy: { gain: 1.25, rate: 0.85 },
+      /** Confringo's cast and blast at no Charge play at this share, rising to all of it at a full Charge. */
+      unchargedGain: 0.6,
+    },
     /** Held sounds (Charge, Shield, Burn) follow their state with this time constant, seconds. */
     loopGlide: 0.04,
     /** Held sounds fade out over this long once their state ends, seconds. */
@@ -197,6 +238,12 @@ export const tuning = {
     master: 0.8,
     /** One-shot sounds playing at once; more are dropped until some end. */
     maxVoices: 48,
+    /**
+     * The themes: a change of theme crossfades over `crossfade` seconds; a
+     * theme loops by overlapping its end with its start for `loopOverlap`
+     * seconds, each repeat scheduled `scheduleAhead` seconds before it starts.
+     */
+    music: { crossfade: 2.5, loopOverlap: 3, scheduleAhead: 1 },
     /** Silences everything (the engine still follows the Duel). */
     muted: false,
     /** The courtyard's stone: a synthesised reverb tail. */
@@ -208,6 +255,8 @@ export const tuning = {
       /** Share of every Duel sound sent to the reverb. */
       send: 0.18,
     },
+    /** A file's start and end quieter than this (linear) are silence, skipped when it loops. */
+    silenceFloor: 0.001,
     /** The soft clip is transparent below this level and rounds off above it. */
     softClipKnee: 0.7,
     /** Where sounds come from, relative to the camera (see `audio/spatial.ts`). */
@@ -218,44 +267,79 @@ export const tuning = {
       refDistance: 5,
       rolloff: 0.45,
     },
-    /** Each sound's own level before placement, so the mix balances by ear. */
+    trimFade: 0.03,
+    /** Sounds shorter than their file: played for this many seconds, then faded out over `trimFade`. */
+    trims: {
+      "clash-pump": 0.4,
+      "lock-off": 0.4,
+      "lock-on": 0.4,
+      "menu-move": 0.3,
+    },
+    /** Each play of a sound effect varies at random by up to this many cents of pitch and this share of volume, so repeats never sound identical. */
+    variation: { cents: 50, gain: 0.1 },
+    /**
+     * Each sample's own level, by catalog id: loudness-matched across the
+     * files (their peaks kept under -1 dBFS), then balanced for the mix.
+     */
     volumes: {
-      backfire: 0.75,
-      burn: 0.22,
-      charge: 0.3,
-      "charge-ready": 0.3,
-      "confringo-blast": 0.85,
-      "confringo-cast": 0.55,
-      countdown: 0.5,
-      dodge: 0.32,
-      "duel-end": 0.6,
-      "duel-start": 0.6,
-      fizzle: 0.22,
-      "incendio-cast": 0.5,
-      "incendio-explosion": 0.95,
-      jump: 0.2,
-      knockout: 0.85,
+      backfire: 0.42,
+      "burn-loop": 1.4,
+      "clash-beam": 0.89,
+      "clash-explode": 0.57,
+      "clash-pump": 0.69,
+      "clash-start": 1.1,
+      "clash-win": 0.77,
+      "confringo-blast": 0.82,
+      "confringo-cast": 0.39,
+      "confringo-charge": 0.62,
+      "confringo-perfect": 0.36,
+      "confringo-ready": 1.1,
+      "countdown-beat": 3.6,
+      "courtyard-night": 1.3,
+      defeat: 0.6,
+      "depulso-blast": 1.1,
+      disarm: 0.59,
+      "dodge-roll": 0.38,
+      "duel-start": 0.81,
+      "duel-theme": 0.21,
+      "expelliarmus-cast": 0.46,
+      "incendio-cast": 0.56,
+      "incendio-explosion": 0.54,
+      jump: 0.75,
+      knockout: 6.6,
       land: 0.32,
-      "lock-off": 0.18,
-      "lock-on": 0.2,
-      "menu-back": 0.3,
-      "menu-confirm": 0.35,
-      "menu-move": 0.22,
-      "overcharge-warning": 0.38,
-      parry: 0.6,
-      "perfect-dodge": 0.4,
-      "perfect-release": 0.5,
-      "petrificus-cast": 0.45,
-      petrify: 0.6,
-      "petrify-break": 0.45,
-      "round-end": 0.5,
-      shield: 0.14,
-      "shield-block": 0.55,
-      "shield-raise": 0.32,
-      "spells-cancelled": 0.45,
-      "stamina-short": 0.28,
-      "stupefy-cast": 0.38,
-      "stupefy-hit": 0.5,
+      "lock-off": 14,
+      "lock-on": 0.27,
+      "menu-back": 0.35,
+      "menu-confirm": 0.62,
+      "menu-move": 1.4,
+      "menu-theme": 0.27,
+      "overcharge-warning": 2.7,
+      parry: 0.56,
+      "perfect-dodge": 0.55,
+      "petrificus-cast": 0.51,
+      petrify: 0.92,
+      "petrify-break": 0.65,
+      "potion-drink": 0.38,
+      "potion-heal": 1.2,
+      "potion-interrupted": 0.45,
+      "potion-strength": 0.41,
+      "potion-swiftness": 0.33,
+      "round-lost": 0.45,
+      "round-won": 0.34,
+      "shield-block": 2,
+      "shield-hum": 0.15,
+      "shield-raise": 0.66,
+      "spell-fizzle": 0.89,
+      "spells-cancel": 0.53,
+      "stamina-short": 2.9,
+      "stupefy-cast": 0.31,
+      "stupefy-hit": 0.89,
+      "stupefy-hit-strong": 0.47,
+      victory: 0.57,
+      "wand-land": 2.5,
+      "wand-pickup": 0.71,
+      "wand-return": 0.68,
     },
   },
 

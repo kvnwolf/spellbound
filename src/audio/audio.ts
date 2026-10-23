@@ -1,13 +1,16 @@
 /**
- * The Duel's sound: a WebAudio engine that plays what `cues.ts` decides for
+ * The game's sound: a WebAudio engine that plays what `cues.ts` decides for
  * each frame (one-shot sounds for events, held sounds for Charge, Shield and
  * Burn), placed by `spatial.ts` relative to the camera, plus the menus'
- * sounds. Everything is synthesised (`synth.ts`).
+ * sounds, the music and the ambience (`music.ts`). Every sound is one of the
+ * approved samples (`public/audio`), chosen by `samples.ts`, preloaded and
+ * decoded once the AudioContext starts.
  *
  * The mix: the Duel's sounds go through the `sfx` bus, with a synthesised
  * stone-courtyard reverb; countdown, stingers, Lock-on ticks and menus
- * through the dry `ui` bus. Both meet in the master volume, then a
- * compressor and a soft clip under a fixed ceiling, so peaks stay under
+ * through the dry `ui` bus; themes and fanfares through `music`, the
+ * courtyard at night through `ambience`. All meet in the master volume, then
+ * a compressor and a soft clip under a fixed ceiling, so peaks stay under
  * 0 dBFS however much plays at once.
  *
  * Browsers only let a page start sound after a mouse click or keypress
@@ -22,12 +25,21 @@ import type { ActivationHint } from "../activation-hint";
 import type { DuelEvent, DuelistId, DuelSnapshot } from "../duel/duel";
 import type { Screen, ScreenEvent } from "../screens/screens";
 import type { Tuning } from "../tuning";
+import { loadSamples } from "./bank";
+import type { Sample, SampleBank } from "./bank";
 import { cuesFor, loopsFor, menuSoundFor } from "./cues";
-import type { Cue, Loop, Sound } from "./cues";
+import type { Loop, LoopSound } from "./cues";
+import { createMusic } from "./music";
+import {
+  loopSampleOf,
+  menuSampleFor,
+  musicFor,
+  sampleFor,
+  samplesUsed,
+} from "./samples";
+import type { SamplePlay } from "./samples";
 import { placement } from "./spatial";
 import type { Listener } from "./spatial";
-import { createSynth, hold, play, playMenu } from "./synth";
-import type { HeldSound, Synth } from "./synth";
 
 type AudioSettings = Tuning["audio"];
 
@@ -38,6 +50,8 @@ export interface AudioFrame {
   readonly snapshot: DuelSnapshot;
   /** The Duel is being played: not behind a menu, the pause or the title. Held sounds fall silent otherwise. */
   readonly live: boolean;
+  /** The screen the frame ends on: it picks the music. */
+  readonly screen: Screen;
 }
 
 export interface DuelAudio {
@@ -45,17 +59,6 @@ export interface DuelAudio {
   /** A menu event took the screens from `before` to `after`. */
   readonly menu: (before: Screen, after: Screen, event: ScreenEvent) => void;
 }
-
-/** Sounds that are the HUD's rather than the courtyard's: dry, on the `ui` bus. */
-const uiSounds: ReadonlySet<Sound["kind"]> = new Set([
-  "countdown",
-  "duel-end",
-  "duel-start",
-  "lock-off",
-  "lock-on",
-  "round-end",
-  "stamina-short",
-]);
 
 /** Transparent below `knee`, rounding smoothly toward 1 above it; inputs past ±1 hold at the curve's ends. */
 const softClipCurve = (knee: number) => {
@@ -100,7 +103,7 @@ const gainNode = (ctx: AudioContext, value: number) => {
   return node;
 };
 
-/** The buses, the reverb and the master chain down to the speakers. */
+/** The buses, the reverb, the music's duck and dim, and the master chain down to the speakers. */
 const createMixer = (ctx: AudioContext, settings: AudioSettings) => {
   const master = gainNode(ctx, settings.muted ? 0 : settings.master);
   const compressor = ctx.createDynamicsCompressor();
@@ -133,40 +136,202 @@ const createMixer = (ctx: AudioContext, settings: AudioSettings) => {
     .connect(master);
   ui.connect(master);
 
-  return { sfx, ui };
+  // Music and ambience share the dim stage behind the pause menu; only the music ducks.
+  const dimGain = gainNode(ctx, 1);
+  const dimLowpass = ctx.createBiquadFilter();
+  dimLowpass.type = "lowpass";
+  dimLowpass.frequency.value = ctx.sampleRate / 2;
+  dimLowpass.connect(dimGain).connect(master);
+  const duck = gainNode(ctx, 1);
+  const music = gainNode(ctx, settings.buses.music);
+  music.connect(duck).connect(dimLowpass);
+  const ambience = gainNode(ctx, settings.buses.ambience);
+  ambience.connect(dimLowpass);
+
+  return {
+    ambience,
+    dim: { gain: dimGain, lowpass: dimLowpass },
+    duck,
+    music,
+    output,
+    sfx,
+    ui,
+  };
+};
+
+type Mixer = ReturnType<typeof createMixer>;
+
+/** A random factor within ±`share`... */
+const jitter = (share: number) => 1 + (Math.random() * 2 - 1) * share;
+
+/** ...and a random pitch within ±`cents`, as a playback rate. */
+const detune = (cents: number) =>
+  2 ** (((Math.random() * 2 - 1) * cents) / 1200);
+
+/** A held sound looping one sample, following its state: `set` every frame, `stop` once to fade it out. */
+const heldVoice = (
+  ctx: AudioContext,
+  sample: Sample,
+  out: AudioNode,
+  settings: AudioSettings
+) => {
+  const source = ctx.createBufferSource();
+  source.buffer = sample.buffer;
+  source.loop = true;
+  source.loopStart = sample.start;
+  source.loopEnd = sample.end;
+  const lowpass = ctx.createBiquadFilter();
+  lowpass.type = "lowpass";
+  lowpass.frequency.value = ctx.sampleRate / 2;
+  // `amp` follows the state (tremolo included); `fader` only fades it out.
+  const amp = gainNode(ctx, 0);
+  const fader = gainNode(ctx, 1);
+  source.connect(lowpass).connect(amp).connect(fader).connect(out);
+  source.start(ctx.currentTime, sample.start);
+
+  /** The Charge's tremolo, started on its first Charge frame. */
+  let tremolo: { lfo: OscillatorNode; depth: GainNode } | undefined;
+
+  const followCharge = (
+    sound: Extract<LoopSound, { kind: "charge" }>,
+    body: number,
+    glide: number
+  ) => {
+    const {
+      emptyGain,
+      lowpass: cut,
+      rate,
+      tremolo: shake,
+    } = settings.chargeLoop;
+
+    const { level, overcharge } = sound;
+    const t = ctx.currentTime;
+
+    if (!tremolo) {
+      const lfo = ctx.createOscillator();
+      const depth = gainNode(ctx, 0);
+      lfo.connect(depth).connect(amp.gain);
+      lfo.start();
+      tremolo = { depth, lfo };
+    }
+
+    source.playbackRate.setTargetAtTime(
+      rate.empty + (rate.full - rate.empty) * level,
+      t,
+      glide
+    );
+    lowpass.frequency.setTargetAtTime(
+      cut.empty +
+        (cut.full - cut.empty) * level ** 2 +
+        (cut.overcharge - cut.full) * overcharge,
+      t,
+      glide
+    );
+    tremolo.lfo.frequency.setTargetAtTime(
+      shake.calmRate + (shake.franticRate - shake.calmRate) * overcharge,
+      t,
+      glide
+    );
+
+    const level0 = body * (emptyGain + (1 - emptyGain) * level);
+    amp.gain.setTargetAtTime(level0, t, glide);
+    tremolo.depth.gain.setTargetAtTime(
+      level0 *
+        (shake.calmDepth + (shake.franticDepth - shake.calmDepth) * overcharge),
+      t,
+      glide
+    );
+  };
+
+  return {
+    /** `gain` is the sound's overall volume this frame (its level times its placement). */
+    set: (sound: LoopSound, gain: number, glide: number) => {
+      if (sound.kind === "charge") {
+        followCharge(sound, gain, glide);
+      } else {
+        amp.gain.setTargetAtTime(gain, ctx.currentTime, glide);
+      }
+    },
+    stop: (release: number) => {
+      const t = ctx.currentTime;
+      fader.gain.setTargetAtTime(0, t, release / 4);
+      source.stop(t + release);
+      tremolo?.lfo.stop(t + release);
+      // Disconnect once silent, so nothing lingers in the graph.
+      source.addEventListener("ended", () => {
+        fader.disconnect();
+      });
+    },
+  };
 };
 
 interface HeldVoice {
-  readonly sound: HeldSound;
+  readonly sound: ReturnType<typeof heldVoice>;
   readonly panner: StereoPannerNode;
 }
 
 /** The running engine, once a gesture has let the AudioContext start. */
 const createEngine = (ctx: AudioContext, settings: AudioSettings) => {
-  const synth: Synth = createSynth(ctx);
-  const mixer = createMixer(ctx, settings);
+  const mixer: Mixer = createMixer(ctx, settings);
+  const bank: SampleBank = loadSamples(ctx, samplesUsed, settings.silenceFloor);
+  const music = createMusic(ctx, bank, mixer, settings);
   const held = new Map<string, HeldVoice>();
+  const volumes = new Map(Object.entries(settings.volumes));
+  const trims = new Map(Object.entries(settings.trims));
   let voices = 0;
 
-  /** A one-shot voice's own volume and pan, into `bus`; freed once its sound has died away. */
-  const voiceInto = (bus: AudioNode, gain: number, pan: number) => {
-    const level = gainNode(ctx, gain);
+  /** Plays a sample once, at `gain` and `pan` on top of its own volume. */
+  const play = (spec: SamplePlay, gain: number, pan: number) => {
+    const sample = bank.get(spec.sample);
+
+    if (!sample || voices >= settings.maxVoices) {
+      return;
+    }
+
+    // Sound effects vary a touch each time; music plays as written.
+    const varies = spec.bus !== "music";
+    const { cents, gain: spread } = settings.variation;
+    const rate = spec.rate * (varies ? detune(cents) : 1);
+
+    const volume =
+      (volumes.get(spec.sample) ?? 1) *
+      spec.gain *
+      gain *
+      (varies ? jitter(spread) : 1);
+
+    const source = ctx.createBufferSource();
+    source.buffer = sample.buffer;
+    source.playbackRate.value = rate;
+    const level = gainNode(ctx, volume);
     const panner = ctx.createStereoPanner();
     panner.pan.value = pan;
-    level.connect(panner).connect(bus);
+    source.connect(level).connect(panner).connect(mixer[spec.bus]);
+
+    const t = ctx.currentTime;
+    const trim = trims.get(spec.sample);
+    const length = Math.min(trim ?? Infinity, sample.end - sample.start);
+    const end = t + length / rate;
+
+    if (trim !== undefined) {
+      level.gain.setValueAtTime(volume, end - settings.trimFade);
+      level.gain.linearRampToValueAtTime(0, end);
+    }
+
+    source.start(t, sample.start);
+    source.stop(end);
     voices += 1;
+    source.addEventListener("ended", () => {
+      panner.disconnect();
+      voices -= 1;
+    });
 
-    return {
-      input: level,
-      releaseAfter: (end: number) => {
-        const seconds = Math.max(end - ctx.currentTime, 0) + 0.1;
+    if (spec.ducks) {
+      music.duck();
+    }
 
-        setTimeout(() => {
-          panner.disconnect();
-          voices -= 1;
-        }, seconds * 1000);
-      },
-    };
+    if (spec.bus === "music") {
+      music.fanfare(end);
+    }
   };
 
   const stopHeld = (key: string, voice: HeldVoice) => {
@@ -181,6 +346,7 @@ const createEngine = (ctx: AudioContext, settings: AudioSettings) => {
   };
 
   return {
+    bank,
     ctx,
     /** Starts, follows and stops the held sounds so exactly `loops` are playing. */
     hold: (loops: readonly Loop[], listener: Listener) => {
@@ -194,11 +360,21 @@ const createEngine = (ctx: AudioContext, settings: AudioSettings) => {
 
       for (const loop of loops) {
         let voice = held.get(loop.key);
+        const id = loopSampleOf[loop.sound.kind];
 
         if (!voice) {
+          const sample = bank.get(id);
+
+          if (!sample) {
+            continue;
+          }
+
           const panner = ctx.createStereoPanner();
           panner.connect(mixer.sfx);
-          voice = { panner, sound: hold(synth, panner, loop.sound.kind) };
+          voice = {
+            panner,
+            sound: heldVoice(ctx, sample, panner, settings),
+          };
           held.set(loop.key, voice);
         }
 
@@ -216,41 +392,14 @@ const createEngine = (ctx: AudioContext, settings: AudioSettings) => {
         );
         voice.sound.set(
           loop.sound,
-          gain * settings.volumes[loop.sound.kind],
+          gain * (volumes.get(id) ?? 1),
           settings.loopGlide
         );
       }
     },
-    play: (cue: Cue, listener: Listener) => {
-      if (voices >= settings.maxVoices) {
-        return;
-      }
-
-      const { gain, pan } = placement(
-        cue.at,
-        cue.opponent,
-        listener,
-        settings.spatial
-      );
-
-      const bus = uiSounds.has(cue.sound.kind) ? mixer.ui : mixer.sfx;
-
-      const voice = voiceInto(
-        bus,
-        gain * settings.volumes[cue.sound.kind],
-        pan
-      );
-
-      voice.releaseAfter(play(synth, voice.input, cue.sound));
-    },
-    playMenu: (sound: Parameters<typeof playMenu>[2]) => {
-      if (voices >= settings.maxVoices) {
-        return;
-      }
-
-      const voice = voiceInto(mixer.ui, settings.volumes[sound.kind], 0);
-      voice.releaseAfter(playMenu(synth, voice.input, sound));
-    },
+    mixer,
+    music,
+    play,
   };
 };
 
@@ -308,7 +457,7 @@ export const createDuelAudio = ({
   window.addEventListener("keydown", unlock);
 
   return {
-    frame: ({ events, live, snapshot }) => {
+    frame: ({ events, live, screen, snapshot }) => {
       const prior = live ? before : null;
       before = live ? snapshot : null;
 
@@ -316,6 +465,7 @@ export const createDuelAudio = ({
         return;
       }
 
+      engine.music.update(musicFor(screen));
       const listener = listenerOf(camera);
 
       if (!live) {
@@ -331,7 +481,14 @@ export const createDuelAudio = ({
         localId,
         settings,
       })) {
-        engine.play(cue, listener);
+        const { gain, pan } = placement(
+          cue.at,
+          cue.opponent,
+          listener,
+          settings.audio.spatial
+        );
+
+        engine.play(sampleFor(cue.sound, settings.audio), gain, pan);
       }
 
       engine.hold(loopsFor(snapshot, localId, settings), listener);
@@ -340,7 +497,7 @@ export const createDuelAudio = ({
       const sound = menuSoundFor(from, to, event);
 
       if (sound && engine && running()) {
-        engine.playMenu(sound);
+        engine.play(menuSampleFor(sound), 1, 0);
       }
     },
   };
