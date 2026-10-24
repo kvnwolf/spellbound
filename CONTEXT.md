@@ -75,7 +75,7 @@ How much damage a Duelist can still take in the current Round before a Knockout.
 _Avoid_: HP, life
 
 **Stamina**:
-A regenerating pool spent by Shielding, Dodging, jumping and sprinting.
+A regenerating pool spent by Shielding, Dodging, jumping and sprinting, and by casting Light and Heavy Spells; whatever it cannot pay for is refused.
 _Avoid_: Energy, mana
 
 **Focus**:
@@ -87,11 +87,11 @@ An offensive magic a Duelist casts from their Wand: a Light Spell, a Heavy Spell
 _Avoid_: Ability, attack, skill
 
 **Light Spell**:
-The quick, repeatable Spell whose hits build Focus; every third consecutive cast is stronger.
+The quick, repeatable Spell whose hits build Focus; each cast costs a little Stamina, and every third consecutive cast is stronger but followed by a moment in which no Light Spell can be cast.
 _Avoid_: Basic attack, light attack
 
 **Heavy Spell**:
-The Spell a Duelist Charges before releasing it.
+The Spell a Duelist Charges before releasing it; releasing it costs Stamina, and a Charge does not start without enough.
 _Avoid_: Heavy attack, strong spell
 
 **Special Spell**:

@@ -482,11 +482,11 @@ export type DuelEvent =
       readonly duelistId: DuelistId;
       readonly kind: PotionKind;
     }
-  /** A defence was asked for without enough Stamina, and refused. */
+  /** A defence or a Light or Heavy Spell was asked for without enough Stamina, and refused. */
   | {
       readonly type: "stamina-short";
       readonly duelistId: DuelistId;
-      readonly action: DefenceAction;
+      readonly action: StaminaAction;
     }
   /** Two fully Charged Confringos met head-on and locked into a Clash. */
   | { readonly type: "clash-start"; readonly clash: ClashState }
@@ -512,6 +512,9 @@ export type DuelEvent =
 
 /** The defences paid for with Stamina. */
 export type DefenceAction = "dodge" | "jump" | "shield" | "sprint";
+
+/** Everything paid for with Stamina: the defences, and the Light and Heavy Spells' casts. */
+export type StaminaAction = DefenceAction | "confringo" | "stupefy";
 
 /** The outcome of one tick: the new snapshot and the events emitted during it. */
 export interface DuelTick {
@@ -1775,8 +1778,20 @@ export const createDuel = (config: DuelConfig): Duel => {
     }
   };
 
-  const refuse = (self: DuelistState, action: DefenceAction, draft: Draft) =>
+  const refuse = (self: DuelistState, action: StaminaAction, draft: Draft) =>
     draft.events.push({ action, duelistId: self.id, type: "stamina-short" });
+
+  /**
+   * A Light or Heavy Spell's cast paid for after the defence settled the
+   * tick: it spends like any defence, and Stamina waits out the delay again.
+   */
+  const payForCast = (book: Bookkeeping, purse: Purse, cost: number) => {
+    spend(purse, cost);
+
+    if (purse.spent) {
+      book.regenTicks = ticksOf(defence.stamina.regenDelay);
+    }
+  };
 
   /** The jump's flight: gravity pulls an airborne Duelist down until they land. Returns the new elevation. */
   const fall = (self: DuelistState, book: Bookkeeping, draft: Draft) => {
@@ -1972,6 +1987,8 @@ export const createDuel = (config: DuelConfig): Duel => {
     readonly canCast: boolean;
     /** Off the floor (or leaving it this tick): only the Light Spell can be cast. */
     readonly airborne: boolean;
+    /** The Stamina left once the defence is paid for, which a cast spends from. */
+    readonly purse: Purse;
   }
 
   /**
@@ -2066,6 +2083,7 @@ export const createDuel = (config: DuelConfig): Duel => {
       canCast: handy && !shielding,
       dash: dodging ? book.dodgeStep : undefined,
       pace: paceOf(shielding, sprinting),
+      purse,
       state: {
         dodgeSeconds: book.dodgeTicks * tickSeconds,
         elevation,
@@ -2971,21 +2989,34 @@ export const createDuel = (config: DuelConfig): Duel => {
 
   /**
    * The Heavy Spell's Charge for one Duelist free to act this tick. A press
-   * starts a Charge and holding builds it; letting go releases Confringo with
-   * the Charge it reached. Returns the release, if any.
+   * starts a Charge, if there is Stamina for the cast, and holding builds it;
+   * letting go releases Confringo with the Charge it reached, paying for it.
+   * Returns the release, if any.
    */
   const charge = (
+    self: DuelistState,
     book: Bookkeeping,
-    intent: Intent,
-    pressed: boolean
+    {
+      intent,
+      pressed,
+      purse,
+    }: {
+      readonly intent: Intent;
+      readonly pressed: boolean;
+      readonly purse: Purse;
+    },
+    draft: Draft
   ): Release | undefined => {
     if (book.chargeTicks > 0 && intent.heavySpell) {
       book.chargeTicks += 1;
     } else if (book.chargeTicks > 0) {
       const chargeSeconds = book.chargeTicks / tuning.tickRate;
       book.chargeTicks = 0;
+      payForCast(book, purse, confringo.staminaCost);
 
       return { chargeSeconds, kind: "confringo" };
+    } else if (pressed && purse.stamina < confringo.staminaCost) {
+      refuse(self, "confringo", draft);
     } else if (pressed) {
       book.chargeTicks = 1;
     }
@@ -3060,19 +3091,31 @@ export const createDuel = (config: DuelConfig): Duel => {
    * and none starts. Charging (or releasing) holds the Light Spell back.
    */
   const spellsOf = (
+    self: DuelistState,
     book: Bookkeeping,
-    intent: Intent,
-    guard: Guard,
-    pressed: boolean,
-    heavyPressed: boolean
+    {
+      guard,
+      heavyPressed,
+      intent,
+      pressed,
+    }: {
+      readonly guard: Guard;
+      readonly heavyPressed: boolean;
+      readonly intent: Intent;
+      readonly pressed: boolean;
+    },
+    draft: Draft
   ): Release | undefined => {
     const canCharge = guard.canCast && !guard.airborne;
+    const { purse } = guard;
 
     if (!canCharge) {
       book.chargeTicks = 0;
     }
 
-    const heavy = canCharge ? charge(book, intent, heavyPressed) : undefined;
+    const heavy = canCharge
+      ? charge(self, book, { intent, pressed: heavyPressed, purse }, draft)
+      : undefined;
 
     if (heavy) {
       return heavy;
@@ -3084,7 +3127,20 @@ export const createDuel = (config: DuelConfig): Duel => {
       return undefined;
     }
 
-    return wantsToCast(book, pressed) ? { kind: "stupefy" } : undefined;
+    if (!wantsToCast(book, pressed)) {
+      return undefined;
+    }
+
+    // Short of Stamina, the press is refused, like a Dodge.
+    if (purse.stamina < stupefy.staminaCost) {
+      refuse(self, "stupefy", draft);
+
+      return undefined;
+    }
+
+    payForCast(book, purse, stupefy.staminaCost);
+
+    return { kind: "stupefy" };
   };
 
   /** The Special Spells' Cooldowns as the snapshot shows them, in seconds. */
@@ -3527,7 +3583,7 @@ export const createDuel = (config: DuelConfig): Duel => {
 
       const release: Release | undefined = special
         ? { kind: special.kind }
-        : spellsOf(book, intent, guard, pressed, heavyPressed);
+        : spellsOf(self, book, { guard, heavyPressed, intent, pressed }, draft);
 
       const chargeSeconds = book.chargeTicks / tuning.tickRate;
 
@@ -3578,6 +3634,7 @@ export const createDuel = (config: DuelConfig): Duel => {
         knockbackSeconds: 0,
         position: collide(wanted, bodyRadius, obstacles, arena),
         staggerSeconds: book.staggerTicks * tickSeconds,
+        stamina: guard.purse.stamina,
       });
     });
 
@@ -3739,7 +3796,10 @@ export const createDuel = (config: DuelConfig): Duel => {
           book.chain = 0;
         }
 
-        book.recoveryTicks = ticksOf(stupefy.castInterval);
+        // The strong cast ends the chain with a longer recovery: a punish window.
+        book.recoveryTicks = ticksOf(
+          strong ? stupefy.chainRecovery : stupefy.castInterval
+        );
       } else if (release.kind === "confringo") {
         empowered = chargeStage(release.chargeSeconds, confringo) === "perfect";
         power = empowered ? 1 : chargeLevel(release.chargeSeconds, confringo);

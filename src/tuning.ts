@@ -19,6 +19,12 @@ export const tuning = {
     /** Extra seconds between the Stupefies of a burst, on top of `stupefy.castInterval`: a human rhythm, not a metronome. */
     burstGap: { max: 0.12, min: 0.03 },
     /**
+     * Never starts a Light or Heavy Spell's cast that would leave less than
+     * this Stamina: enough to Shield or Dodge the answer. A punish needs only
+     * the cast's cost.
+     */
+    castReserve: 30,
+    /**
      * Taking Cover: the AI walks to a spot `standOff` metres behind a column
      * (seen from the opponent) no more than `reach` metres away and hides
      * there for `seconds`.
@@ -75,6 +81,7 @@ export const tuning = {
         punishChance: 0.65,
         reactionSeconds: { max: 0.38, min: 0.22 },
         shieldLead: { max: 0.25, min: 0.05 },
+        spamRead: 0.45,
         specials: { bait: 0.2, chance: 0.4, sense: 0.75 },
         strafeChance: 0.7,
         strafeSpeed: 0.75,
@@ -100,6 +107,7 @@ export const tuning = {
         punishChance: 0.95,
         reactionSeconds: { max: 0.25, min: 0.15 },
         shieldLead: { max: 0.13, min: 0.03 },
+        spamRead: 0.95,
         specials: { bait: 0.8, chance: 0.7, sense: 0.95 },
         strafeChance: 0.9,
         strafeSpeed: 1,
@@ -145,6 +153,12 @@ export const tuning = {
         /** How long before a Spell lands the Shield goes up: within `defence.shield.parryWindow` it Parries. */
         shieldLead: { max: 0.45, min: 0.12 },
         /**
+         * Chance, once it has read the opponent repeating one Spell at a
+         * predictable rhythm (see `ai.spamRead`), to meet each such Spell with
+         * a Shield timed for the Parry, whatever its `defendChance`.
+         */
+        spamRead: 0,
+        /**
          * Special Spells: the chance, each time it looks for one, to cast at
          * all; the chance it then picks the one that fits the moment (else
          * any it can pay for); and the chance to bait a Shield with a
@@ -158,6 +172,21 @@ export const tuning = {
     },
     /** The Shield stays up this long past the moment a Spell was due to land, then drops so the next one can be Parried afresh. */
     shieldHoldSeconds: 0.1,
+    /**
+     * Reading spam: the opponent's last `casts` Spells all of one kind, the
+     * gaps between them all within `jitter` seconds of their mean and that
+     * mean no more than `maxGap`, is a predictable rhythm. A Shield against
+     * a Spell so read goes up `parryLead` seconds before it lands: inside
+     * `defence.shield.parryWindow`, a Parry. For `maxGap` seconds after
+     * each Spell so read, the AI starts no attack but a punish (the Parries
+     * are its answer, and its Stamina goes on the Shield) and drinks nothing.
+     */
+    spamRead: {
+      casts: 4,
+      jitter: 0.12,
+      maxGap: 1.5,
+      parryLead: { max: 0.12, min: 0.04 },
+    },
     /**
      * Special Spells. The AI looks for one to cast every `lookSeconds` (and,
      * after a reaction, as soon as the opponent starts to Charge or drink
@@ -795,6 +824,11 @@ export const tuning = {
     /** After a release, no Light Spell can follow for this long. */
     recoverySeconds: 0.35,
     speed: 17,
+    /**
+     * Stamina the cast costs, paid on release; a Charge does not start with
+     * less than this left (refused, like a Dodge). Charging itself is free.
+     */
+    staminaCost: 15,
   },
 
   /**
@@ -872,8 +906,10 @@ export const tuning = {
 
   /**
    * Defence: the Dodge (○), the Shield and its Parry (L1), the jump (✕) and
-   * the sprint (R1, held), all paid for from the shared Stamina pool.
-   * Stamina is in points; costs are points, drains points per second.
+   * the sprint (R1, held), all paid for from the shared Stamina pool, which
+   * the Light and Heavy Spells' casts spend too (`stupefy.staminaCost`,
+   * `confringo.staminaCost`). Stamina is in points; costs are points, drains
+   * points per second.
    */
   defence: {
     dodge: {
@@ -3204,6 +3240,11 @@ export const tuning = {
     castInterval: 0.25,
     /** Every `chainLength`-th consecutive cast is the strong one that Staggers. */
     chainLength: 3,
+    /**
+     * After the strong cast that ends a chain, no Light Spell can be cast for
+     * this long (instead of `castInterval`): a moment open to a punish.
+     */
+    chainRecovery: 0.4,
     /** Casts more than this far apart start a new chain. */
     chainWindow: 0.8,
     damage: 6,
@@ -3212,6 +3253,12 @@ export const tuning = {
     speed: 26,
     /** How long the strong cast stops the Duelist it hits from acting. */
     staggerSeconds: 0.7,
+    /**
+     * Stamina each cast costs, from the pool the defences share; refused with
+     * less than this left, like a Dodge. Mashing empties the pool in a few
+     * seconds (casts keep it from regenerating), leaving no Dodge or Shield.
+     */
+    staminaCost: 8,
     strongDamage: 14,
   },
 

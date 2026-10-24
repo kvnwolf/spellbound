@@ -530,6 +530,129 @@ describe("AI attack", () => {
   });
 });
 
+/**
+ * A scripted player mashing □: Locked On (R3 whenever unlocked), standing
+ * still, pressing Stupefy every other tick for the whole Duel.
+ */
+const spammer = (): Controller => {
+  let tick = 0;
+
+  return {
+    intent: ({ self, snapshot }): Intent => {
+      tick += 1;
+      const unlocked = find(snapshot, self).targetId === null;
+
+      return {
+        ...idleIntent,
+        lightSpell: tick % 2 === 0,
+        lockOn: unlocked && tick % 10 === 0,
+      };
+    },
+  };
+};
+
+/**
+ * A scripted player Locked On and tapping Stupefy at no rhythm at all: the
+ * gaps between presses cycle through `gaps` (seconds), all over the place.
+ */
+const irregularCaster = (gaps: readonly number[]): Controller => {
+  let tick = 0;
+  let next = 0;
+  let index = 0;
+
+  return {
+    intent: ({ self, snapshot }): Intent => {
+      tick += 1;
+      const unlocked = find(snapshot, self).targetId === null;
+      const press = tick >= next;
+
+      if (press) {
+        next = tick + ticksOf(gaps[index % gaps.length] ?? 1);
+        index += 1;
+      }
+
+      return {
+        ...idleIntent,
+        lightSpell: press,
+        lockOn: unlocked && tick % 10 === 0,
+      };
+    },
+  };
+};
+
+/** Maestro with no read of a repeated Spell's rhythm: it defends each Spell on its own. */
+const maestroBlindToRhythm: Tuning = {
+  ...tuning,
+  ai: {
+    ...tuning.ai,
+    profiles: {
+      ...tuning.ai.profiles,
+      maestro: { ...tuning.ai.profiles.maestro, spamRead: 0 },
+    },
+  },
+};
+
+/**
+ * Over seeded Duels on Maestro, the share of the player's Spells reaching it
+ * (Parried, blocked or landing) that it Parried.
+ */
+const parryShare = (settings: Tuning, player: () => Controller) => {
+  let reached = 0;
+  let parries = 0;
+
+  for (const seed of seeds(8)) {
+    const { events } = play({
+      difficulty: "maestro",
+      player: player(),
+      seconds: 20,
+      seed,
+      settings,
+      sturdy: true,
+    });
+
+    parries += ofType(events, "parry").filter(byAi).length;
+    reached +=
+      ofType(events, "spell-blocked").filter(byAi).length +
+      ofType(events, "spell-hit").filter(
+        (event) => event.targetId === "ai" && event.spell.casterId === "player"
+      ).length;
+  }
+
+  return parries / (parries + reached);
+};
+
+/** Share of seeded Duels the □ masher wins against the AI. */
+const spammerWins = (difficulty: Difficulty) =>
+  seeds(10).filter(
+    (seed) =>
+      play({ difficulty, player: spammer(), seconds: 240, seed }).snapshots.at(
+        -1
+      )?.winner === "near"
+  ).length / 10;
+
+describe("AI against a repeated Spell", () => {
+  it("reads Stupefy mashed at a predictable rhythm on Maestro and Parries it far more often", () => {
+    const reading = parryShare(tuning, spammer);
+    const blind = parryShare(maestroBlindToRhythm, spammer);
+
+    expect(reading).toBeGreaterThan(0.8);
+    expect(reading).toBeGreaterThan(blind + 0.1);
+  });
+
+  it("reads nothing into Spells cast at no rhythm", () => {
+    const gaps = [0.4, 1.6, 0.7, 2.2, 0.3, 1.1];
+
+    expect(parryShare(tuning, () => irregularCaster(gaps))).toBe(
+      parryShare(maestroBlindToRhythm, () => irregularCaster(gaps))
+    );
+  });
+
+  it("beats a player mashing Stupefy in most Duels on Maestro and Duelista", () => {
+    expect(spammerWins("maestro")).toBeLessThanOrEqual(0.2);
+    expect(spammerWins("duelista")).toBeLessThanOrEqual(0.5);
+  });
+});
+
 /** A scripted player who Locks On and casts Expelliarmus (R2 + ○) two seconds into the fight. */
 const disarmingPlayer = (): Controller => {
   let tick = 0;

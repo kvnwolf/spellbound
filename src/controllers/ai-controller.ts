@@ -20,6 +20,7 @@ import type {
   DuelSnapshot,
   LooseWand,
   PotionSlot,
+  SpellKind,
   SpellState,
 } from "../duel/duel";
 import {
@@ -152,6 +153,14 @@ interface Memory {
   potionLookAt: number;
   /** Already thought about hiding to drink during this stretch of low Health. */
   hidToDrink: boolean;
+  /** The opponent's latest Spells, oldest first: which, and when first seen. */
+  rhythm: {
+    readonly id: number;
+    readonly kind: SpellKind;
+    readonly at: number;
+  }[];
+  /** Answering spam until then: Parrying it, holding its own fire but for a punish. */
+  spamUntil: number;
 }
 
 const freshMemory = (): Memory => ({
@@ -172,8 +181,10 @@ const freshMemory = (): Memory => ({
   previous: undefined,
   pumpAt: undefined,
   punishAt: undefined,
+  rhythm: [],
   round: 0,
   seen: new Set(),
+  spamUntil: Number.NEGATIVE_INFINITY,
   specialLookAt: 0,
   strafe: 0,
   strafeUntil: 0,
@@ -372,29 +383,109 @@ export const createAiController = ({
     };
   };
 
-  /** Notices Spells newly flying at `self`, and rolls whether (and how) to defend each. */
+  /**
+   * Whether the opponent's latest Spells repeat one kind at a predictable
+   * rhythm: spam, which the AI can see coming and time a Parry against.
+   */
+  const readsAsSpam = () => {
+    const { casts, jitter, maxGap } = ai.spamRead;
+    const latest = memory.rhythm.slice(-casts);
+    const [first] = latest;
+
+    if (!first || latest.length < casts) {
+      return false;
+    }
+
+    const gaps = latest
+      .slice(1)
+      .map((each, index) => each.at - (latest[index]?.at ?? each.at));
+
+    const mean = gaps.reduce((sum, gap) => sum + gap, 0) / gaps.length;
+
+    return (
+      latest.every((each) => each.kind === first.kind) &&
+      mean <= maxGap &&
+      gaps.every((gap) => Math.abs(gap - mean) <= jitter)
+    );
+  };
+
+  /**
+   * Against a Spell read as spam: the Shield, raised just before it lands
+   * for the Parry. Disarmed or short of Stamina for the Shield, whatever
+   * defence is left.
+   */
+  const parryFor = (
+    self: DuelistState,
+    threat: Threat,
+    now: number
+  ): Defence | undefined => {
+    if (self.looseWand !== null || self.stamina <= ai.staminaReserve) {
+      return planDefence(self, threat, now);
+    }
+
+    const landsAt = now + threat.seconds;
+
+    return {
+      action: "shield",
+      lowerAt: landsAt + ai.shieldHoldSeconds,
+      raiseAt: Math.max(
+        now + reaction(),
+        landsAt - between(random, ai.spamRead.parryLead)
+      ),
+    };
+  };
+
+  /**
+   * Notices Spells newly flying at `self`, and rolls whether (and how) to
+   * defend each: one read as spam is met with a Parry on the Difficulty's
+   * `spamRead`, anything else defended on its `defendChance`. `sidelined`
+   * (Staggered, Petrified, knocked back), it only notes the opponent's
+   * rhythm: the Spells still flying are noticed once it is free again.
+   */
   const watchSpells = (
     self: DuelistState,
     snapshot: DuelSnapshot,
-    now: number
+    now: number,
+    sidelined: boolean
   ) => {
     const flying = new Set<number>();
 
     for (const spell of snapshot.spells) {
       flying.add(spell.id);
 
-      if (spell.team === self.team || memory.seen.has(spell.id)) {
+      if (spell.team === self.team) {
+        continue;
+      }
+
+      // Spell ids only grow: each Spell counts once toward the rhythm.
+      if (spell.id > (memory.rhythm.at(-1)?.id ?? -1)) {
+        memory.rhythm = [
+          ...memory.rhythm.slice(1 - ai.spamRead.casts),
+          { at: now, id: spell.id, kind: spell.kind },
+        ];
+      }
+
+      if (sidelined || memory.seen.has(spell.id)) {
         continue;
       }
 
       memory.seen.add(spell.id);
+
       const threat = threatOf(self, spell);
 
-      if (!threat || random() >= profile.defendChance) {
+      if (!threat) {
         continue;
       }
 
-      const plan = planDefence(self, threat, now);
+      let plan: Defence | undefined;
+
+      if (readsAsSpam() && random() < profile.spamRead) {
+        memory.spamUntil = now + ai.spamRead.maxGap;
+        plan = parryFor(self, threat, now);
+      } else if (random() < profile.defendChance) {
+        plan = planDefence(self, threat, now);
+      }
+
       // One Dodge or jump at a time: it already carries the Duelist clear.
       const moving = memory.defences.some((each) => each.action !== "shield");
 
@@ -485,14 +576,16 @@ export const createAiController = ({
 
     const hold = chargeHold();
 
-    memory.attack =
-      opening >= hold
-        ? { kind: "heavy", releaseAt: now + hold, startedAt: now }
-        : {
-            kind: "light",
-            left: tuning.stupefy.chainLength,
-            nextAt: now,
-          };
+    const heavy =
+      opening >= hold && self.stamina >= tuning.confringo.staminaCost;
+
+    memory.attack = heavy
+      ? { kind: "heavy", releaseAt: now + hold, startedAt: now }
+      : {
+          kind: "light",
+          left: tuning.stupefy.chainLength,
+          nextAt: now,
+        };
   };
 
   /** Starts the next attack once its pause is over, unless the Target is crossing the line of fire. */
@@ -519,21 +612,37 @@ export const createAiController = ({
       }
     }
 
-    if (random() < profile.heavyShare) {
+    // Every cast keeps `castReserve` Stamina back for the answer: a Charge
+    // it cannot afford becomes Stupefies, a burst shortens to what it can.
+    const spare = self.stamina - ai.castReserve;
+
+    if (
+      random() < profile.heavyShare &&
+      spare >= tuning.confringo.staminaCost
+    ) {
       memory.attack = {
         kind: "heavy",
         releaseAt: now + chargeHold(),
         startedAt: now,
       };
-    } else {
-      const { max, min } = profile.burst;
 
-      memory.attack = {
-        kind: "light",
-        left: min + Math.floor(random() * (max - min + 1)),
-        nextAt: now,
-      };
+      return;
     }
+
+    const { max, min } = profile.burst;
+
+    const left = Math.min(
+      min + Math.floor(random() * (max - min + 1)),
+      Math.floor(spare / tuning.stupefy.staminaCost)
+    );
+
+    if (left <= 0) {
+      memory.nextAttackAt = now + ai.waitSeconds;
+
+      return;
+    }
+
+    memory.attack = { kind: "light", left, nextAt: now };
   };
 
   /** The buttons of the attack in progress this tick, moving it along. */
@@ -565,6 +674,14 @@ export const createAiController = ({
     }
 
     if (now < attack.nextAt || memory.pressed.light) {
+      return none;
+    }
+
+    // Out of Stamina for the next Stupefy: the burst is over.
+    if (self.stamina < tuning.stupefy.staminaCost) {
+      memory.attack = undefined;
+      memory.nextAttackAt = now + between(random, profile.attackPause);
+
       return none;
     }
 
@@ -1072,7 +1189,13 @@ export const createAiController = ({
 
     if (memory.punishAt !== undefined && now >= memory.punishAt) {
       punish(self, opponent, now);
-    } else if (!memory.attack && !memory.bait && now >= memory.nextAttackAt) {
+    } else if (
+      !memory.attack &&
+      !memory.bait &&
+      now >= memory.nextAttackAt &&
+      // Answering spam: the Parries are the attack; Stamina goes on the Shield.
+      now >= memory.spamUntil
+    ) {
       startAttack(self, opponent, now);
     }
 
@@ -1139,16 +1262,19 @@ export const createAiController = ({
 
     memory.potionLookAt = now + ai.potions.lookSeconds;
 
+    // Answering spam, the next Spell is always on its way.
+    const spam = now < memory.spamUntil;
+
     const safe = safeToDrink({
       arena,
-      incoming,
+      incoming: incoming || spam,
       opponent,
       self,
       settings: tuning,
     });
 
     const choice = potionToDrink({
-      incoming,
+      incoming: incoming || spam,
       low,
       opponent,
       safe,
@@ -1298,19 +1424,22 @@ export const createAiController = ({
       return { ...idleIntent, ...aiming };
     }
 
-    watchSpells(self, snapshot, now);
+    const sidelined =
+      self.staggerSeconds > 0 ||
+      self.petrifiedSeconds > 0 ||
+      self.knockbackSeconds > 0;
+
+    watchSpells(self, snapshot, now, sidelined);
     watchOpponent(self, opponent, now);
     watchHealth(self, opponent, now);
     steerStrafe(self, now);
 
-    if (
-      self.staggerSeconds > 0 ||
-      self.petrifiedSeconds > 0 ||
-      self.knockbackSeconds > 0
-    ) {
-      // Sidelined: whatever was under way is lost; start afresh once free.
+    if (sidelined) {
+      // Sidelined: whatever was under way is lost; start afresh once free,
+      // noticing every Spell still flying at it then.
       memory.attack = undefined;
       memory.defences = [];
+      memory.seen.clear();
 
       return { ...idleIntent, ...aiming };
     }

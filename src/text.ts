@@ -395,7 +395,7 @@ export const text = {
       },
       heavy: {
         controls: "Mantén △ para cargar · Suelta △ para lanzar",
-        what: "Mantén △ para cargar Confringo y suéltalo para lanzarlo. Soltarlo justo cuando la carga se llena es una Liberación perfecta: sale más potente.",
+        what: "Mantén △ para cargar Confringo y suéltalo para lanzarlo; lanzarlo gasta bastante resistencia. Soltarlo justo cuando la carga se llena es una Liberación perfecta: sale más potente.",
         when: "Cárgalo cuando el rival no pueda castigarte. Si mantienes la carga llena demasiado, te estalla en la mano.",
       },
       incendio: {
@@ -405,8 +405,8 @@ export const text = {
       },
       light: {
         controls: "□: Stupefy",
-        what: "□ lanza Stupefy, un hechizo rápido que puedes repetir sin parar. El tercero seguido es más fuerte y aturde.",
-        when: "Úsalo para presionar al rival y para llenar tu Determinación: cada acierto suma.",
+        what: "□ lanza Stupefy, un hechizo rápido que gasta un poco de resistencia. El tercero seguido es más fuerte y aturde, pero tras él tardas un instante en poder lanzar otro.",
+        when: "Úsalo para presionar al rival y llenar tu Determinación, sin machacar □: si vacías la resistencia, no podrás esquivar ni cubrirte.",
       },
       lockOn: {
         controls: "R3: fijar y soltar",
@@ -437,7 +437,7 @@ export const text = {
       swiftness: {
         controls: "Mantén L2 y pulsa {swiftness}",
         what: "La Poción Vigorizante te hace más rápido y te da resistencia sin límite durante unos segundos.",
-        when: "Bébela para llegar antes a tu varita, para escapar con poca salud o para esquivar y cubrirte sin cansarte.",
+        when: "Bébela para llegar antes a tu varita, para escapar con poca salud o para esquivar, cubrirte y lanzar sin cansarte.",
       },
       wiggenweld: {
         controls: "Mantén L2 y pulsa {wiggenweld}",

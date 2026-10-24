@@ -752,6 +752,34 @@ describe("Stupefy", () => {
     ]);
   });
 
+  it("leaves a longer recovery after the strong cast that ends a chain, however fast the button is mashed", () => {
+    const duel = fight();
+    const ticksOfCasts: number[] = [];
+
+    // Mashing □: a press every other tick, for two seconds.
+    for (let tick = 0; tick < secondsToTicks(2); tick += 1) {
+      const events = run(duel, 1, tick % 2 === 0 ? { hero: castLight } : {});
+
+      if (ofType(events, "spell-cast").length > 0) {
+        ticksOfCasts.push(tick);
+      }
+    }
+
+    const gaps = ticksOfCasts
+      .slice(1)
+      .map((at, i) => at - (ticksOfCasts[i] ?? 0));
+
+    // Two quick casts, then the strong one, then a pause before the next chain.
+    expect(gaps.slice(0, 3)).toStrictEqual([
+      secondsToTicks(tuning.stupefy.castInterval),
+      secondsToTicks(tuning.stupefy.castInterval),
+      secondsToTicks(tuning.stupefy.chainRecovery),
+    ]);
+    expect(tuning.stupefy.chainRecovery).toBeGreaterThan(
+      tuning.stupefy.castInterval
+    );
+  });
+
   it("starts a new chain when casts are too far apart", () => {
     const duel = fight();
     const pause = secondsToTicks(tuning.stupefy.chainWindow) + 1;

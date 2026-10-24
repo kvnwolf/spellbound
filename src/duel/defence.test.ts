@@ -6,6 +6,7 @@
 import { describe, expect, it } from "vitest";
 
 import { tuning } from "../tuning";
+import type { Tuning } from "../tuning";
 import { createDuel } from "./duel";
 import type { ArenaLayout, Duel, DuelEvent, DuelistState } from "./duel";
 import { idleIntent } from "./intent";
@@ -28,14 +29,14 @@ const intent = (overrides: Partial<Intent>): Intent => ({
 });
 
 /** A 1v1 with the hero facing the rival 10 m away along -z, past the Round intro. */
-const fight = (): Duel => {
+const fight = (settings: Tuning = tuning): Duel => {
   const duel = createDuel({
     arena: openArena,
     duelists: [
       { id: "hero", spawn: { x: 0, z: 5 }, team: "gryffindor" },
       { id: "rival", spawn: { x: 0, z: -5 }, team: "slytherin" },
     ],
-    tuning,
+    tuning: settings,
   });
 
   while (duel.snapshot().round.phase === "intro") {
@@ -545,6 +546,95 @@ describe("Running out of Stamina", () => {
       { action: "dodge" },
     ]);
     expect(ofType(events, "dodge")).toStrictEqual([]);
+  });
+});
+
+/** Holds the Shield long enough to leave `left` Stamina (a little more, the last tick's drain aside). */
+const drainTo = (duel: Duel, left: number) =>
+  run(duel, secondsToTicks((stamina.max - left) / shield.drain), {
+    hero: intent({ shield: true }),
+  });
+
+describe("Casting costs Stamina", () => {
+  const { confringo, stupefy } = tuning;
+
+  it("spends Stamina on a Stupefy and on a Confringo, which then waits to regenerate", () => {
+    const duel = fight();
+
+    tap(duel, { lightSpell: true });
+    const afterStupefy = duelist(duel, "hero").stamina;
+    run(duel, secondsToTicks(0.5));
+    const stillWaiting = duelist(duel, "hero").stamina;
+    run(duel, secondsToTicks(4));
+    run(duel, secondsToTicks(0.3), { hero: intent({ heavySpell: true }) });
+    const charging = duelist(duel, "hero").stamina;
+    run(duel, 1);
+    const afterConfringo = duelist(duel, "hero").stamina;
+
+    expect(afterStupefy).toBe(stamina.max - stupefy.staminaCost);
+    expect(stillWaiting).toBe(afterStupefy);
+    // A Charge costs nothing while it builds: the cast pays on release.
+    expect(charging).toBe(stamina.max);
+    expect(afterConfringo).toBe(stamina.max - confringo.staminaCost);
+  });
+
+  it("refuses a Stupefy without enough Stamina left, like a Dodge", () => {
+    const duel = fight();
+    drainTo(duel, stupefy.staminaCost - 3);
+    const left = duelist(duel, "hero").stamina;
+
+    const events = tap(duel, { lightSpell: true });
+
+    expect(left).toBeGreaterThan(0);
+    expect(left).toBeLessThan(stupefy.staminaCost);
+    expect(ofType(events, "spell-cast")).toStrictEqual([]);
+    expect(ofType(events, "stamina-short")).toMatchObject([
+      { action: "stupefy", duelistId: "hero" },
+    ]);
+    expect(duelist(duel, "hero").stamina).toBe(left);
+  });
+
+  it("refuses to start a Charge without enough Stamina for the Confringo", () => {
+    const duel = fight();
+    drainTo(duel, confringo.staminaCost - 5);
+
+    const events = [
+      ...run(duel, secondsToTicks(0.3), { hero: intent({ heavySpell: true }) }),
+      ...run(duel, secondsToTicks(0.3)),
+    ];
+
+    expect(ofType(events, "spell-cast")).toStrictEqual([]);
+    expect(ofType(events, "stamina-short")).toMatchObject([
+      { action: "confringo", duelistId: "hero" },
+    ]);
+  });
+
+  it("empties the pool when Stupefy is mashed, leaving no Dodge", () => {
+    // A rival sturdy enough to take every cast without a Knockout.
+    const duel = fight({
+      ...tuning,
+      duelist: { ...tuning.duelist, health: 100_000 },
+    });
+
+    const mashed: DuelEvent[] = [];
+
+    for (let press = 0; press < secondsToTicks(5) / 2; press += 1) {
+      mashed.push(...tap(duel, { lightSpell: true }));
+    }
+
+    const left = duelist(duel, "hero").stamina;
+    const events = tap(duel, { dodge: true });
+
+    // Far fewer casts than presses: the pool runs dry within a few seconds.
+    expect(ofType(mashed, "spell-cast").length).toBeLessThan(
+      stamina.max / stupefy.staminaCost + 4
+    );
+    expect(ofType(mashed, "stamina-short").length).toBeGreaterThan(0);
+    expect(left).toBeLessThan(stupefy.staminaCost);
+    expect(ofType(events, "dodge")).toStrictEqual([]);
+    expect(ofType(events, "stamina-short")).toMatchObject([
+      { action: "dodge" },
+    ]);
   });
 });
 
