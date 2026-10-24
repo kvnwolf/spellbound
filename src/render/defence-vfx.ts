@@ -1,21 +1,28 @@
 /**
  * Defence VFX: Protego and the Parry. Views only: they read presentation
- * samples and react to simulation events.
+ * samples and react to simulation events. Every number is in `tuning.protego`.
  *
  * - The Shield is a translucent half-dome over the front of the Duelist (the
  *   same front 180° the simulation blocks with). A fresnel rim traces its
  *   edge and interference bands shimmer up across it; it grows in when
- *   raised, fades when dropped, and flares all over when it blocks a Spell.
- *   One additive draw per Duelist, all in TSL from a clock and two uniforms.
+ *   raised and fades when dropped. Where a Spell strikes it, a bright ring
+ *   ripples out across the dome from the point of impact over a soft glow
+ *   of the whole dome, so the hit lands where it hit without whiting out the
+ *   Duelist behind it. One additive draw per Duelist, all in TSL from a
+ *   clock and a few uniforms.
  * - A Parry is a hot white-gold flash where the Spell met the Shield: a
- *   billboard that swells and fades, one pooled point light, and the Shield
- *   flaring at full strength.
+ *   billboard that swells and fades, one pooled point light, and the
+ *   Shield rippling and flaring brighter (its sparks are the Spell VFX's).
  *
- * Colours are scene-linear HDR, so the rim, flares and flash feed the bloom.
+ * Every Duelist's dome is built up front, so the load-time prewarm compiles
+ * it and the first raise never stalls a frame.
+ *
+ * Colours are scene-linear HDR, so the rim, ripples and flash feed the bloom.
  */
 import {
   abs,
   color,
+  exp,
   float,
   length,
   normalView,
@@ -25,6 +32,7 @@ import {
   smoothstep,
   uniform,
   uv,
+  vec3,
   vec4,
 } from "three/tsl";
 import {
@@ -37,15 +45,17 @@ import {
   SphereGeometry,
   Sprite,
   SpriteNodeMaterial,
+  Vector3,
 } from "three/webgpu";
 
 import type { DuelEvent, DuelistId } from "../duel/duel";
+import type { Point3 } from "../duel/geometry";
 import type { Tuning } from "../tuning";
 import type { DuelistSample } from "./interpolate";
 
 export interface DefenceVfx {
   readonly object: Group;
-  /** Starts block flares and Parry flashes for this frame's simulation events. */
+  /** Starts block ripples and Parry flashes for this frame's simulation events. */
   readonly handle: (events: readonly DuelEvent[]) => void;
   /** Places and eases every Duelist's Shield, and ages the flashes, by `seconds` of real time. */
   readonly show: (
@@ -65,6 +75,10 @@ const createShield = (
   // How raised the Shield is (0 down, 1 up) and how much it is flaring.
   const strength = uniform(0);
   const flare = uniform(0);
+  // The last strike: where on the dome (its local frame), how long ago, how bright.
+  const strikeAt = uniform(new Vector3(0, 0, 1));
+  const strikeAge = uniform(look.ripple.seconds);
+  const strikeRadiance = uniform(0);
 
   // The half of a sphere with z >= 0: the model's front, which the group
   // turns toward the Duelist's facing.
@@ -111,11 +125,30 @@ const createShield = (
     .pow(3)
     .mul(look.shimmerRadiance);
 
+  // The ripple: a ring on the dome round the point of impact, racing out
+  // and dying away, with a hot spot where it struck.
+  const { ripple } = look;
+  const fromStrike = length(positionLocal.sub(strikeAt));
+  const front = strikeAge.mul(ripple.speed);
+  const life = float(1).sub(strikeAge.div(ripple.seconds)).clamp(0, 1);
+
+  const ring = exp(fromStrike.sub(front).div(ripple.width).pow(2).negate()).add(
+    exp(
+      fromStrike
+        .div(ripple.width * 1.5)
+        .pow(2)
+        .negate()
+    ).mul(life.mul(0.5))
+  );
+
+  const struck = ring.mul(life.pow(2)).mul(strikeRadiance);
+
   // The cut edge at the sides fades out instead of ending in a hard line.
   const edge = smoothstep(0, look.radius * 0.3, positionLocal.z);
 
   const radiance = color(look.color)
-    .mul(rim.add(shimmer).add(flare))
+    .mul(rim.add(shimmer).add(flare).add(struck))
+    .add(vec3(1, 1, 1).mul(struck.mul(0.15)))
     .mul(edge)
     .mul(strength);
 
@@ -130,7 +163,28 @@ const createShield = (
   group.add(mesh);
   group.visible = false;
 
-  return { flare, group, strength };
+  const local = new Vector3();
+
+  return {
+    /** Ages the ripple by `seconds`. */
+    age: (seconds: number) => {
+      strikeAge.value = Math.min(strikeAge.value + seconds, ripple.seconds);
+    },
+    flare,
+    group,
+    strength,
+    /** A Spell struck the dome at `at` (world), `brightness` times the ripple's radiance. */
+    strike: (at: Point3, brightness: number) => {
+      group.updateMatrixWorld();
+      local.set(at.x, at.y, at.z);
+      mesh.worldToLocal(local);
+      // Onto the dome's surface, so the ring starts on it.
+      local.setLength(look.radius);
+      strikeAt.value.copy(local);
+      strikeAge.value = 0;
+      strikeRadiance.value = ripple.radiance * brightness;
+    },
+  };
 };
 
 /** The Parry flash: a soft round billboard that swells as it fades. */
@@ -157,7 +211,11 @@ const createParryFlash = (look: Tuning["protego"]["parry"]) => {
   return { fade, sprite };
 };
 
-export const createDefenceVfx = (look: Tuning["protego"]): DefenceVfx => {
+export const createDefenceVfx = (
+  look: Tuning["protego"],
+  /** Every Duelist that may Shield, so their domes exist before the first frame. */
+  duelists: readonly DuelistId[]
+): DefenceVfx => {
   const object = new Group();
   const clock = createClock();
   const shields = new Map<DuelistId, ReturnType<typeof createShield>>();
@@ -181,12 +239,20 @@ export const createDefenceVfx = (look: Tuning["protego"]): DefenceVfx => {
     return shield;
   };
 
+  for (const id of duelists) {
+    shieldOf(id);
+  }
+
   const handle = (events: readonly DuelEvent[]) => {
     for (const event of events) {
       if (event.type === "spell-blocked") {
-        shieldOf(event.duelistId).flare.value = look.flare;
+        const shield = shieldOf(event.duelistId);
+        shield.flare.value = look.flare;
+        shield.strike(event.position, 1);
       } else if (event.type === "parry") {
-        shieldOf(event.duelistId).flare.value = look.flare * 2;
+        const shield = shieldOf(event.duelistId);
+        shield.flare.value = look.flare * look.parry.flare;
+        shield.strike(event.position, look.parry.flare);
         flash.sprite.position.set(
           event.position.x,
           event.position.y,
@@ -212,6 +278,7 @@ export const createDefenceVfx = (look: Tuning["protego"]): DefenceVfx => {
 
       shield.strength.value += (wanted - shield.strength.value) * ease;
       shield.flare.value *= flareFade;
+      shield.age(seconds);
       shield.group.visible = shield.strength.value > 0.01;
       shield.group.position.set(
         sample.position.x,

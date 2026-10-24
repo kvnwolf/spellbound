@@ -588,6 +588,50 @@ export const tuning = {
   },
 
   /**
+   * How the Clash looks: each Duelist's half of the beam is a white-hot core
+   * inside a sheath of fire whose bands flow toward the meeting point and
+   * whose filaments twist round it, inside a faint haze; the meeting point is
+   * a pulsing white-hot ball in a glow and a corona, swelling on every pump
+   * and spraying streaking sparks out sideways. Radii and sizes in metres,
+   * radiances scene-linear HDR, the light in candela.
+   */
+  clashLook: {
+    beam: {
+      /** Bands of fire per metre along the beam, and how fast they flow (radians per second). */
+      bands: 5,
+      core: { radiance: 4, radius: 0.025 },
+      /** Filaments twisting round the sheath, and how fast they turn (radians per second). */
+      filaments: { count: 3, pitch: 2.2, speed: 16 },
+      flow: 38,
+      haze: { radiance: 0.45, radius: 0.3 },
+      sheath: { radiance: 1.6, radius: 0.11 },
+    },
+    point: {
+      /** The ball's radius, and its glow and corona sprites' sizes and radiances. */
+      core: 0.18,
+      corona: { radiance: 0.45, size: 2.4 },
+      glow: { radiance: 1.8, size: 1.3 },
+      /** How much a pump swells the meeting point, fading at `kickFade` per second. */
+      kick: 0.6,
+      kickFade: 7,
+      light: { distance: 11, intensity: 22 },
+      /** How much the ball pulses on its own. */
+      pulse: 0.18,
+      radiance: 10,
+    },
+    /** Sparks sprayed off the meeting point, per second, mostly sideways off the beam. */
+    sparks: {
+      intensity: 5,
+      life: 0.45,
+      rate: 110,
+      size: 0.05,
+      speed: 7,
+      spread: 0.35,
+      streak: 0.04,
+    },
+  },
+
+  /**
    * Confringo, the Heavy Spell, and its Charge. Holding the Heavy Spell
    * builds the Charge from 0 to full over `fullSeconds`; releasing casts
    * Confringo with damage and knockback scaled by the Charge (a tap still
@@ -789,32 +833,87 @@ export const tuning = {
   },
 
   /**
-   * How Depulso looks: a pale wave of wind and force filling its cone from
-   * the Wand, its front racing out to the range over `seconds` and fading as
-   * it goes, kicking up dust from the floor as it passes. The cone is as
-   * wide as the gameplay one and `height` metres tall (half above, half
-   * below the Wand) at its far end. Colours are hex; radiance is
-   * scene-linear HDR (above the bloom threshold glows).
+   * How Depulso looks: a cone of wind and force blasting out of the Wand
+   * along the caster's facing, as wide as the gameplay cone and `height`
+   * metres tall (half above, half below the Wand) at its far end. A muzzle
+   * flash and shock ring at the Wand; a curved shock front racing out to the
+   * end of the range in `frontSeconds`, bending the air behind it; a faint
+   * sleeve of rushing air filling the cone behind it; wind streaks shooting
+   * through the cone; floor dust swept out along it as the front passes; and
+   * a puff of force bursting off every Duelist it catches. All of it fades
+   * out over `seconds`. Colours are hex; radiances and intensities are
+   * scene-linear HDR multipliers (above the bloom threshold glows).
    */
   depulsoLook: {
     color: "#dcefff",
-    /** Puffs of floor dust per metre the front travels, their size, life, drift speed and rise (negative gravity). */
+    /**
+     * Puffs of floor dust per metre the front travels, swept out along the
+     * cone (`spread` of randomness round that line): size, life, speed and
+     * rise (negative gravity); with `grit` fast specks per metre skimming the
+     * floor ahead of them.
+     */
     dust: {
-      color: "#b9b2a4",
-      intensity: 1.1,
-      life: 0.9,
-      perMetre: 14,
-      rise: -0.15,
-      size: 0.32,
-      speed: 1.4,
+      color: "#9a8f7c",
+      grit: {
+        intensity: 2.2,
+        life: 0.35,
+        perMetre: 10,
+        size: 0.025,
+        speed: 9,
+        streak: 0.05,
+      },
+      intensity: 0.35,
+      life: 1,
+      perMetre: 12,
+      rise: -0.12,
+      size: 0.55,
+      speed: 3.2,
+      spread: 0.5,
     },
-    /** How sharp the front's band is, as a share of the cone's length. */
-    frontWidth: 0.14,
+    /**
+     * The shock front: a curved sheet of air at the end of the cone, faint
+     * face-on and brightest where it turns edge-on (`rimPower`); it bends
+     * what is behind it by up to `refraction` of the screen.
+     */
+    front: { radiance: 0.8, refraction: 0.015, rimPower: 2.5 },
+    /** Seconds for the front to reach the end of the range: fast, so it lands as the push does. */
+    frontSeconds: 0.2,
     height: 2.2,
-    radiance: 1.5,
-    seconds: 0.42,
-    /** Wind streaks round the cone. */
-    streaks: 11,
+    /** A puff of force bursting off a Duelist the blast catches, splashing on away from the caster. */
+    impact: {
+      flashLife: 0.1,
+      flashSize: 0.8,
+      life: 0.45,
+      light: 25,
+      lightLife: 0.25,
+      ring: 1.8,
+      ringLife: 0.25,
+      size: 0.05,
+      sparks: 36,
+      speed: 9,
+      splash: 1.4,
+      streak: 0.05,
+    },
+    /** The flash and shock ring at the Wand as the blast leaves it, `life` seconds. */
+    muzzle: { flash: 0.7, intensity: 2.5, life: 0.16, ring: 1 },
+    /** Everything fades out over this many seconds from the cast. */
+    seconds: 0.5,
+    /** The sleeve of rushing air behind the front: its radiance and the wind streaks round it. */
+    sheath: { radiance: 0.4, streaks: 13 },
+    /**
+     * Wind streaks shot through the cone: `count` at the cast, at `speed`
+     * (slowed by the sparks' drag) within `spread` of the axis, `size`
+     * wide and stretched over `streak` seconds of motion.
+     */
+    streaks: {
+      count: 70,
+      intensity: 2.6,
+      life: 0.34,
+      size: 0.04,
+      speed: 26,
+      spread: 0.5,
+      streak: 0.045,
+    },
   },
 
   duelist: {
@@ -1642,8 +1741,8 @@ export const tuning = {
     fadeSharpness: 14,
     rimColor: "#bcd4ff",
     /** Fresnel exponent of the rim: higher hugs the silhouette's edge more tightly. */
-    rimPower: 2,
-    rimRadiance: 1.3,
+    rimPower: 3.5,
+    rimRadiance: 1,
     stoneColor: "#8a8e96",
   },
 
@@ -1753,15 +1852,17 @@ export const tuning = {
     color: "#8fd3ff",
     /** Exponential rate, per second, at which the dome grows in and fades out. */
     fadeSharpness: 18,
-    /** Radiance a blocked Spell adds over the whole dome, decaying with time constant `flareSeconds` (a Parry flares twice as bright). */
-    flare: 2.4,
-    flareSeconds: 0.3,
+    /** Radiance a blocked Spell adds over the whole dome, decaying with time constant `flareSeconds` (a Parry's by `parry.flare` more). */
+    flare: 0.5,
+    flareSeconds: 0.25,
     parry: {
       color: "#fff1c2",
       /** The flash's sprite grows from `startSize` to `endSize` metres. */
       endSize: 3.4,
+      /** How many times brighter than a block a Parry makes the Shield's flare and ripple. */
+      flare: 1.4,
       /** Peak candela of the Parry's light, fading over `seconds`... */
-      light: 90,
+      light: 60,
       /** ...reaching this far, metres. */
       lightRange: 12,
       /** Radiance of the flash at its peak. */
@@ -1776,6 +1877,12 @@ export const tuning = {
     rimPower: 2.2,
     /** Peak radiance at the rim. */
     rimRadiance: 1.6,
+    /**
+     * Where a Spell strikes the dome, a ring ripples out across it from the
+     * point of impact at `speed` metres per second, `width` metres wide, at
+     * `radiance` (a Parry's by `parry.flare` more), dying out over `seconds`.
+     */
+    ripple: { radiance: 2.4, seconds: 0.45, speed: 3.2, width: 0.12 },
     /** The shimmer: bands rippling up the dome at `shimmerSpeed`, `shimmerScale` bands per metre. */
     shimmerRadiance: 0.45,
     shimmerScale: 9,
@@ -1854,6 +1961,402 @@ export const tuning = {
     resultDelaySeconds: 3,
     /** The last lesson's "¡Entrenamiento completado!" holds this long before the main menu. */
     trainingDoneSeconds: 4,
+  },
+
+  /**
+   * How the Spells look, in flight and where they land, plus the crackle at a
+   * Charging Wand and what clings to a Burning or Petrified Duelist. Sizes in
+   * metres, times in seconds, speeds in metres per second; intensities and
+   * radiances are scene-linear HDR multipliers on the Spell's colours (above
+   * the bloom threshold glows); lights are candela. Colours are hex.
+   */
+  spellLook: {
+    /** A Backfire is the same fire gone wrong: smoky red embers. */
+    backfire: { hot: "#ffb070", main: "#c8240c" },
+    /**
+     * Each Spell in flight: a white-hot core, a soft glow that flickers by
+     * `glow.flicker`, a tapered trail with soft edges, the light it carries,
+     * and a wake of sparks shed `perMetre` along its flight, falling (or
+     * rising, below 0) with `gravity` and stretched over `streak` seconds of
+     * their motion into lines.
+     */
+    bolts: {
+      confringo: {
+        core: { intensity: 7, radius: 0.17 },
+        glow: { flicker: 0.12, intensity: 2.4, size: 1.6 },
+        light: { distance: 10, intensity: 16 },
+        trail: { intensity: 2.6, length: 3.2, width: 0.2 },
+        wake: {
+          gravity: -0.4,
+          intensity: 4,
+          life: 0.45,
+          perMetre: 9,
+          size: 0.09,
+          speed: 1.2,
+          streak: 0,
+        },
+      },
+      expelliarmus: {
+        core: { intensity: 9, radius: 0.1 },
+        glow: { flicker: 0.1, intensity: 2.6, size: 1.1 },
+        light: { distance: 8, intensity: 11 },
+        trail: { intensity: 3.2, length: 3.8, width: 0.09 },
+        wake: {
+          gravity: 0.6,
+          intensity: 6,
+          life: 0.3,
+          perMetre: 7,
+          size: 0.035,
+          speed: 2.2,
+          streak: 0.04,
+        },
+      },
+      incendio: {
+        core: { intensity: 8, radius: 0.15 },
+        glow: { flicker: 0.15, intensity: 2.8, size: 1.45 },
+        light: { distance: 10, intensity: 18 },
+        trail: { intensity: 3, length: 2.8, width: 0.19 },
+        wake: {
+          gravity: -0.6,
+          intensity: 4.5,
+          life: 0.5,
+          perMetre: 11,
+          size: 0.1,
+          speed: 1,
+          streak: 0,
+        },
+      },
+      petrificus: {
+        core: { intensity: 7, radius: 0.09 },
+        glow: { flicker: 0.06, intensity: 2.4, size: 0.95 },
+        light: { distance: 8, intensity: 9 },
+        trail: { intensity: 3.2, length: 3.4, width: 0.07 },
+        wake: {
+          gravity: 0.15,
+          intensity: 5,
+          life: 0.5,
+          perMetre: 6,
+          size: 0.04,
+          speed: 0.5,
+          streak: 0,
+        },
+      },
+      stupefy: {
+        core: { intensity: 6, radius: 0.08 },
+        glow: { flicker: 0.08, intensity: 2.1, size: 0.7 },
+        light: { distance: 7, intensity: 6 },
+        trail: { intensity: 2.8, length: 2.4, width: 0.075 },
+        wake: {
+          gravity: 0.8,
+          intensity: 5,
+          life: 0.22,
+          perMetre: 4,
+          size: 0.03,
+          speed: 1.6,
+          streak: 0.03,
+        },
+      },
+    },
+    /**
+     * A Burning Duelist: embers rising off the body at `embers.rate` a
+     * second and tongues of flame licking up it at `flames.rate` (stretched
+     * over `streak` seconds of their rise), from
+     * `from` to `to` metres off the floor and `spread` round the body, with a
+     * flickering warm light of `light` candela.
+     */
+    burn: {
+      embers: { life: 0.85, rate: 60, rise: 0.7, size: 0.05, speed: 0.7 },
+      flames: {
+        intensity: 3.2,
+        life: 0.42,
+        rate: 70,
+        rise: 1.2,
+        size: 0.4,
+        speed: 0.4,
+        streak: 0.06,
+      },
+      from: 0.15,
+      light: 9,
+      spread: 0.3,
+      to: 1.6,
+    },
+    /** The radiance of every burst's flash, ring and sparks, on their colours. */
+    burstRadiance: { flash: 2.2, ring: 2.5, sparks: 4 },
+    /**
+     * Bursts of sparks: `sparks` of them at `speed`, living `life`, `size`
+     * across and stretched over `streak` seconds of motion, round a still
+     * flash `flashSize` across for `flashLife`; a ring `ring` across swells
+     * out over `ringLife` (0 for none); `splash` leans the sparks along the
+     * Spell's flight (0 every way, above 0 splashing on through, below 0
+     * back); the flash lights the scene with `light` candela fading over
+     * `lightLife`.
+     */
+    bursts: {
+      backfire: {
+        flashLife: 0.22,
+        flashSize: 1.3,
+        life: 0.8,
+        light: 55,
+        lightLife: 0.45,
+        ring: 1.4,
+        ringLife: 0.3,
+        size: 0.08,
+        sparks: 70,
+        speed: 5,
+        splash: 0,
+        streak: 0.03,
+      },
+      cancel: {
+        flashLife: 0.16,
+        flashSize: 1.6,
+        life: 0.55,
+        light: 60,
+        lightLife: 0.35,
+        ring: 2.6,
+        ringLife: 0.28,
+        size: 0.07,
+        sparks: 64,
+        speed: 10,
+        splash: 0,
+        streak: 0.035,
+      },
+      cast: {
+        flashLife: 0.08,
+        flashSize: 0.45,
+        life: 0.2,
+        light: 6,
+        lightLife: 0.1,
+        ring: 0,
+        ringLife: 0,
+        size: 0.035,
+        sparks: 10,
+        speed: 3.5,
+        splash: 0.8,
+        streak: 0.03,
+      },
+      /** Confringo landing on a Duelist: a blast, scaled up with its Charge. */
+      confringoHit: {
+        flashLife: 0.24,
+        flashSize: 2,
+        life: 0.85,
+        light: 130,
+        lightLife: 0.55,
+        ring: 3.4,
+        ringLife: 0.32,
+        size: 0.1,
+        sparks: 130,
+        speed: 13,
+        splash: 0.5,
+        streak: 0.04,
+      },
+      /** Confringo bursting on Cover, a wall or the floor. */
+      confringoStop: {
+        flashLife: 0.2,
+        flashSize: 1.7,
+        life: 0.7,
+        light: 90,
+        lightLife: 0.45,
+        ring: 2.6,
+        ringLife: 0.3,
+        size: 0.09,
+        sparks: 100,
+        speed: 10,
+        splash: -0.6,
+        streak: 0.04,
+      },
+      /** A Wand knocked out of a hand: a sharp scarlet-and-white crack. */
+      disarm: {
+        flashLife: 0.18,
+        flashSize: 1.3,
+        life: 0.6,
+        light: 70,
+        lightLife: 0.35,
+        ring: 1.8,
+        ringLife: 0.25,
+        size: 0.05,
+        sparks: 70,
+        speed: 8,
+        splash: 0,
+        streak: 0.035,
+      },
+      hit: {
+        flashLife: 0.12,
+        flashSize: 0.9,
+        life: 0.4,
+        light: 35,
+        lightLife: 0.3,
+        ring: 1.3,
+        ringLife: 0.2,
+        size: 0.05,
+        sparks: 40,
+        speed: 8,
+        splash: 0.6,
+        streak: 0.035,
+      },
+      /** The flare of a Perfect Release at the Wand. */
+      perfect: {
+        flashLife: 0.16,
+        flashSize: 0.9,
+        life: 0.35,
+        light: 40,
+        lightLife: 0.2,
+        ring: 1.6,
+        ringLife: 0.22,
+        size: 0.045,
+        sparks: 32,
+        speed: 6,
+        splash: 0,
+        streak: 0.03,
+      },
+      /** Petrificus Totalus landing: a cold flash. */
+      petrify: {
+        flashLife: 0.22,
+        flashSize: 1.4,
+        life: 0.7,
+        light: 60,
+        lightLife: 0.4,
+        ring: 2.2,
+        ringLife: 0.35,
+        size: 0.06,
+        sparks: 60,
+        speed: 4,
+        splash: 0.3,
+        streak: 0.02,
+      },
+      stop: {
+        flashLife: 0.1,
+        flashSize: 0.8,
+        life: 0.32,
+        light: 15,
+        lightLife: 0.2,
+        ring: 0,
+        ringLife: 0,
+        size: 0.05,
+        sparks: 22,
+        speed: 5,
+        splash: -0.7,
+        streak: 0.03,
+      },
+      strongHit: {
+        flashLife: 0.18,
+        flashSize: 1.5,
+        life: 0.55,
+        light: 70,
+        lightLife: 0.4,
+        ring: 2.2,
+        ringLife: 0.26,
+        size: 0.08,
+        sparks: 70,
+        speed: 11,
+        splash: 0.5,
+        streak: 0.04,
+      },
+      /** A loose Wand picked up or flying home: a soft flare where it lay. */
+      wandBack: {
+        flashLife: 0.18,
+        flashSize: 1,
+        life: 0.5,
+        light: 25,
+        lightLife: 0.3,
+        ring: 0.9,
+        ringLife: 0.25,
+        size: 0.04,
+        sparks: 30,
+        speed: 3,
+        splash: 0,
+        streak: 0,
+      },
+    },
+    /**
+     * Confringo's size follows its Charge: a tap is `tapScale` of a full
+     * Charge's size, and an empowered blast `empoweredScale` bigger still.
+     */
+    confringo: { empoweredScale: 1.3, tapScale: 0.6 },
+    /**
+     * The crackle at a Charging Wand: sparks per second, size and launch
+     * speed while it builds, rising to the `overcharge` values as a held
+     * full Charge nears its Backfire, each stretched over `streak` seconds of
+     * motion; plus a glow sprite and a light at the tip.
+     */
+    crackle: {
+      building: { rate: 26, size: 0.03, speed: 1.2 },
+      /** How hard the tip glow flickers at the brink of Overcharge (0 steady). */
+      flicker: 0.6,
+      life: 0.28,
+      /** Light at the tip at full Charge, and at the brink of Overcharge. */
+      light: { full: 9, overcharge: 26 },
+      overcharge: { rate: 190, size: 0.06, speed: 5 },
+      streak: 0.03,
+      /** Glow sprite size at the tip, from an empty to a full Charge. */
+      tipGlow: { empty: 0.12, full: 0.5 },
+    },
+    /**
+     * Incendio's explosion: a burst of sparks and flash, a rolling fireball
+     * of big slow flames rising on its heat, a shockwave ring on the floor as
+     * wide as the gameplay blast (reaching it over `ring.life`), and embers
+     * scattered over the blast that drift up and die out.
+     */
+    incendio: {
+      burst: {
+        flashLife: 0.2,
+        flashSize: 2.2,
+        life: 0.9,
+        light: 180,
+        lightLife: 0.7,
+        ring: 3.2,
+        ringLife: 0.35,
+        size: 0.11,
+        sparks: 170,
+        speed: 12,
+        splash: 0,
+        streak: 0.045,
+      },
+      embers: { count: 70, life: 1.9, rise: 0.4, size: 0.05, speed: 0.7 },
+      fireball: {
+        count: 40,
+        intensity: 1.4,
+        life: 0.7,
+        rise: 0.9,
+        size: 0.8,
+        speed: 3.2,
+      },
+      ring: { life: 0.4, radiance: 3.4 },
+    },
+    /** The pool of point lights that follow the brightest Spells and flashes, and how far a flash's light reaches. */
+    lights: { flashDistance: 7, pool: 4 },
+    /**
+     * A Petrified Duelist sheds grit as the stone settles and glints cold:
+     * `grit.rate` specks a second falling off the body and `glints.rate`
+     * cold sparks a second, from `from` to `to` metres off the floor and
+     * `spread` round the body.
+     */
+    petrified: {
+      from: 0.3,
+      glints: { intensity: 7, life: 0.3, rate: 7, size: 0.05 },
+      grit: {
+        color: "#a7adb8",
+        gravity: 0.35,
+        intensity: 1.2,
+        life: 0.9,
+        rate: 34,
+        size: 0.05,
+        speed: 0.25,
+      },
+      spread: 0.26,
+      to: 1.7,
+    },
+    /**
+     * The spark ring every effect draws its sparks from: slots (enough for
+     * several big bursts and an Incendio at once), the drag that slows them
+     * (per second) and the gravity that pulls them (metres per second squared).
+     */
+    sparks: { drag: 4, gravity: 6, slots: 4096 },
+    /** The puff of stone dust as Petrificus Totalus lands, beside its cold flash. */
+    stoneDust: { hot: "#f0f4ff", main: "#8f99ad" },
+    /** Strong Stupefies are drawn this much bigger. */
+    strongScale: 1.6,
+    /** The Wand's own flare when a Disarm or a pickup lights it: a warm gold over the scarlet. */
+    wand: { hot: "#fff4f6", main: "#ffb04a" },
   },
 
   /**

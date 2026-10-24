@@ -21,7 +21,12 @@ import type { DualSenseSnapshot } from "./dualsense/input";
 import { createMenuInput } from "./dualsense/menu-input";
 import { chargeStage } from "./duel/charge";
 import { clashOpponentOf, createDuel } from "./duel/duel";
-import type { DuelEvent, DuelistId, DuelSnapshot } from "./duel/duel";
+import type {
+  DuelEvent,
+  DuelistId,
+  DuelistState,
+  DuelSnapshot,
+} from "./duel/duel";
 import type { GroundPoint } from "./duel/geometry";
 import { idleIntent } from "./duel/intent";
 import type { Intent } from "./duel/intent";
@@ -50,7 +55,7 @@ import { createLooseWandView } from "./render/loose-wand-view";
 import { createFramePipeline } from "./render/pipeline";
 import { createWebGPURenderer } from "./render/renderer";
 import { createReticle } from "./render/reticle";
-import { createSpellVfx } from "./render/spell-vfx";
+import { createSpellVfx, spellVfxSettings } from "./render/spell-vfx";
 import { loadWizardAssets } from "./render/wizard-assets";
 import { createWorldHud } from "./render/world-hud";
 import {
@@ -99,6 +104,17 @@ const trainingOf = (screen: Screen): DuelScreen["training"] => {
 
   return screen.kind === "disconnected" ? trainingOf(screen.resume) : undefined;
 };
+
+/** Where every Duelist that passes `test` stands: their feet. */
+const feetOf = (
+  snapshot: DuelSnapshot,
+  test: (duelist: DuelistState) => boolean
+) =>
+  snapshot.duelists.flatMap((each) =>
+    test(each)
+      ? [{ x: each.position.x, y: each.elevation, z: each.position.z }]
+      : []
+  );
 
 const start = async () => {
   // Loading, from the first paint: the renderer, the wizard (most of the
@@ -367,20 +383,21 @@ const start = async () => {
 
   scene.add(looseWands.object);
 
-  const vfx = createSpellVfx({
-    blastRadius: tuning.incendio.blastRadius,
-    depulso: tuning.depulso,
-    depulsoLook: tuning.depulsoLook,
-  });
+  const vfx = createSpellVfx(spellVfxSettings(tuning));
 
   scene.add(vfx.object);
 
   // Protego domes and Parry flashes.
-  const defenceVfx = createDefenceVfx(tuning.protego);
+  const defenceVfx = createDefenceVfx(tuning.protego, [localId, opponentId]);
   scene.add(defenceVfx.object);
 
   // The Clash's beam between two Wands and its meeting point.
-  const clashVfx = createClashVfx();
+  const clashVfx = createClashVfx({
+    look: tuning.clashLook,
+    palette: tuning.spellPalette.confringo,
+    sparks: vfx.sparks,
+  });
+
   scene.add(clashVfx.object);
 
   // The camera must also stay clear of the torch stands on the parapet, which
@@ -823,6 +840,7 @@ const start = async () => {
     suspendControllersUnless(playing);
 
     const simSeconds = playing ? seconds * timeScale : 0;
+
     const { alpha, events } = advance(simSeconds);
 
     effects.send(
@@ -851,21 +869,13 @@ const start = async () => {
     shakeOnHits(events);
     vfx.handle(events);
     defenceVfx.handle(events);
-    vfx.update(
-      previous.spells,
-      current.spells,
-      alpha,
-      simSeconds,
-      chargingWands(current.duelists, tuning, (id) =>
+    vfx.update(previous.spells, current.spells, alpha, simSeconds, {
+      burning: feetOf(current, (each) => each.burnSeconds > 0),
+      charging: chargingWands(current.duelists, tuning, (id) =>
         views.get(id)?.wandTipPosition()
       ),
-      // Embers rise off every Duelist with an Incendio Burn.
-      current.duelists.flatMap((each) =>
-        each.burnSeconds > 0
-          ? [{ x: each.position.x, y: each.elevation, z: each.position.z }]
-          : []
-      )
-    );
+      petrified: feetOf(current, (each) => each.petrifiedSeconds > 0),
+    });
     hud.show(current, events, seconds);
     specialsHud.show(current);
     clashHud.show(current, events);
