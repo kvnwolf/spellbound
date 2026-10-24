@@ -81,6 +81,12 @@ export interface DuelistView {
    * the local Duelist's Lock-on Target.
    */
   readonly show: (sample: DuelistSample, seconds: number, glow: number) => void;
+  /**
+   * The body's joints as last drawn, for what crawls over it (see
+   * `impact-vfx.ts`): head, neck, chest, waist, pelvis, both shoulders,
+   * both elbows, both hands, both hips.
+   */
+  readonly bodyPoints: () => readonly Point3[];
 }
 
 /** The full-Focus aura's settings, with the Focus that fills the meter. */
@@ -105,6 +111,11 @@ export interface DuelistViewSettings {
   readonly staminaMax: number;
   /** How long a Practice rival takes to get up once its Health is back (`DuelistSample.downSeconds`). */
   readonly getUpSeconds: number;
+  /** A Spell landing flares the silhouette in its colour. */
+  readonly hit: Tuning["spellLook"]["hitFlare"];
+  readonly palette: Tuning["spellPalette"];
+  /** A Burning body's cloth smoulders. */
+  readonly robe: Tuning["spellLook"]["burn"]["robe"];
 }
 
 type Triple = readonly [number, number, number];
@@ -220,7 +231,10 @@ export const createDuelistView = (
     duelist,
     getUpSeconds,
     glow,
+    hit,
+    palette,
     potion,
+    robe,
     staminaMax,
     stone,
   } = settings;
@@ -411,6 +425,10 @@ export const createDuelistView = (
   let rollYaw = 0;
   let petrified = false;
   let clock = 0;
+  // A Spell landing: its flare round the silhouette, and Petrificus's stone
+  // spreading from where it struck.
+  let flareAge = idle;
+  let stoneAge = idle;
 
   // Full Focus: the Wand in hand breathes its aura.
   let auraClock = 0;
@@ -1914,9 +1932,50 @@ export const createDuelistView = (
 
   const tipWorld = new Vector3();
 
+  /** A Spell landing on this Duelist flares the body in its colour; Petrificus starts the stone there. */
+  const struck = (event: DuelEvent) => {
+    if (event.type !== "spell-hit" || event.targetId !== id) {
+      return;
+    }
+
+    flareAge = 0;
+    uniforms.hitTint.value.set(palette[event.spell.kind].main);
+
+    if (event.spell.kind === "petrificus") {
+      stoneAge = 0;
+      uniforms.stoneFrom.value.set(
+        event.position.x,
+        event.position.y,
+        event.position.z
+      );
+    }
+  };
+
+  const bodyJoints = [
+    joints.head,
+    joints.neck,
+    joints.spine[2],
+    joints.spine[0],
+    joints.pelvis,
+    ...joints.upperArms,
+    ...joints.lowerArms,
+    ...joints.hands,
+    ...joints.thighs,
+  ];
+
+  const bodyWorld = bodyJoints.map(() => new Vector3());
+
   return {
+    bodyPoints: () =>
+      bodyJoints.map((joint, index) => {
+        const world = bodyWorld[index] ?? new Vector3();
+
+        return joint.getWorldPosition(world);
+      }),
     handle: (events) => {
       for (const event of events) {
+        struck(event);
+
         // Stone does not move: a Petrified Duelist's casts and Dodges do not play.
         if (!petrified || event.type === "potion-drunk") {
           react(event);
@@ -1963,6 +2022,20 @@ export const createDuelistView = (
         uniforms.petrify.value,
         sample.petrified ? 1 : 0,
         stone.fadeSharpness,
+        seconds
+      );
+      stoneAge += seconds;
+      uniforms.stoneFront.value = Math.min(
+        stoneAge * stone.spreadSpeed,
+        stone.spreadReach
+      );
+      flareAge += seconds;
+      uniforms.hitGlow.value =
+        flareAge < hit.seconds ? (1 - flareAge / hit.seconds) ** 2 : 0;
+      uniforms.burn.value = approach(
+        uniforms.burn.value,
+        sample.burning ? 1 : 0,
+        robe.fadeSharpness,
         seconds
       );
     },

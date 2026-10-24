@@ -1967,16 +1967,25 @@ export const tuning = {
 
   /**
    * How a Petrified Duelist looks: turned to grey stone with a cold, pale
-   * rim of light round the silhouette. Colours are hex; radiance is
-   * scene-linear HDR (above the bloom threshold glows).
+   * rim of light round the silhouette. The stone spreads from where the
+   * Spell struck: a front racing out `spreadSpeed` metres a second until it
+   * reaches `spreadReach`, its edge `spreadEdge` soft and ragged by
+   * `spreadNoise` metres, glowing cold (`frontRadiance`) as it goes.
+   * Colours are hex; radiance is scene-linear HDR (above the bloom
+   * threshold glows).
    */
   petrifiedLook: {
-    /** Exponential rate, per second, at which the stone spreads in and fades back out. */
+    /** Exponential rate, per second, at which the stone comes in and fades back out. */
     fadeSharpness: 14,
+    frontRadiance: 1.5,
     rimColor: "#bcd4ff",
     /** Fresnel exponent of the rim: higher hugs the silhouette's edge more tightly. */
     rimPower: 3.5,
     rimRadiance: 1,
+    spreadEdge: 0.08,
+    spreadNoise: 0.12,
+    spreadReach: 2.4,
+    spreadSpeed: 2.2,
     stoneColor: "#8a8e96",
   },
 
@@ -2206,36 +2215,115 @@ export const tuning = {
    * the bloom threshold glows); lights are candela. Colours are hex.
    */
   spellLook: {
+    /**
+     * The electric arcs crawling over a hit body between its joints: a pool
+     * of them, each `width` across with a line `thickness` thick wandering
+     * `amplitude` (a share of the half-width) along `jag` turns, jumping to
+     * a new path and a new pair of joints every `hop` seconds (dark for a
+     * hop `dark` of the time), lifted `lift` toward the camera off the body.
+     */
+    arcs: {
+      amplitude: 0.5,
+      dark: 0.2,
+      hop: 0.05,
+      intensity: 5,
+      jag: 4,
+      lift: 0.2,
+      pool: 10,
+      thickness: 0.006,
+      width: 0.24,
+    },
     /** A Backfire is the same fire gone wrong: smoky red embers. */
     backfire: { hot: "#ffb070", main: "#c8240c" },
     /**
-     * Each Spell in flight: a white-hot core, a soft glow that flickers by
-     * `glow.flicker`, a tapered trail with soft edges, the light it carries,
-     * and a wake of sparks shed `perMetre` along its flight, falling (or
-     * rising, below 0) with `gravity` and stretched over `streak` seconds of
-     * their motion into lines.
+     * Each Spell in flight: a white-hot core, a glow round its head that
+     * flickers by `glow.flicker` (a fireball licked by noise when its `flame`
+     * is above 0), the jet of light behind it, the light it carries, and a
+     * wake of sparks shed `perMetre` along its flight, falling (or rising,
+     * below 0) with `gravity` and stretched over `streak` seconds of their
+     * motion into lines.
      */
     bolts: {
       confringo: {
-        core: { intensity: 7, radius: 0.17 },
-        glow: { flicker: 0.12, intensity: 2.4, size: 1.6 },
+        core: { intensity: 2.5, radius: 0.12 },
+        glow: {
+          flame: 0.9,
+          flameScale: 2.2,
+          flameSpeed: 3,
+          flicker: 0.12,
+          intensity: 1,
+          size: 1.3,
+        },
+        jet: {
+          churn: 0.8,
+          core: 0.07,
+          coreIntensity: 1.2,
+          edge: "#b0200a",
+          filamentAmplitude: 0.25,
+          filamentIntensity: 0.7,
+          filamentSpeed: 18,
+          filamentWidth: 0.05,
+          flame: 0.85,
+          flameScale: 3.5,
+          flowSpeed: 10,
+          halo: 0.3,
+          haloIntensity: 0.7,
+          headSoft: 0.06,
+          length: 3.6,
+          noiseScale: 1.3,
+          pulse: 0.25,
+          pulseRate: 1.4,
+          pulseSpeed: 25,
+          tailSoft: 0.5,
+          taper: 0.55,
+          width: 1.1,
+        },
         light: { distance: 10, intensity: 16 },
-        trail: { intensity: 2.6, length: 3.2, width: 0.2 },
         wake: {
           gravity: -0.4,
           intensity: 4,
           life: 0.45,
           perMetre: 9,
-          size: 0.09,
+          size: 0.04,
           speed: 1.2,
-          streak: 0,
+          streak: 0.025,
         },
       },
       expelliarmus: {
-        core: { intensity: 9, radius: 0.1 },
-        glow: { flicker: 0.1, intensity: 2.6, size: 1.1 },
+        core: { intensity: 8, radius: 0.08 },
+        glow: {
+          flame: 0,
+          flameScale: 2,
+          flameSpeed: 3,
+          flicker: 0.1,
+          intensity: 2.2,
+          size: 0.8,
+        },
+        jet: {
+          churn: 0.45,
+          core: 0.06,
+          coreIntensity: 4.2,
+          edge: "#ff1a3c",
+          filamentAmplitude: 0.3,
+          filamentIntensity: 2.2,
+          filamentSpeed: 34,
+          filamentWidth: 0.035,
+          flame: 0,
+          flameScale: 3,
+          flowSpeed: 15,
+          halo: 0.2,
+          haloIntensity: 1,
+          headSoft: 0.04,
+          length: 4.5,
+          noiseScale: 1.6,
+          pulse: 0.5,
+          pulseRate: 1.6,
+          pulseSpeed: 55,
+          tailSoft: 0.45,
+          taper: 1,
+          width: 0.6,
+        },
         light: { distance: 8, intensity: 11 },
-        trail: { intensity: 3.2, length: 3.8, width: 0.09 },
         wake: {
           gravity: 0.6,
           intensity: 6,
@@ -2247,25 +2335,85 @@ export const tuning = {
         },
       },
       incendio: {
-        core: { intensity: 8, radius: 0.15 },
-        glow: { flicker: 0.15, intensity: 2.8, size: 1.45 },
+        core: { intensity: 2.5, radius: 0.1 },
+        glow: {
+          flame: 1,
+          flameScale: 2.6,
+          flameSpeed: 3.5,
+          flicker: 0.15,
+          intensity: 1,
+          size: 1.5,
+        },
+        jet: {
+          churn: 1,
+          core: 0.06,
+          coreIntensity: 0.8,
+          edge: "#8a1204",
+          filamentAmplitude: 0.2,
+          filamentIntensity: 0.3,
+          filamentSpeed: 14,
+          filamentWidth: 0.06,
+          flame: 1,
+          flameScale: 4.5,
+          flowSpeed: 9,
+          halo: 0.32,
+          haloIntensity: 0.8,
+          headSoft: 0.08,
+          length: 3.2,
+          noiseScale: 1.4,
+          pulse: 0.2,
+          pulseRate: 1.2,
+          pulseSpeed: 20,
+          tailSoft: 0.6,
+          taper: 0.3,
+          width: 1.5,
+        },
         light: { distance: 10, intensity: 18 },
-        trail: { intensity: 3, length: 2.8, width: 0.19 },
         wake: {
           gravity: -0.6,
           intensity: 4.5,
           life: 0.5,
           perMetre: 11,
-          size: 0.1,
+          size: 0.045,
           speed: 1,
-          streak: 0,
+          streak: 0.025,
         },
       },
       petrificus: {
-        core: { intensity: 7, radius: 0.09 },
-        glow: { flicker: 0.06, intensity: 2.4, size: 0.95 },
+        core: { intensity: 7, radius: 0.07 },
+        glow: {
+          flame: 0,
+          flameScale: 2,
+          flameSpeed: 3,
+          flicker: 0.04,
+          intensity: 2,
+          size: 0.75,
+        },
+        jet: {
+          churn: 0.2,
+          core: 0.045,
+          coreIntensity: 4,
+          edge: "#bcd4ff",
+          filamentAmplitude: 0.22,
+          filamentIntensity: 1.6,
+          filamentSpeed: 14,
+          filamentWidth: 0.025,
+          flame: 0,
+          flameScale: 3,
+          flowSpeed: 8,
+          halo: 0.16,
+          haloIntensity: 0.8,
+          headSoft: 0.04,
+          length: 4.8,
+          noiseScale: 1,
+          pulse: 0.15,
+          pulseRate: 1.2,
+          pulseSpeed: 20,
+          tailSoft: 0.4,
+          taper: 1,
+          width: 0.5,
+        },
         light: { distance: 8, intensity: 9 },
-        trail: { intensity: 3.2, length: 3.4, width: 0.07 },
         wake: {
           gravity: 0.15,
           intensity: 5,
@@ -2278,7 +2426,14 @@ export const tuning = {
       },
       stupefy: {
         core: { intensity: 6, radius: 0.08 },
-        glow: { flicker: 0.08, intensity: 2.1, size: 0.7 },
+        glow: {
+          flame: 0,
+          flameScale: 2,
+          flameSpeed: 3,
+          flicker: 0.08,
+          intensity: 2.1,
+          size: 0.7,
+        },
         /**
          * The jet of light from the Wand to the head, up to `length` long
          * and `width` across, turned to the camera: a white-hot `core` and a
@@ -2287,16 +2442,22 @@ export const tuning = {
          * (`pulse` deep, `pulseRate` per metre, `pulseSpeed`) running down
          * it, and two filaments `filamentAmplitude` off the axis twisting at
          * `filamentSpeed`; soft over the tail's `tailSoft` and the head's
-         * `headSoft` shares.
+         * `headSoft` shares. The halo cools to `edge` at its rim; `flame`
+         * (0 to 1) eats tongues into it, `flameScale` per metre, and burns
+         * its heart white; `taper` is the tail's width as a share of the
+         * head's (below 1 a gout widening from the Wand).
          */
         jet: {
           churn: 0.6,
           core: 0.05,
           coreIntensity: 3.5,
+          edge: "#ff2a1f",
           filamentAmplitude: 0.32,
           filamentIntensity: 2.2,
           filamentSpeed: 30,
           filamentWidth: 0.035,
+          flame: 0,
+          flameScale: 3,
           flowSpeed: 14,
           halo: 0.24,
           haloIntensity: 0.9,
@@ -2307,10 +2468,10 @@ export const tuning = {
           pulseRate: 2.2,
           pulseSpeed: 40,
           tailSoft: 0.45,
+          taper: 1,
           width: 0.6,
         },
         light: { distance: 10, intensity: 16 },
-        trail: { intensity: 2.8, length: 2.4, width: 0.075 },
         wake: {
           gravity: 0.8,
           intensity: 5,
@@ -2324,37 +2485,51 @@ export const tuning = {
     },
     /**
      * A Burning Duelist: embers rising off the body at `embers.rate` a
-     * second and tongues of flame licking up it at `flames.rate` (stretched
-     * over `streak` seconds of their rise), from
+     * second and tongues of flame (wisps `stretch` taller than wide, shrinking
+     * by `grow` as they rise) at `flames.rate`, from its joints or from
      * `from` to `to` metres off the floor and `spread` round the body, with a
-     * flickering warm light of `light` candela.
+     * flickering warm light of `light` candela. The robe glows like embers
+     * meanwhile (`robe`, the Duelist view's): noise `scale` per metre rising
+     * at `speed`, glowing above `threshold`, flickering by `flicker`, easing
+     * in and out at `fadeSharpness` per second.
      */
     burn: {
-      embers: { life: 0.85, rate: 60, rise: 0.7, size: 0.05, speed: 0.7 },
+      embers: { life: 0.85, rate: 30, rise: 0.7, size: 0.045, speed: 0.7 },
       flames: {
-        intensity: 3.2,
-        life: 0.42,
-        rate: 70,
-        rise: 1.2,
-        size: 0.4,
+        gravity: -1.2,
+        grow: 0.55,
+        intensity: 1.6,
+        life: 0.55,
+        rate: 34,
+        size: 0.32,
         speed: 0.4,
-        streak: 0.06,
+        stretch: 1.3,
       },
       from: 0.15,
       light: 9,
+      robe: {
+        color: "#ff4a0c",
+        fadeSharpness: 6,
+        flicker: 0.35,
+        radiance: 2,
+        scale: 13,
+        speed: 1.2,
+        threshold: 0.55,
+      },
       spread: 0.3,
       to: 1.6,
     },
     /** The radiance of every burst's flash, ring and sparks, on their colours. */
     burstRadiance: { flash: 2.2, ring: 2.5, sparks: 4 },
     /**
-     * Bursts of sparks: `sparks` of them at `speed`, living `life`, `size`
-     * across and stretched over `streak` seconds of motion, round a still
-     * flash `flashSize` across for `flashLife`; a ring `ring` across swells
-     * out over `ringLife` (0 for none); `splash` leans the sparks along the
-     * Spell's flight (0 every way, above 0 splashing on through, below 0
-     * back); the flash lights the scene with `light` candela fading over
-     * `lightLife`.
+     * Bursts of sparks for what stops a Spell short (Cover, a Shield, a
+     * mid-air cancel), Perfect Releases, Backfires and Wands returning:
+     * `sparks` of them at `speed`, living `life`, `size` across and stretched
+     * over `streak` seconds of motion, round a still flash `flashSize` across
+     * for `flashLife`; a ring `ring` across swells out over `ringLife` (0 for
+     * none); `splash` leans the sparks along the Spell's flight (0 every way,
+     * above 0 splashing on through, below 0 back); the flash lights the scene
+     * with `light` candela fading over `lightLife`.
      */
     bursts: {
       backfire: {
@@ -2385,35 +2560,6 @@ export const tuning = {
         splash: 0,
         streak: 0.035,
       },
-      cast: {
-        flashLife: 0.08,
-        flashSize: 0.45,
-        life: 0.2,
-        light: 6,
-        lightLife: 0.1,
-        ring: 0,
-        ringLife: 0,
-        size: 0.035,
-        sparks: 10,
-        speed: 3.5,
-        splash: 0.8,
-        streak: 0.03,
-      },
-      /** Confringo landing on a Duelist: a blast, scaled up with its Charge. */
-      confringoHit: {
-        flashLife: 0.24,
-        flashSize: 2,
-        life: 0.85,
-        light: 130,
-        lightLife: 0.55,
-        ring: 3.4,
-        ringLife: 0.32,
-        size: 0.1,
-        sparks: 130,
-        speed: 13,
-        splash: 0.5,
-        streak: 0.04,
-      },
       /** Confringo bursting on Cover, a wall or the floor. */
       confringoStop: {
         flashLife: 0.2,
@@ -2428,35 +2574,6 @@ export const tuning = {
         speed: 10,
         splash: -0.6,
         streak: 0.04,
-      },
-      /** A Wand knocked out of a hand: a sharp scarlet-and-white crack. */
-      disarm: {
-        flashLife: 0.18,
-        flashSize: 1.3,
-        life: 0.6,
-        light: 70,
-        lightLife: 0.35,
-        ring: 1.8,
-        ringLife: 0.25,
-        size: 0.05,
-        sparks: 70,
-        speed: 8,
-        splash: 0,
-        streak: 0.035,
-      },
-      hit: {
-        flashLife: 0.12,
-        flashSize: 0.9,
-        life: 0.4,
-        light: 35,
-        lightLife: 0.3,
-        ring: 1.3,
-        ringLife: 0.2,
-        size: 0.05,
-        sparks: 40,
-        speed: 8,
-        splash: 0.6,
-        streak: 0.035,
       },
       /** The flare of a Perfect Release at the Wand. */
       perfect: {
@@ -2473,21 +2590,6 @@ export const tuning = {
         splash: 0,
         streak: 0.03,
       },
-      /** Petrificus Totalus landing: a cold flash. */
-      petrify: {
-        flashLife: 0.22,
-        flashSize: 1.4,
-        life: 0.7,
-        light: 60,
-        lightLife: 0.4,
-        ring: 2.2,
-        ringLife: 0.35,
-        size: 0.06,
-        sparks: 60,
-        speed: 4,
-        splash: 0.3,
-        streak: 0.02,
-      },
       stop: {
         flashLife: 0.1,
         flashSize: 0.8,
@@ -2501,20 +2603,6 @@ export const tuning = {
         speed: 5,
         splash: -0.7,
         streak: 0.03,
-      },
-      strongHit: {
-        flashLife: 0.18,
-        flashSize: 1.5,
-        life: 0.55,
-        light: 70,
-        lightLife: 0.4,
-        ring: 2.2,
-        ringLife: 0.26,
-        size: 0.08,
-        sparks: 70,
-        speed: 11,
-        splash: 0.5,
-        streak: 0.04,
       },
       /** A loose Wand picked up or flying home: a soft flare where it lay. */
       wandBack: {
@@ -2534,9 +2622,12 @@ export const tuning = {
     },
     /**
      * Confringo's size follows its Charge: a tap is `tapScale` of a full
-     * Charge's size, and an empowered blast `empoweredScale` bigger still.
+     * Charge's size, and an empowered blast `empoweredScale` bigger still;
+     * its fire bursting on a wall is `stopScale` of its burst on a body.
      */
-    confringo: { empoweredScale: 1.3, tapScale: 0.6 },
+    confringo: { empoweredScale: 1.3, stopScale: 0.8, tapScale: 0.6 },
+    /** How far off the body (from its nearest joint), metres, a Spell's energy lands. */
+    contact: 0.22,
     /**
      * The crackle at a Charging Wand: sparks per second, size and launch
      * speed while it builds, rising to the `overcharge` values as a held
@@ -2555,36 +2646,312 @@ export const tuning = {
       /** Glow sprite size at the tip, from an empty to a full Charge. */
       tipGlow: { empty: 0.12, full: 0.5 },
     },
+    /** The white of a Disarm's flash. */
+    disarmFlash: { hot: "#ffffff", main: "#ffe8ec" },
     /**
-     * Incendio's explosion: a burst of sparks and flash, a rolling fireball
-     * of big slow flames rising on its heat, a shockwave ring on the floor as
-     * wide as the gameplay blast (reaching it over `ring.life`), and embers
-     * scattered over the blast that drift up and die out.
+     * The flares of light rays where Spells land and leave the Wand: a ring
+     * of `slots`; a hot core `core` of the radius across, and `rays` lobes
+     * of angular noise sharpened by `sharpness`, fading `falloff` along the
+     * radius, at `rayRadiance` times the flare's intensity.
+     */
+    flares: {
+      core: 0.08,
+      falloff: 1.6,
+      rayRadiance: 2.5,
+      rays: 3.5,
+      sharpness: 8,
+      slots: 32,
+    },
+    /**
+     * How a Duelist's silhouette flares in a Spell's colour as it lands (the
+     * Duelist view's): a rim of `radiance` sharpened by `power`, and `fill`
+     * of it over the whole body, dying away over `seconds`.
+     */
+    hitFlare: { fill: 0.05, power: 1.5, radiance: 2.8, seconds: 0.3 },
+    /**
+     * Where a Spell's energy lands, as the films draw it: a flare of rays
+     * (`flare`: radiance, life, full size), soft `wisps` of energy swelling
+     * `grow` times as they fade (fire for the fire Spells), `smoke` laid over
+     * the scene (stone dust for Petrificus; `intensity` is its brightness),
+     * a few long thin `streaks` (sparks, see `sparks`), `arcs` crawling over
+     * the body it hit for `life` seconds, and a pulse of `light` (candela
+     * fading over `life`). `splash` leans wisps and streaks along the
+     * Spell's flight; `gravity` below 0 makes wisps rise.
+     */
+    impacts: {
+      /** The flare at the Wand tip as a Spell leaves it. */
+      cast: {
+        arcs: { count: 0, life: 0 },
+        flare: { intensity: 2.2, life: 0.1, size: 0.8 },
+        light: { life: 0.1, peak: 6 },
+        smoke: {
+          count: 0,
+          gravity: 0,
+          grow: 1,
+          intensity: 1,
+          life: 1,
+          size: 0.1,
+          speed: 0,
+        },
+        splash: 0.8,
+        streaks: {
+          count: 4,
+          intensity: 4,
+          life: 0.18,
+          size: 0.02,
+          speed: 6,
+          streak: 0.03,
+        },
+        wisps: {
+          count: 1,
+          gravity: 0,
+          grow: 1.8,
+          intensity: 1,
+          life: 0.16,
+          size: 0.22,
+          speed: 0.6,
+        },
+      },
+      /** Confringo bursting into fire and smoke, on a Duelist or (scaled by `confringo.stopScale`) on a wall; scaled with its Charge. */
+      confringo: {
+        arcs: { count: 2, life: 0.25 },
+        flare: { intensity: 1.4, life: 0.18, size: 2 },
+        light: { life: 0.55, peak: 90 },
+        smoke: {
+          count: 6,
+          gravity: -0.35,
+          grow: 2.6,
+          intensity: 1,
+          life: 1.6,
+          size: 0.6,
+          speed: 1.4,
+        },
+        splash: 0.5,
+        streaks: {
+          count: 10,
+          intensity: 5,
+          life: 0.5,
+          size: 0.028,
+          speed: 12,
+          streak: 0.04,
+        },
+        wisps: {
+          count: 10,
+          gravity: -0.5,
+          grow: 2.2,
+          intensity: 0.4,
+          life: 0.6,
+          size: 0.5,
+          speed: 3,
+        },
+      },
+      /** The white flash where a Wand leaves the hand (under Expelliarmus's own). */
+      disarm: {
+        arcs: { count: 0, life: 0 },
+        flare: { intensity: 2, life: 0.2, size: 1.6 },
+        light: { life: 0.35, peak: 70 },
+        smoke: {
+          count: 0,
+          gravity: 0,
+          grow: 1,
+          intensity: 1,
+          life: 1,
+          size: 0.1,
+          speed: 0,
+        },
+        splash: 0,
+        streaks: {
+          count: 6,
+          intensity: 6,
+          life: 0.35,
+          size: 0.02,
+          speed: 10,
+          streak: 0.04,
+        },
+        wisps: {
+          count: 2,
+          gravity: 0,
+          grow: 2.5,
+          intensity: 1.2,
+          life: 0.3,
+          size: 0.3,
+          speed: 0.6,
+        },
+      },
+      /** Expelliarmus landing. */
+      expelliarmus: {
+        arcs: { count: 3, life: 0.3 },
+        flare: { intensity: 2.8, life: 0.18, size: 1.8 },
+        light: { life: 0.3, peak: 30 },
+        smoke: {
+          count: 0,
+          gravity: 0,
+          grow: 1,
+          intensity: 1,
+          life: 1,
+          size: 0.1,
+          speed: 0,
+        },
+        splash: 0.5,
+        streaks: {
+          count: 7,
+          intensity: 5,
+          life: 0.3,
+          size: 0.02,
+          speed: 13,
+          streak: 0.045,
+        },
+        wisps: {
+          count: 4,
+          gravity: -0.1,
+          grow: 2.2,
+          intensity: 0.9,
+          life: 0.32,
+          size: 0.24,
+          speed: 1.6,
+        },
+      },
+      /** Stupefy landing. */
+      hit: {
+        arcs: { count: 3, life: 0.3 },
+        flare: { intensity: 2.6, life: 0.16, size: 1.6 },
+        light: { life: 0.3, peak: 40 },
+        smoke: {
+          count: 0,
+          gravity: 0,
+          grow: 1,
+          intensity: 1,
+          life: 1,
+          size: 0.1,
+          speed: 0,
+        },
+        splash: 0.6,
+        streaks: {
+          count: 6,
+          intensity: 5,
+          life: 0.3,
+          size: 0.02,
+          speed: 13,
+          streak: 0.045,
+        },
+        wisps: {
+          count: 4,
+          gravity: -0.2,
+          grow: 1.8,
+          intensity: 0.9,
+          life: 0.32,
+          size: 0.24,
+          speed: 1.6,
+        },
+      },
+      /** Incendio's explosion: a fireball rolling up into smoke (its arcs on the body it struck). */
+      incendio: {
+        arcs: { count: 3, life: 0.35 },
+        flare: { intensity: 1.3, life: 0.22, size: 3.2 },
+        light: { life: 0.7, peak: 130 },
+        smoke: {
+          count: 10,
+          gravity: -0.4,
+          grow: 3,
+          intensity: 1,
+          life: 2.2,
+          size: 0.9,
+          speed: 1.8,
+        },
+        splash: 0,
+        streaks: {
+          count: 14,
+          intensity: 5,
+          life: 0.6,
+          size: 0.032,
+          speed: 13,
+          streak: 0.045,
+        },
+        wisps: {
+          count: 12,
+          gravity: -0.6,
+          grow: 2.4,
+          intensity: 0.3,
+          life: 0.75,
+          size: 0.8,
+          speed: 3.4,
+        },
+      },
+      /** Petrificus Totalus landing: a cold flare and a puff of stone dust. */
+      petrify: {
+        arcs: { count: 4, life: 0.4 },
+        flare: { intensity: 2.8, life: 0.22, size: 2 },
+        light: { life: 0.4, peak: 60 },
+        smoke: {
+          count: 6,
+          gravity: 0.15,
+          grow: 2.5,
+          intensity: 0.3,
+          life: 1.1,
+          size: 0.45,
+          speed: 1.2,
+        },
+        splash: 0.3,
+        streaks: {
+          count: 6,
+          intensity: 5,
+          life: 0.35,
+          size: 0.02,
+          speed: 9,
+          streak: 0.03,
+        },
+        wisps: {
+          count: 4,
+          gravity: 0,
+          grow: 2,
+          intensity: 0.8,
+          life: 0.5,
+          size: 0.3,
+          speed: 1.2,
+        },
+      },
+      /** The strong third Stupefy landing. */
+      strongHit: {
+        arcs: { count: 5, life: 0.38 },
+        flare: { intensity: 3, life: 0.2, size: 2.3 },
+        light: { life: 0.4, peak: 70 },
+        smoke: {
+          count: 0,
+          gravity: 0,
+          grow: 1,
+          intensity: 1,
+          life: 1,
+          size: 0.1,
+          speed: 0,
+        },
+        splash: 0.5,
+        streaks: {
+          count: 9,
+          intensity: 5,
+          life: 0.35,
+          size: 0.022,
+          speed: 15,
+          streak: 0.045,
+        },
+        wisps: {
+          count: 6,
+          gravity: -0.2,
+          grow: 2.4,
+          intensity: 1,
+          life: 0.4,
+          size: 0.3,
+          speed: 2,
+        },
+      },
+    },
+    /**
+     * Incendio's explosion (its fireball and smoke are `impacts.incendio`): a
+     * shockwave ring on the floor as wide as the gameplay blast (reaching it
+     * over `ring.life`), and embers scattered over the blast that drift up
+     * and die out.
      */
     incendio: {
-      burst: {
-        flashLife: 0.2,
-        flashSize: 2.2,
-        life: 0.9,
-        light: 180,
-        lightLife: 0.7,
-        ring: 3.2,
-        ringLife: 0.35,
-        size: 0.11,
-        sparks: 170,
-        speed: 12,
-        splash: 0,
-        streak: 0.045,
-      },
-      embers: { count: 70, life: 1.9, rise: 0.4, size: 0.05, speed: 0.7 },
-      fireball: {
-        count: 40,
-        intensity: 1.4,
-        life: 0.7,
-        rise: 0.9,
-        size: 0.8,
-        speed: 3.2,
-      },
+      embers: { count: 40, life: 1.9, rise: 0.4, size: 0.05, speed: 0.7 },
       ring: { life: 0.4, radiance: 3.4 },
     },
     /** The pool of point lights that follow the brightest Spells and flashes, and how far a flash's light reaches. */
@@ -2610,18 +2977,40 @@ export const tuning = {
       spread: 0.26,
       to: 1.7,
     },
+    /** Smoke off fire: warm where the fire lights it at birth, cooling to soot. */
+    smoke: { hot: "#6b5446", main: "#2b2724" },
     /**
      * The spark ring every effect draws its sparks from: slots (enough for
      * several big bursts and an Incendio at once), the drag that slows them
      * (per second) and the gravity that pulls them (metres per second squared).
      */
     sparks: { drag: 4, gravity: 6, slots: 4096 },
-    /** The puff of stone dust as Petrificus Totalus lands, beside its cold flash. */
+    /** The puff of stone dust as Petrificus Totalus lands, beside its cold flare. */
     stoneDust: { hot: "#f0f4ff", main: "#8f99ad" },
     /** Strong Stupefies are drawn this much bigger. */
     strongScale: 1.6,
-    /** The Wand's own flare when a Disarm or a pickup lights it: a warm gold over the scarlet. */
+    /** The Wand's own flare when a pickup lights it: a warm gold over the scarlet. */
     wand: { hot: "#fff4f6", main: "#ffb04a" },
+    /**
+     * The soft wisps of energy, fire, smoke and flame: a ring of `slots`
+     * (twice: glowing and smoke), slowed by `drag` per second, pulled by
+     * `gravity` (metres per second squared, times each wisp's own), curling
+     * `swirl` metres at `swirlRate`; their edge eaten `churn` deep by noise
+     * `churnScale` across a wisp drifting through it at `flow`; fading in
+     * over `fadeIn` of their life; smoke at most `smokeOpacity` opaque.
+     */
+    wisps: {
+      churn: 0.6,
+      churnScale: 2.6,
+      drag: 3,
+      fadeIn: 0.12,
+      flow: 2.5,
+      gravity: 2,
+      slots: 512,
+      smokeOpacity: 0.5,
+      swirl: 0.5,
+      swirlRate: 3,
+    },
   },
 
   /**

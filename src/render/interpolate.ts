@@ -44,6 +44,8 @@ export interface DuelistSample {
   readonly dodging: boolean;
   /** Frozen by Petrificus Totalus. */
   readonly petrified: boolean;
+  /** Burning from an Incendio explosion. */
+  readonly burning: boolean;
   /** Disarmed: the Wand is out of the hand. */
   readonly disarmed: boolean;
   /** Where the loose Wand is while Disarmed (flying, then on the floor), or null. */
@@ -90,6 +92,7 @@ export const sampleDuelist = (
   clash: ClashState | null = null
 ): DuelistSample => ({
   aim: lerpAim(previous.aim, current.aim, alpha),
+  burning: current.burnSeconds > 0,
   charging: current.chargeSeconds > 0,
   clashing: clashOpponentOf(clash, current.id) !== undefined,
   disarmed: current.looseWand !== null,

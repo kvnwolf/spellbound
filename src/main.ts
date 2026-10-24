@@ -106,7 +106,12 @@ const feetOf = (
 ) =>
   snapshot.duelists.flatMap((each) =>
     test(each)
-      ? [{ x: each.position.x, y: each.elevation, z: each.position.z }]
+      ? [
+          {
+            feet: { x: each.position.x, y: each.elevation, z: each.position.z },
+            id: each.id,
+          },
+        ]
       : []
   );
 
@@ -313,7 +318,10 @@ const start = async () => {
     duelist: tuning.duelist,
     getUpSeconds: tuning.practice.getUpSeconds,
     glow: tuning.lockOnGlow,
+    hit: tuning.spellLook.hitFlare,
+    palette: tuning.spellPalette,
     potion: potionLook,
+    robe: tuning.spellLook.burn.robe,
     staminaMax: tuning.defence.stamina.max,
     stone: tuning.petrifiedLook,
   };
@@ -885,6 +893,7 @@ const start = async () => {
     depulsoHits.advance(simSeconds);
     defenceVfx.handle(events);
     vfx.update(previous.spells, current.spells, alpha, simSeconds, {
+      bodyOf: (id) => views.get(id)?.bodyPoints(),
       burning: feetOf(current, (each) => each.burnSeconds > 0),
       charging: chargingWands(current.duelists, tuning, (id) =>
         views.get(id)?.wandTipPosition()

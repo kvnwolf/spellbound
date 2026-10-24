@@ -17,8 +17,11 @@ import { clone } from "three/addons/utils/SkeletonUtils.js";
  * gold or silver, leather kept), how far the body has turned to stone
  * (colour and roughness both go to stone, never just one), and one rim of
  * light round the silhouette that adds the Team's own edge light, the
- * Lock-on glow, the Petrified rim and any Potion's aura. Everything is
- * dielectric: with no environment map at night, a metal would render black.
+ * Lock-on glow, the Petrified rim, any Potion's aura and the flare of a
+ * Spell landing, in its colour. The stone spreads from where Petrificus
+ * Totalus struck, a cold glowing front racing over the body; a Burning
+ * body's cloth smoulders like embers. Everything is dielectric: with no
+ * environment map at night, a metal would render black.
  *
  * The rim is a cue for the body's outline, so it reads a smoothed normal:
  * mostly the limbs' own (out from the bone each vertex hangs on, the way a
@@ -33,6 +36,7 @@ import {
   attribute,
   cameraPosition,
   color,
+  exp,
   float,
   frontFacing,
   max,
@@ -42,8 +46,10 @@ import {
   positionGeometry,
   positionView,
   positionWorld,
+  sin,
   smoothstep,
   texture,
+  time,
   uniform,
   uniformArray,
   varying,
@@ -96,6 +102,14 @@ export interface WizardUniforms {
   readonly vialTint: { value: Color };
   /** A Training Dummy's light inside its empty hood, scene-linear radiance. */
   readonly hollow: { value: number };
+  /** A Spell landing: how hard the silhouette flares (0 to 1), and in what colour. */
+  readonly hitGlow: { value: number };
+  readonly hitTint: { value: Color };
+  /** Where Petrificus Totalus struck (world), and how far the stone has spread from it, metres. */
+  readonly stoneFrom: { value: Vector3 };
+  readonly stoneFront: { value: number };
+  /** How much the body smoulders with an Incendio Burn, 0 to 1. */
+  readonly burn: { value: number };
 }
 
 /** The joints the view poses after the clips, by role. */
@@ -138,6 +152,10 @@ export interface WizardLookSettings {
   readonly stone: Tuning["petrifiedLook"];
   readonly aura: Tuning["wandAura"];
   readonly potion: Tuning["potionLook"];
+  /** The flare of a Spell landing on the body. */
+  readonly hit: Tuning["spellLook"]["hitFlare"];
+  /** The embers on a Burning body's cloth. */
+  readonly robe: Tuning["spellLook"]["burn"]["robe"];
 }
 
 /** A hex colour as a scene-linear vec3 node (decoded from sRGB once, as `color()` does). */
@@ -195,16 +213,21 @@ export const createWizardRig = (
   settings: WizardLookSettings,
   dummy?: DummyLook
 ): WizardRig => {
-  const { aura, duelist, glow, potion, stone } = settings;
+  const { aura, duelist, glow, hit, potion, robe, stone } = settings;
   const { look } = duelist;
 
   const uniforms = {
     auraStrength: uniform(0),
+    burn: uniform(0),
     glowStrength: uniform(0),
+    hitGlow: uniform(0),
+    hitTint: uniform(new Color()),
     hollow: uniform(dummy?.hollowRadiance ?? 0),
     petrify: uniform(0),
     potionGlow: uniform(0),
     potionTint: uniform(new Color(potion.colors.wiggenweld)),
+    stoneFrom: uniform(new Vector3()),
+    stoneFront: uniform(stone.spreadReach),
     vialTint: uniform(new Color(potion.colors.wiggenweld)),
   };
 
@@ -289,10 +312,67 @@ export const createWizardRig = (
   const limbNormal = varying(limbSum, "v_limbNormal");
   const toCamera = cameraPosition.sub(positionWorld).normalize();
 
+  // How far the stone has spread: everything within its front, measured from
+  // where the Spell struck, the front's edge ragged with noise held still on
+  // the figure (the model's rest frame).
+  const fromStrike = positionWorld
+    .sub(uniforms.stoneFrom)
+    .length()
+    .add(mx_noise_float(positionGeometry.mul(9)).mul(stone.spreadNoise))
+    .toVar();
+
+  const stoneShare = petrify
+    .mul(
+      smoothstep(
+        uniforms.stoneFront.add(stone.spreadEdge),
+        uniforms.stoneFront.sub(stone.spreadEdge),
+        fromStrike
+      )
+    )
+    .toVar();
+
+  // The front glows cold as it races over the body, dying once it is done.
+  const frost = color(stone.rimColor).mul(
+    exp(
+      fromStrike.sub(uniforms.stoneFront).div(stone.spreadEdge).pow(2).negate()
+    )
+      .mul(petrify)
+      .mul(
+        smoothstep(
+          stone.spreadReach,
+          stone.spreadReach * 0.6,
+          uniforms.stoneFront
+        )
+      )
+      .mul(stone.frontRadiance)
+  );
+
+  // A Burning body's cloth smoulders: embers of noise rising through it,
+  // flickering, never on stone.
+  const smoulder = mx_noise_float(
+    positionGeometry.mul(robe.scale).sub(vec3(0, time.mul(robe.speed), 0))
+  )
+    .mul(0.5)
+    .add(0.5);
+
+  const embers = color(robe.color)
+    .mul(smoothstep(robe.threshold, robe.threshold + 0.3, smoulder))
+    .mul(
+      sin(time.mul(17).add(positionGeometry.y.mul(5)))
+        .mul(0.5)
+        .add(0.5)
+        .mul(robe.flicker)
+        .oneMinus()
+    )
+    .mul(uniforms.burn.mul(robe.radiance))
+    .mul(stoneShare.oneMinus());
+
   /**
    * The rim of light round a silhouette seen along `normal` (world): the
    * Team's own edge light (so the far Duelist reads against the dark
-   * walls), the Lock-on glow, the cold Petrified rim and a Potion's aura.
+   * walls), the Lock-on glow, the cold Petrified rim, a Potion's aura and
+   * the flare of a Spell landing (a rim in its colour and a little over
+   * the whole body).
    */
   const rimOf = (normal: Node<"vec3">) => {
     const edge = normal.dot(toCamera).saturate().oneMinus().toVar();
@@ -312,7 +392,7 @@ export const createWizardRig = (
           )
         )
       )
-      .mul(petrify.oneMinus())
+      .mul(stoneShare.oneMinus())
       .add(
         color(glow.color)
           .mul(silhouette(glow.power))
@@ -321,12 +401,20 @@ export const createWizardRig = (
       .add(
         color(stone.rimColor)
           .mul(silhouette(stone.rimPower))
-          .mul(petrify.mul(stone.rimRadiance))
+          .mul(stoneShare.mul(stone.rimRadiance))
       )
       .add(
         uniforms.potionTint
           .mul(silhouette(potion.power))
           .mul(uniforms.potionGlow)
+      )
+      .add(
+        uniforms.hitTint.mul(
+          silhouette(hit.power)
+            .mul(hit.radiance)
+            .add(hit.fill)
+            .mul(uniforms.hitGlow)
+        )
       );
   };
 
@@ -338,7 +426,9 @@ export const createWizardRig = (
       limbNormal.normalize(),
       look.rimSmoothing
     ).normalize()
-  );
+  )
+    .add(frost)
+    .add(embers);
 
   const stickRim = rimOf(normalWorldGeometry);
 
@@ -368,9 +458,9 @@ export const createWizardRig = (
       ? new MeshPhysicalNodeMaterial()
       : new MeshStandardNodeMaterial();
 
-    const outside = mix(base, stoneColor, petrify);
+    const outside = mix(base, stoneColor, stoneShare);
 
-    const rough = mix(roughness, float(look.stoneRoughness), petrify);
+    const rough = mix(roughness, float(look.stoneRoughness), stoneShare);
 
     material.metalnessNode = float(0);
     material.normalMap = normals;

@@ -5,68 +5,63 @@
  * simulation events. Every number is in `tuning.spellLook` (Depulso's in
  * `tuning.depulsoLook`).
  *
- * - In flight, each Spell is a white-hot core, a flickering glow and a
- *   tapered trail in its own palette, hot at the head and soft at its edges
- *   so it reads as a streak of light rather than a solid cone, shedding a
- *   wake of sparks for every metre it flies (fire rises off Confringo and
- *   Incendio, cold motes hang behind Petrificus). Flight is a straight line
- *   from the Wand (homing only bends it gently), so the trail is evaluated
- *   from the cast point instead of kept as a history, and the wake is spent
- *   by distance flown, so it is the same at any frame rate.
- * - Casts, impacts, mid-air cancels and Backfires burst: a still flash, a
- *   shock ring swelling out of it, and sparks streaking out, splashing on
- *   through or back along the Spell's flight. All of it lives in the shared
- *   spark ring (`spark-ring.ts`): one instanced draw, positions computed in
- *   TSL from the effects clock.
- * - Incendio explodes into a big burst, a rolling fireball rising on its own
- *   heat, a shockwave ring on the floor as wide as the gameplay blast and
- *   embers that drift up over it; a Burning Duelist is licked by tongues of
- *   flame, sheds rising embers and casts a flickering warm light.
- *   Petrificus Totalus lands in a cold flash and a puff of stone dust, and a
- *   Petrified Duelist sheds grit and cold glints (the stone itself is the
- *   Duelist view's). Expelliarmus is a scarlet bolt with a white heart; a
- *   Disarm bursts scarlet and white where the Wand leaves the hand, and a
- *   Wand picked up or returned flares where it lay (the Wand itself is
- *   `loose-wand-view.ts`'s). Depulso's blast is `depulso-vfx.ts`'s; a
- *   Duelist it catches bursts with force, splashing away from the caster.
+ * - In flight, every Spell is a jet of light from the Wand to its head, as
+ *   the films draw it (`jet.ts`): a white-hot core in a churning halo of its
+ *   hue, turned to the camera, with a glow round the head and the Spell's
+ *   light on the floor. Each has its own character: Stupefy a red bolt with
+ *   twisting filaments, Confringo a thick orange jet of churning flame with
+ *   a burning fireball for a head, Incendio a gout of fire widening from the
+ *   Wand, Petrificus Totalus a crisp, cold blue-white line, Expelliarmus a
+ *   scarlet jet round a white heart. Each sheds a light wake of sparks (fire
+ *   rises off the flames, cold motes hang behind Petrificus), spent by
+ *   distance flown, so it is the same at any frame rate.
+ * - Where a Spell lands on a Duelist, its energy hits the body
+ *   (`impact-vfx.ts`): a flare of light rays at the contact point, a few soft
+ *   wisps of energy swelling and fading, a few long thin streaks, short
+ *   electric arcs crawling over the body between its joints, and a pulse of
+ *   the Spell's light on the surroundings; the body's silhouette flares in
+ *   the Spell's colour (the Duelist view's). Confringo bursts into fire and
+ *   smoke; Incendio explodes into a fireball, a shockwave ring on the floor
+ *   as wide as the gameplay blast and embers, and sets the Duelist ablaze:
+ *   tongues of flame rise off the body for the whole Burn, with a flickering
+ *   warm light (the robe's embers are the view's). Petrificus Totalus lands
+ *   in a cold flare and a puff of stone dust (the spreading stone is the
+ *   view's), and a Petrified Duelist sheds grit and cold glints. A Disarm
+ *   flashes white and scarlet where the Wand leaves the hand.
+ * - Casts flare at the Wand tip, the jet starting there on the Spell's first
+ *   frame. Mid-air cancels, Spells stopped by Cover or a Shield, Perfect
+ *   Releases, Backfires and Wands returning burst in the shared spark ring
+ *   (`spark-ring.ts`): a still flash, a shock ring and streaking sparks.
  * - A Charging Wand sheds streaking sparks at a rate that rises with the
  *   Charge, and crackles hotter and wilder as Overcharge nears.
  * - A small fixed pool of point lights follows the brightest Spells, flashes,
  *   Charging Wands and Burns, so the count of lights (and so the shaders)
  *   never changes.
  *
- * Colours are scene-linear HDR above 1, so they feed bloom.
+ * Colours are scene-linear HDR above 1, so they feed bloom; intensities are
+ * kept low enough that each Spell's hue survives it instead of blowing out
+ * to white.
  */
 import {
-  abs,
-  exp,
   float,
   length,
   mix,
   mx_noise_float,
-  normalView,
-  positionGeometry,
-  positionViewDirection,
-  sin,
   smoothstep,
   uniform,
   uv,
   vec3,
   vec4,
 } from "three/tsl";
-import type { Object3D, Node } from "three/webgpu";
+import type { Object3D } from "three/webgpu";
 import {
   AdditiveBlending,
   Color,
-  CylinderGeometry,
   DoubleSide,
   Group,
-  Matrix4,
   Mesh,
   MeshBasicNodeMaterial,
-  PlaneGeometry,
   PointLight,
-  Quaternion,
   RingGeometry,
   SphereGeometry,
   Sprite,
@@ -76,6 +71,7 @@ import {
 
 import type {
   DuelEvent,
+  DuelistId,
   ProjectileKind,
   SpellKind,
   SpellState,
@@ -83,7 +79,10 @@ import type {
 import type { Point3 } from "../duel/geometry";
 import type { Tuning } from "../tuning";
 import { createDepulsoWaves } from "./depulso-vfx";
+import { createImpactVfx } from "./impact-vfx";
 import { sampleSpell } from "./interpolate";
+import { createJetKind, layRibbon } from "./jet";
+import type { JetKind } from "./jet";
 import { createSparkRing, seededRandom } from "./spark-ring";
 import type { SparkRing, SparkStyle } from "./spark-ring";
 
@@ -97,21 +96,32 @@ export interface ChargingWand {
   readonly overcharge: number;
 }
 
-/** Duelists something clings to this frame: where each stands (their feet). */
+/** A Duelist something clings to: who, and where they stand (their feet). */
+export interface AfflictedDuelist {
+  readonly id: DuelistId;
+  readonly feet: Point3;
+}
+
+/** Duelists something clings to this frame. */
 export interface AfflictedDuelists {
   /** Every Charging Wand, for its crackle. */
   readonly charging?: readonly ChargingWand[];
   /** Duelists with an Incendio Burn, shedding flames and embers. */
-  readonly burning?: readonly Point3[];
+  readonly burning?: readonly AfflictedDuelist[];
   /** Petrified Duelists, shedding grit and cold glints. */
-  readonly petrified?: readonly Point3[];
+  readonly petrified?: readonly AfflictedDuelist[];
+  /**
+   * A Duelist's joints as last drawn (`BODY_JOINTS` of them, in the order
+   * `impact-vfx.ts` lists), for the arcs and flames on the body.
+   */
+  readonly bodyOf?: (id: DuelistId) => readonly Point3[] | undefined;
 }
 
 export interface SpellVfx {
   readonly object: Group;
   /** The spark ring every effect sprays into (the Clash's too). */
   readonly sparks: SparkRing;
-  /** The camera jets of light turn to face. */
+  /** The camera jets of light and arcs turn to face. */
   readonly watchFrom: (camera: Object3D) => void;
   /** Starts bursts and flashes for this frame's simulation events. */
   readonly handle: (events: readonly DuelEvent[]) => void;
@@ -145,9 +155,9 @@ type SpellLook = Tuning["spellLook"];
 
 type BoltLook = SpellLook["bolts"][ProjectileKind];
 
-type JetLook = SpellLook["bolts"]["stupefy"]["jet"];
+type BurstStyle = SpellLook["bursts"]["stop"];
 
-type BurstStyle = SpellLook["bursts"]["hit"];
+type ImpactStyle = SpellLook["impacts"]["hit"];
 
 /** The flight direction a burst splashes along, when it has one. */
 type Splash = Point3 | undefined;
@@ -161,11 +171,17 @@ const unit = (vector: Point3): Point3 => {
 /** The way a Spell is flying, as a unit vector. */
 const flightOf = (spell: SpellState) => unit(spell.velocity);
 
-/** One Spell kind's materials: core, glow and trail. */
-const createBoltMaterials = (palette: Palette, look: BoltLook) => {
+/**
+ * One Spell kind's materials: the white-hot core, the glow round the head
+ * (a burning fireball when its `flame` is above 0: noise licks its edge
+ * outward and it cools from white through the hue) and the jet.
+ */
+const createBoltKind = (palette: Palette, look: BoltLook) => {
   const { hot, main } = palette;
   const core = new MeshBasicNodeMaterial();
   core.colorNode = vec3(hot.r, hot.g, hot.b).mul(look.core.intensity);
+
+  const time = uniform(0);
 
   const glow = new SpriteNodeMaterial({
     blending: AdditiveBlending,
@@ -173,147 +189,55 @@ const createBoltMaterials = (palette: Palette, look: BoltLook) => {
     transparent: true,
   });
 
-  const fromCentre = length(uv().sub(0.5)).mul(2);
+  const centred = uv().sub(0.5).mul(2);
+
+  const licks = mx_noise_float(
+    vec3(centred.mul(look.glow.flameScale), time.mul(look.glow.flameSpeed)).sub(
+      vec3(0, 0, length(centred).mul(2))
+    )
+  );
+
+  const reach = length(centred).mul(
+    float(1).add(licks.mul(look.glow.flame * 0.6))
+  );
+
   glow.colorNode = vec4(
-    vec3(main.r, main.g, main.b).mul(look.glow.intensity),
+    mix(
+      vec3(main.r, main.g, main.b),
+      vec3(hot.r, hot.g, hot.b),
+      smoothstep(0.6, 0, reach).mul(look.glow.flame)
+    ).mul(look.glow.intensity),
     1
   );
-  glow.opacityNode = smoothstep(1, 0, fromCentre).pow(2.5);
+  glow.opacityNode = smoothstep(1, 0, reach).pow(2.5);
 
-  const trail = new MeshBasicNodeMaterial({
-    blending: AdditiveBlending,
-    depthWrite: false,
-    // Additive: both faces in one pass add up the same (see prewarm.ts).
-    forceSinglePass: true,
-    side: DoubleSide,
-    transparent: true,
-  });
-
-  // Hot at the head, cooling to the Spell's hue and fading out at the tail,
-  // and soft where the cone turns edge-on, so it reads as a streak of light.
-  const along = float(1).sub(positionGeometry.y);
-  const facing = abs(normalView.dot(positionViewDirection));
-  trail.colorNode = mix(
-    vec3(main.r, main.g, main.b),
-    vec3(hot.r, hot.g, hot.b),
-    along.pow(6)
-  ).mul(look.trail.intensity);
-  trail.opacityNode = along.pow(2).mul(facing.pow(1.5)).mul(0.6);
-
-  return { core, glow, trail };
-};
-
-type BoltMaterials = ReturnType<typeof createBoltMaterials>;
-
-const squared = (value: Node<"float">) => value.mul(value);
-
-/**
- * A jet of light, as the films draw a Spell: a ribbon from the Wand to the
- * Spell's head, turned to the camera, with a white-hot core, a halo in the
- * Spell's hue that churns with noise flowing toward the head, pulses running
- * down it and two filaments twisting round it. Its own uniforms: how long
- * it is (metres), the effects clock and a seed, so jets in flight differ.
- */
-const createJet = (palette: Palette, look: JetLook) => {
-  const metresLong = uniform(1);
-  const time = uniform(0);
-  const seed = uniform(0);
-  const hot = vec3(palette.hot.r, palette.hot.g, palette.hot.b);
-  const main = vec3(palette.main.r, palette.main.g, palette.main.b);
-
-  // Along the jet from the tail (0) to the head (1); across it from -1 to 1.
-  const along = uv().x;
-  const across = uv().y.mul(2).sub(1);
-  const metres = along.mul(metresLong);
-  const flow = metres.mul(look.noiseScale).sub(time.mul(look.flowSpeed));
-  const churn = mx_noise_float(vec3(flow, across.mul(1.5), seed));
-  const core = exp(squared(across.div(look.core)).negate());
-
-  const halo = exp(
-    squared(across.div(churn.mul(look.churn).add(1).mul(look.halo))).negate()
-  );
-
-  const pulses = sin(metres.mul(look.pulseRate).sub(time.mul(look.pulseSpeed)))
-    .mul(0.5)
-    .add(0.5)
-    .mul(look.pulse)
-    .add(1 - look.pulse);
-
-  const filament = (phase: number, rate: number) => {
-    const sway = mx_noise_float(vec3(flow.mul(0.5), seed, phase))
-      .mul(0.5)
-      .add(0.5);
-
-    const wiggle = sin(
-      metres.mul(rate).sub(time.mul(look.filamentSpeed)).add(seed.add(phase))
-    )
-      .mul(look.filamentAmplitude)
-      .mul(sway);
-
-    return exp(squared(across.sub(wiggle).div(look.filamentWidth)).negate());
+  return {
+    core,
+    glow,
+    jet: createJetKind(palette, look.jet),
+    tick: (clock: number) => {
+      time.value = clock;
+    },
   };
-
-  const filaments = filament(0, 7).add(filament(2.1, 11));
-
-  const ends = smoothstep(0, look.tailSoft, along).mul(
-    smoothstep(1, 1 - look.headSoft, along)
-  );
-
-  const material = new MeshBasicNodeMaterial({
-    blending: AdditiveBlending,
-    depthWrite: false,
-    forceSinglePass: true,
-    side: DoubleSide,
-    transparent: true,
-  });
-
-  material.colorNode = hot
-    .mul(core.mul(look.coreIntensity))
-    .add(main.mul(halo.mul(pulses).mul(look.haloIntensity)))
-    .add(mix(main, hot, 0.4).mul(filaments.mul(look.filamentIntensity)))
-    .mul(ends);
-
-  const mesh = new Mesh(new PlaneGeometry(1, 1, 64, 1), material);
-  mesh.frustumCulled = false;
-
-  return { mesh, metresLong, seed, time };
 };
 
-type Jet = ReturnType<typeof createJet>;
+type BoltKind = ReturnType<typeof createBoltKind>;
 
-/** A Spell in flight: core, glow and trail, reused across Spells of one kind. */
-const createBolt = (
-  materials: BoltMaterials,
-  look: BoltLook,
-  palette: Palette
-) => {
+/** A Spell in flight: core, glow and jet, reused across Spells of one kind. */
+const createBolt = (kind: BoltKind, look: BoltLook) => {
   const group = new Group();
 
   const core = new Mesh(
     new SphereGeometry(look.core.radius, 16, 12),
-    materials.core
+    kind.core
   );
 
-  const glow = new Sprite(materials.glow);
+  const glow = new Sprite(kind.glow);
   glow.scale.setScalar(look.glow.size);
+  const jet = kind.jet.create();
+  group.add(jet, core, glow);
 
-  // A cone from radius 1 at the head (y = 0) to a point at the tail (y = 1),
-  // scaled to the trail's width and length and turned to point backward.
-  const trailGeometry = new CylinderGeometry(0, 1, 1, 12, 1, true);
-  trailGeometry.translate(0, 0.5, 0);
-  const trail = new Mesh(trailGeometry, materials.trail);
-
-  const jet: Jet | undefined =
-    "jet" in look ? createJet(palette, look.jet) : undefined;
-
-  group.add(core, glow, trail);
-
-  if (jet) {
-    trail.visible = false;
-    group.add(jet.mesh);
-  }
-
-  return { core, glow, group, jet, trail };
+  return { core, glow, group, jet };
 };
 
 type Bolt = ReturnType<typeof createBolt>;
@@ -337,10 +261,10 @@ interface Glow {
 
 /** One kind's pool of bolts, grown on demand and reused frame to frame. */
 const createBoltPool = (look: BoltLook, palette: Palette, parent: Group) => {
-  const materials = createBoltMaterials(palette, look);
+  const kind = createBoltKind(palette, look);
   // One bolt exists (hidden) from the start, so the load-time prewarm
-  // compiles this kind's shaders before its first cast.
-  const first = createBolt(materials, look, palette);
+  // compiles this kind's shaders before its first cast; the rest share them.
+  const first = createBolt(kind, look);
   first.group.visible = false;
   parent.add(first.group);
   const bolts: Bolt[] = [first];
@@ -348,8 +272,10 @@ const createBoltPool = (look: BoltLook, palette: Palette, parent: Group) => {
 
   return {
     /** Starts a frame: every bolt is free again. */
-    begin: () => {
+    begin: (clock: number) => {
       used = 0;
+      kind.tick(clock);
+      kind.jet.tick(clock);
     },
     /** Hides the bolts nobody took this frame. */
     end: () => {
@@ -357,13 +283,14 @@ const createBoltPool = (look: BoltLook, palette: Palette, parent: Group) => {
         bolt.group.visible = false;
       }
     },
+    jet: kind.jet,
     look,
     palette,
     take: (): Bolt => {
       let bolt = bolts[used];
 
       if (!bolt) {
-        bolt = createBolt(materials, look, palette);
+        bolt = createBolt(kind, look);
         bolts.push(bolt);
         parent.add(bolt.group);
       }
@@ -510,6 +437,7 @@ export const createSpellVfx = (settings: SpellVfxSettings): SpellVfx => {
   const { look } = settings;
   const object = new Group();
   const sparks = createSparkRing(look.sparks);
+  const impacts = createImpactVfx(look);
   const random = seededRandom(11);
 
   const palettes: Record<SpellKind, Palette> = {
@@ -524,6 +452,8 @@ export const createSpellVfx = (settings: SpellVfxSettings): SpellVfx => {
   const backfirePalette = paletteFrom(look.backfire);
   const wandPalette = paletteFrom(look.wand);
   const stoneDust = paletteFrom(look.stoneDust);
+  const smokePalette = paletteFrom(look.smoke);
+  const whitePalette = paletteFrom(look.disarmFlash);
   const gritColor = new Color(look.petrified.grit.color);
 
   const shockwaves = createShockwaves(
@@ -559,7 +489,7 @@ export const createSpellVfx = (settings: SpellVfxSettings): SpellVfx => {
   };
 
   const tipGlows = createTipGlows(object, palettes.confringo);
-  /** Where each Spell left the Wand, for its trail. */
+  /** Where each Spell left the Wand, for its jet. */
   const castPoints = new Map<number, Point3>();
   /** Where each Spell last shed its wake, and the sparks it still owes. */
   const wakes = new Map<number, { at: Point3; owed: number }>();
@@ -572,6 +502,8 @@ export const createSpellVfx = (settings: SpellVfxSettings): SpellVfx => {
   let settling: { glints: number; grit: number }[] = [];
   // Drives the flickers.
   let clock = 0;
+  // The Duelists' joints as the last frame drew them, for where Spells land.
+  let bodies: AfflictedDuelists["bodyOf"];
 
   const lights = Array.from({ length: look.lights.pool }, () => {
     const light = new PointLight(
@@ -586,50 +518,37 @@ export const createSpellVfx = (settings: SpellVfxSettings): SpellVfx => {
     return light;
   });
 
-  object.add(sparks.sprite);
+  object.add(sparks.sprite, impacts.object);
 
-  const up = new Vector3(0, 1, 0);
-  const backward = new Vector3();
-  const turn = new Quaternion();
   let viewer: Object3D | undefined;
   const eye = new Vector3();
   const jetTail = new Vector3();
-  const jetAxis = new Vector3();
-  const jetSide = new Vector3();
-  const jetNormal = new Vector3();
-  const jetBasis = new Matrix4();
 
-  /** Lays a jet from its tail to the Spell's head, turned to face the camera. */
+  /** Lays a Spell's jet from its tail to its head, turned to face the camera. */
   const layJet = (
-    jet: Jet,
+    bolt: Bolt,
+    jet: JetKind,
     head: Vector3,
-    jetLook: JetLook,
     flown: number,
     spell: SpellState,
     scale: number
   ) => {
+    const { look: jetLook } = jet;
     const reach = Math.max(Math.min(jetLook.length * scale, flown), 1e-3);
+    const state = jet.state(bolt.jet);
 
-    jetAxis
+    jetTail
       .set(spell.velocity.x, spell.velocity.y, spell.velocity.z)
-      .normalize();
-    jetTail.copy(head).addScaledVector(jetAxis, -reach);
-    jet.mesh.position.copy(jetTail).add(head).multiplyScalar(0.5);
-    viewer?.getWorldPosition(eye);
-    jetSide.copy(jetAxis).cross(eye.sub(jet.mesh.position));
+      .normalize()
+      .multiplyScalar(-reach)
+      .add(head);
 
-    if (jetSide.lengthSq() < 1e-8) {
-      jetSide.set(0, 1, 0).cross(jetAxis);
+    layRibbon(bolt.jet, jetTail, head, jetLook.width * scale, eye);
+
+    if (state) {
+      state.metres = reach;
+      state.seed = spell.id * 0.37;
     }
-
-    jetSide.normalize();
-    jetNormal.copy(jetAxis).cross(jetSide);
-    jetBasis.makeBasis(jetAxis, jetSide, jetNormal);
-    jet.mesh.quaternion.setFromRotationMatrix(jetBasis);
-    jet.mesh.scale.set(reach, jetLook.width * scale, 1);
-    jet.metresLong.value = reach;
-    jet.time.value = clock;
-    jet.seed.value = spell.id * 0.37;
   };
 
   /** How big a Spell is drawn: strong Stupefies and Charged Confringos are bigger. */
@@ -648,10 +567,25 @@ export const createSpellVfx = (settings: SpellVfxSettings): SpellVfx => {
     return spell.empowered ? charged * empoweredScale : charged;
   };
 
+  const lightUp = (
+    position: Point3,
+    color: Color,
+    peak: number,
+    life: number
+  ) => {
+    flashes.push({
+      age: 0,
+      color,
+      life,
+      peak,
+      position: new Vector3(position.x, position.y, position.z),
+    });
+  };
+
   /**
-   * A burst: a still flash, a ring swelling out of it, and sparks streaking
-   * out (leaning along `along`, the Spell's flight, by the style's splash),
-   * with a flash of light.
+   * A burst in the spark ring: a still flash, a ring swelling out of it, and
+   * sparks streaking out (leaning along `along`, the Spell's flight, by the
+   * style's splash), with a flash of light.
    */
   const burst = (
     position: Point3,
@@ -703,13 +637,94 @@ export const createSpellVfx = (settings: SpellVfxSettings): SpellVfx => {
       );
     }
 
-    flashes.push({
-      age: 0,
-      color: palette.main,
-      life: style.lightLife,
-      peak: style.light * scale,
-      position: new Vector3(position.x, position.y, position.z),
+    lightUp(position, palette.main, style.light * scale, style.lightLife);
+  };
+
+  /**
+   * A Spell's energy landing, as the films draw it: a flare of rays, a few
+   * soft wisps swelling and fading (and smoke, for fire), a few long thin
+   * streaks, arcs crawling over `body` when it hit one, and a pulse of its
+   * light on the surroundings.
+   */
+  const impact = (
+    at: Point3,
+    style: ImpactStyle,
+    palette: Palette,
+    options: {
+      readonly along?: Splash;
+      readonly body?: DuelistId;
+      readonly scale?: number;
+      readonly smoke?: Palette;
+    } = {}
+  ) => {
+    const { along, body, scale = 1, smoke = smokePalette } = options;
+
+    const lean =
+      along && style.splash !== 0
+        ? {
+            x: along.x * style.splash,
+            y: along.y * style.splash,
+            z: along.z * style.splash,
+          }
+        : undefined;
+
+    impacts.flare(at, palette, {
+      intensity: style.flare.intensity,
+      life: style.flare.life,
+      size: style.flare.size * scale,
     });
+
+    const { wisps, streaks } = style;
+
+    for (let index = 0; index < Math.round(wisps.count * scale); index += 1) {
+      impacts.wisp(at, palette, {
+        gravity: wisps.gravity,
+        grow: wisps.grow,
+        heading: lean,
+        intensity: wisps.intensity,
+        life: wisps.life * (0.7 + random() * 0.3),
+        size: wisps.size * scale * (0.7 + random() * 0.6),
+        speed: wisps.speed * scale,
+      });
+    }
+
+    for (
+      let index = 0;
+      index < Math.round(style.smoke.count * scale);
+      index += 1
+    ) {
+      impacts.wisp(
+        at,
+        smoke,
+        {
+          gravity: style.smoke.gravity,
+          grow: style.smoke.grow,
+          heading: lean && { x: lean.x * 0.4, y: 0.3, z: lean.z * 0.4 },
+          intensity: style.smoke.intensity,
+          life: style.smoke.life * (0.7 + random() * 0.3),
+          size: style.smoke.size * scale * (0.7 + random() * 0.6),
+          speed: style.smoke.speed * scale,
+        },
+        true
+      );
+    }
+
+    for (let index = 0; index < Math.round(streaks.count * scale); index += 1) {
+      sparks.emit(at, index % 2 === 0 ? palette.hot : palette.main, {
+        heading: lean,
+        intensity: streaks.intensity,
+        life: streaks.life * (0.7 + random() * 0.3),
+        size: streaks.size,
+        speed: streaks.speed * scale * (0.7 + random() * 0.5),
+        streak: streaks.streak,
+      });
+    }
+
+    if (body !== undefined && style.arcs.count > 0) {
+      impacts.arcs(body, palette, style.arcs.count, style.arcs.life);
+    }
+
+    lightUp(at, palette.main, style.light.peak * scale, style.light.life);
   };
 
   /** A point scattered uniformly over a disc of `radius` round `centre`, at height `y`. */
@@ -724,24 +739,12 @@ export const createSpellVfx = (settings: SpellVfxSettings): SpellVfx => {
     };
   };
 
-  /** Incendio's explosion: the blast, the fireball, the shockwave and the embers it leaves. */
-  const explode = (at: Point3) => {
+  /** Incendio's explosion: the fireball and smoke, the shockwave and the embers it leaves. */
+  const explode = (at: Point3, body?: DuelistId) => {
     const { hot, main } = palettes.incendio;
-    const { burst: blast, embers, fireball } = look.incendio;
-    burst(at, blast, palettes.incendio);
+    const { embers } = look.incendio;
+    impact(at, look.impacts.incendio, palettes.incendio, { body });
     shockwaves.start(at);
-
-    // Big, slow flames rolling out of the centre and rising on their heat.
-    for (let flame = 0; flame < fireball.count; flame += 1) {
-      sparks.emit(at, flame % 4 === 0 ? hot : main, {
-        gravity: -fireball.rise,
-        heading: { x: 0, y: 0.35, z: 0 },
-        intensity: fireball.intensity,
-        life: fireball.life * (0.7 + random() * 0.3),
-        size: fireball.size * (0.6 + random() * 0.6),
-        speed: fireball.speed,
-      });
-    }
 
     // Embers over the scorched floor of the blast, drifting up on the heat.
     for (let ember = 0; ember < embers.count; ember += 1) {
@@ -780,8 +783,36 @@ export const createSpellVfx = (settings: SpellVfxSettings): SpellVfx => {
     };
   };
 
+  /** A point near one of the body's joints, or round the body when they are unknown. */
+  const onBody = (
+    feet: Point3,
+    joints: readonly Point3[] | undefined,
+    spread: number,
+    from: number,
+    to: number
+  ): Point3 => {
+    const joint = joints?.[Math.floor(random() * joints.length)];
+
+    if (!joint) {
+      return roundBody(feet, spread, from, to);
+    }
+
+    const angle = random() * Math.PI * 2;
+    const reach = spread * random();
+
+    return {
+      x: joint.x + Math.cos(angle) * reach,
+      y: joint.y + (random() - 0.5) * spread,
+      z: joint.z + Math.sin(angle) * reach,
+    };
+  };
+
   /** Flames and embers on every Burning Duelist; returns their light requests. */
-  const smoulder = (burning: readonly Point3[], seconds: number): Glow[] => {
+  const smoulder = (
+    burning: readonly AfflictedDuelist[],
+    seconds: number,
+    bodyOf: AfflictedDuelists["bodyOf"]
+  ): Glow[] => {
     const { hot, main } = palettes.incendio;
     const { burn } = look;
 
@@ -789,14 +820,15 @@ export const createSpellVfx = (settings: SpellVfxSettings): SpellVfx => {
       (_, index) => smouldering[index] ?? { embers: 0, flames: 0 }
     );
 
-    return burning.map((body, index) => {
+    return burning.map(({ feet, id }, index) => {
       const debt = smouldering[index] ?? { embers: 0, flames: 0 };
+      const joints = bodyOf?.(id);
       debt.embers += burn.embers.rate * seconds;
       debt.flames += burn.flames.rate * seconds;
 
       for (let ember = 0; debt.embers >= 1; ember += 1, debt.embers -= 1) {
         sparks.emit(
-          roundBody(body, burn.spread, burn.from, burn.to),
+          roundBody(feet, burn.spread, burn.from, burn.to),
           ember % 3 === 0 ? hot : main,
           {
             gravity: -burn.embers.rise,
@@ -808,25 +840,22 @@ export const createSpellVfx = (settings: SpellVfxSettings): SpellVfx => {
         );
       }
 
-      // Tongues of flame licking up the body, mostly low.
-      for (let flame = 0; debt.flames >= 1; flame += 1, debt.flames -= 1) {
-        sparks.emit(
-          roundBody(
-            body,
-            burn.spread,
-            burn.from,
-            burn.from + (burn.to - burn.from) * random()
-          ),
-          flame % 3 === 0 ? hot : main,
+      // Tongues of flame rising off the body, from its joints.
+      for (; debt.flames >= 1; debt.flames -= 1) {
+        const { flames } = burn;
+        impacts.wisp(
+          onBody(feet, joints, burn.spread, burn.from, burn.to),
+          palettes.incendio,
           {
-            gravity: -burn.flames.rise,
+            gravity: flames.gravity,
+            grow: flames.grow,
             heading: { x: 0, y: 1, z: 0 },
-            intensity: burn.flames.intensity,
-            life: burn.flames.life * (0.6 + random() * 0.4),
-            size: burn.flames.size * (0.5 + random() * 0.5),
-            speed: burn.flames.speed,
-            spread: 0.6,
-            streak: burn.flames.streak,
+            intensity: flames.intensity,
+            life: flames.life * (0.6 + random() * 0.4),
+            size: flames.size * (0.6 + random() * 0.6),
+            speed: flames.speed,
+            spread: 0.35,
+            stretch: flames.stretch,
           }
         );
       }
@@ -840,26 +869,26 @@ export const createSpellVfx = (settings: SpellVfxSettings): SpellVfx => {
           (0.7 +
             0.2 * Math.sin(clock * 23 + index) +
             0.1 * Math.sin(clock * 41)),
-        position: new Vector3(body.x, body.y + 1, body.z),
+        position: new Vector3(feet.x, feet.y + 1, feet.z),
       };
     });
   };
 
   /** Grit falling off every Petrified Duelist, and cold glints on the stone. */
-  const settle = (petrified: readonly Point3[], seconds: number) => {
+  const settle = (petrified: readonly AfflictedDuelist[], seconds: number) => {
     const { glints, grit, spread, from, to } = look.petrified;
 
     settling = petrified.map(
       (_, index) => settling[index] ?? { glints: 0, grit: 0 }
     );
 
-    for (const [index, body] of petrified.entries()) {
+    for (const [index, { feet }] of petrified.entries()) {
       const debt = settling[index] ?? { glints: 0, grit: 0 };
       debt.grit += grit.rate * seconds;
       debt.glints += glints.rate * seconds;
 
       for (; debt.grit >= 1; debt.grit -= 1) {
-        sparks.emit(roundBody(body, spread, from, to), gritColor, {
+        sparks.emit(roundBody(feet, spread, from, to), gritColor, {
           gravity: grit.gravity,
           intensity: grit.intensity,
           life: grit.life,
@@ -870,7 +899,7 @@ export const createSpellVfx = (settings: SpellVfxSettings): SpellVfx => {
 
       for (; debt.glints >= 1; debt.glints -= 1) {
         sparks.emit(
-          roundBody(body, spread * 0.8, from, to),
+          roundBody(feet, spread * 0.8, from, to),
           palettes.petrificus.hot,
           {
             gravity: 0,
@@ -903,28 +932,64 @@ export const createSpellVfx = (settings: SpellVfxSettings): SpellVfx => {
     }
   };
 
-  /** A Spell landing on a Duelist. */
-  const hitBurst = (event: Extract<DuelEvent, { type: "spell-hit" }>) => {
-    const { spell } = event;
+  /**
+   * Where a Spell meets the body it hit: the simulation reports where the
+   * Spell was as it touched the body's reach, so the energy lands on the
+   * nearest joint's surface instead, at most `look.contact` off it.
+   */
+  const onContact = (at: Point3, body: DuelistId): Point3 => {
+    const joints = bodies?.(body);
+    let nearest: Point3 | undefined;
+    let best = Number.POSITIVE_INFINITY;
+
+    for (const joint of joints ?? []) {
+      const gap = Math.hypot(at.x - joint.x, at.y - joint.y, at.z - joint.z);
+
+      if (gap < best) {
+        best = gap;
+        nearest = joint;
+      }
+    }
+
+    if (!nearest || best <= look.contact) {
+      return at;
+    }
+
+    const share = look.contact / best;
+
+    return {
+      x: nearest.x + (at.x - nearest.x) * share,
+      y: nearest.y + (at.y - nearest.y) * share,
+      z: nearest.z + (at.z - nearest.z) * share,
+    };
+  };
+
+  /** A Spell landing on a Duelist: its energy hitting the body. */
+  const hitBurst = (hit: Extract<DuelEvent, { type: "spell-hit" }>) => {
+    const { spell } = hit;
+    const along = flightOf(spell);
+    const body = hit.targetId;
+    const event = { position: onContact(hit.position, body) };
 
     if (spell.kind === "confringo") {
-      burst(
-        event.position,
-        look.bursts.confringoHit,
-        palettes.confringo,
-        sizeOf(spell),
-        flightOf(spell)
-      );
+      // A burst of fire and smoke, scaled with its Charge.
+      impact(event.position, look.impacts.confringo, palettes.confringo, {
+        along,
+        body,
+        scale: sizeOf(spell),
+      });
     } else if (spell.kind === "petrificus") {
-      // A cold flash and a puff of stone dust as the Duelist turns to stone.
-      burst(
-        event.position,
-        look.bursts.petrify,
-        palettes.petrificus,
-        1,
-        flightOf(spell)
-      );
-      burst(event.position, look.bursts.petrify, stoneDust, 0.8);
+      // A cold flare and a puff of stone dust as the stone takes the body.
+      impact(event.position, look.impacts.petrify, palettes.petrificus, {
+        along,
+        body,
+        smoke: stoneDust,
+      });
+    } else if (spell.kind === "expelliarmus") {
+      impact(event.position, look.impacts.expelliarmus, palettes.expelliarmus, {
+        along,
+        body,
+      });
     } else if (spell.kind === "depulso") {
       // The blast's force bursting off the body, away from the caster.
       burst(
@@ -932,13 +997,41 @@ export const createSpellVfx = (settings: SpellVfxSettings): SpellVfx => {
         settings.depulsoLook.impact,
         palettes.depulso,
         1,
-        flightOf(spell)
+        along
       );
-    } else if (spell.kind !== "incendio") {
-      // Incendio's hit is mostly its explosion, reported on its own.
+    } else if (spell.kind === "stupefy") {
+      impact(
+        event.position,
+        spell.strong ? look.impacts.strongHit : look.impacts.hit,
+        palettes.stupefy,
+        { along, body }
+      );
+    } else {
+      // Incendio's blast is its explosion, reported on its own; here only
+      // its energy on the body it struck.
+      impacts.arcs(
+        body,
+        palettes.incendio,
+        look.impacts.incendio.arcs.count,
+        look.impacts.incendio.arcs.life
+      );
+    }
+  };
+
+  /** A Spell stopped by Cover, a wall or the floor. */
+  const stopBurst = (event: Extract<DuelEvent, { type: "spell-stopped" }>) => {
+    const { spell } = event;
+
+    if (spell.kind === "confringo") {
+      // Fire splashing back off the wall.
+      impact(event.position, look.impacts.confringo, palettes.confringo, {
+        along: flightOf(spell),
+        scale: sizeOf(spell) * look.confringo.stopScale,
+      });
+    } else {
       burst(
         event.position,
-        spell.strong ? look.bursts.strongHit : look.bursts.hit,
+        look.bursts.stop,
         palettes[spell.kind],
         1,
         flightOf(spell)
@@ -956,13 +1049,13 @@ export const createSpellVfx = (settings: SpellVfxSettings): SpellVfx => {
           z: event.spell.velocity.z,
         });
       } else if (event.type === "spell-cast") {
+        // The jet starts at the Wand tip, where it flares.
         castPoints.set(event.spell.id, event.spell.position);
-        burst(
+        impact(
           event.spell.position,
-          look.bursts.cast,
+          look.impacts.cast,
           palettes[event.spell.kind],
-          sizeOf(event.spell),
-          flightOf(event.spell)
+          { along: flightOf(event.spell), scale: sizeOf(event.spell) }
         );
       } else if (event.type === "perfect-release") {
         burst(event.spell.position, look.bursts.perfect, palettes.confringo);
@@ -971,16 +1064,7 @@ export const createSpellVfx = (settings: SpellVfxSettings): SpellVfx => {
       } else if (event.type === "spell-hit") {
         hitBurst(event);
       } else if (event.type === "spell-stopped") {
-        const { spell } = event;
-        const confringo = spell.kind === "confringo";
-
-        burst(
-          event.position,
-          confringo ? look.bursts.confringoStop : look.bursts.stop,
-          palettes[spell.kind],
-          confringo ? sizeOf(spell) : 1,
-          flightOf(spell)
-        );
+        stopBurst(event);
       } else if (event.type === "explosion") {
         explode(event.position);
       } else if (event.type === "spells-cancelled") {
@@ -1001,12 +1085,13 @@ export const createSpellVfx = (settings: SpellVfxSettings): SpellVfx => {
           flightOf(event.spell)
         );
       } else if (event.type === "disarm") {
-        burst(event.position, look.bursts.disarm, palettes.expelliarmus);
-        burst(event.position, look.bursts.disarm, wandPalette, 0.5);
+        // A white flash where the Wand leaves the hand (Expelliarmus's own
+        // scarlet energy lands with its hit).
+        impact(event.position, look.impacts.disarm, whitePalette);
       } else if (event.type === "wand-recovered") {
         burst(event.position, look.bursts.wandBack, wandPalette);
       } else if (event.type === "parry") {
-        // The reflected Spell's trail starts from the Shield, not the Wand.
+        // The reflected Spell's jet starts from the Shield, not the Wand.
         castPoints.set(event.reflected.id, event.position);
         wakes.delete(event.reflected.id);
         // A gold deflection, the Spell's own sparks splashing back the way
@@ -1186,26 +1271,9 @@ export const createSpellVfx = (settings: SpellVfxSettings): SpellVfx => {
     drawn.glow.position.copy(drawn.core.position);
     drawn.glow.scale.setScalar(bolt.glow.size * scale * flicker);
 
-    // The trail reaches back toward the Wand, never past it.
+    // The jet reaches back toward the Wand, never past it.
     const flown = Math.hypot(head.x - from.x, head.y - from.y, head.z - from.z);
-
-    const trailLength = Math.min(bolt.trail.length * scale, flown);
-    backward
-      .set(-spell.velocity.x, -spell.velocity.y, -spell.velocity.z)
-      .normalize();
-    turn.setFromUnitVectors(up, backward);
-    drawn.trail.position.copy(drawn.core.position);
-    drawn.trail.quaternion.copy(turn);
-    drawn.trail.scale.set(
-      bolt.trail.width * scale,
-      Math.max(trailLength, 1e-3),
-      bolt.trail.width * scale
-    );
-
-    if (drawn.jet && "jet" in bolt) {
-      layJet(drawn.jet, drawn.core.position, bolt.jet, flown, spell, scale);
-    }
-
+    layJet(drawn, pool.jet, drawn.core.position, flown, spell, scale);
     shed(spell, head, from, bolt.wake, palette, scale);
 
     return {
@@ -1223,23 +1291,25 @@ export const createSpellVfx = (settings: SpellVfxSettings): SpellVfx => {
     seconds: number,
     afflicted: AfflictedDuelists = {}
   ) => {
-    const { burning = [], charging = [], petrified = [] } = afflicted;
+    const { bodyOf, burning = [], charging = [], petrified = [] } = afflicted;
+    bodies = bodyOf;
     sparks.advance(seconds);
     shockwaves.advance(seconds);
     waves.advance(seconds);
     clock += seconds;
+    viewer?.getWorldPosition(eye);
     const before = new Map(previous.map((spell) => [spell.id, spell]));
 
     // Light requests this frame: every flash, Spell in flight, Charging Wand and Burn.
     const glows: Glow[] = [
       ...crackleAt(charging, seconds),
-      ...smoulder(burning, seconds),
+      ...smoulder(burning, seconds, bodyOf),
     ];
 
     settle(petrified, seconds);
 
     for (const pool of Object.values(pools)) {
-      pool.begin();
+      pool.begin(clock);
     }
 
     for (const spell of current) {
@@ -1291,6 +1361,7 @@ export const createSpellVfx = (settings: SpellVfxSettings): SpellVfx => {
       });
     }
 
+    impacts.update(seconds, eye, (id) => bodyOf?.(id));
     sparks.commit();
     light(glows);
   };
