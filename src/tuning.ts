@@ -1230,7 +1230,26 @@ export const tuning = {
      * free hand grips the Wand `clashGrip` metres behind the fist.
      */
     wand: {
-      charge: [0.06, 0.62, 0.78],
+      /**
+       * A Confringo thrown overhead (body frame, +z ahead, +x left, +y up).
+       * Charging, the Wand tip rises from `wandTip` along an arc about the
+       * right shoulder (`pivot`, metres up and ahead) to `tip`, the whole arm up above the
+       * head and the Wand high, pointing `pointing`. Released, it comes down
+       * over the top: the Spell leaves as the tip passes `wandTip`, and the
+       * swing follows through to `follow.tip` (pointing `follow.pointing`)
+       * over `follow.seconds`, fast at first, and holds there while the
+       * strike plays (`motion.shots.strike`); then the arm lowers as usual.
+       */
+      charge: {
+        follow: {
+          pointing: [0.05, -0.55, 0.83],
+          seconds: 0.26,
+          tip: [-0.16, 0.8, 0.66],
+        },
+        pivot: { forward: -0.05, height: 1.41 },
+        pointing: [0.05, 0.8, -0.6],
+        tip: [-0.18, 2.16, -0.26],
+      },
       clashGrip: 0.11,
       elbowHint: [-0.5, -1, -0.6],
       flickSeconds: 0.2,

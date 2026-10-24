@@ -24,7 +24,9 @@
  * right arm rises by two-bone IK so the drawn Wand tip sits exactly on the
  * simulation's `wandTip` (snapping up on the very frame a Spell leaves it,
  * the chest leading the body round to the aim), so Spells visibly leave the
- * Wand, and lowers again shortly after. Disarmed, that hand reaches for the
+ * Wand, and lowers again shortly after. A Charge raises it overhead instead,
+ * and its release throws it down over the top, the Spell leaving as the tip
+ * passes `wandTip`. Disarmed, that hand reaches for the
  * loose Wand instead; in a Clash the free hand grips the Wand too.
  * Petrified, the pose freezes and the body turns to stone.
  *
@@ -378,7 +380,11 @@ export const createDuelistView = (
     shield: 0,
     sprint: 0,
     stagger: 0,
+    thrown: 0,
   };
+
+  /** Whether the arm is lowering out of a Confringo's throw. */
+  let thrown = false;
 
   // One-shots: their ages in seconds.
   let castAge = idle;
@@ -718,7 +724,6 @@ export const createDuelistView = (
     sample.knockedBack ||
     sample.staggered ||
     rollAge < dodgeSeconds ||
-    (strikeAge > 0 && strikeAge < shots.strike.seconds * 0.6) ||
     pickupAge < shots.pickup.seconds ||
     riseAge < durationOf("LayToIdle") ||
     (sample.sprinting && !sample.charging && !sample.shielding);
@@ -744,20 +749,34 @@ export const createDuelistView = (
     weight.sprint = ease(weight.sprint, sample.sprinting && walking);
     weight.stagger = ease(weight.stagger, sample.staggered && !down);
 
-    // The Wand is up to cast, Charge, Shield, Parry or Clash, and for a
-    // moment after a cast or Parry; otherwise it is held low.
+    // The Wand is up to cast, Charge, Shield, Parry or Clash, for a moment
+    // after a cast or Parry and through a Confringo's follow-through;
+    // otherwise it is held low.
+    const following = strikeAge < shots.strike.seconds;
+
     const raised =
       !handBusy(sample) &&
       (sample.charging ||
         sample.shielding ||
         sample.clashing ||
-        raisedAge < wand.hold);
+        raisedAge < wand.hold ||
+        following);
 
     weight.lock = ease(
       weight.lock,
       raised,
       raised ? wand.lockSharpness : wand.lowerSharpness
     );
+
+    // Thrown, the arm lowers from where the follow-through leaves it, not
+    // back up through the ready stance, until the Wand is down or up again.
+    if (following) {
+      thrown = true;
+    } else if (raised || weight.lock < 0.02) {
+      thrown = false;
+    }
+
+    weight.thrown = ease(weight.thrown, thrown, wand.lockSharpness);
   };
 
   /** A one-shot's clip time and weight at `age`, by its `shots` entry. */
@@ -824,6 +843,7 @@ export const createDuelistView = (
       loopTime(clock, durationOf("Spell_Simple_Idle_Loop")),
       armed *
         weight.lock *
+        (1 - weight.thrown) *
         (1 - weight.sprint) *
         (stance.standing + (stance.moving - stance.standing) * gaitWeight)
     );
@@ -1212,12 +1232,51 @@ export const createDuelistView = (
       ? object.rotation.y
       : Math.atan2(Math.sin(sample.aim.yaw), -Math.cos(sample.aim.yaw));
 
+  /**
+   * Where a Confringo's overhead throw has the Wand: 0 on `wandTip` (where
+   * the Spell leaves), up to 1 overhead at full Charge, down to -1 at the
+   * end of the follow-through, where it stays as the arm lowers.
+   */
+  const throwSwing = () =>
+    strikeAge < shots.strike.seconds
+      ? -1 + (1 - unit(strikeAge / wand.charge.follow.seconds)) ** 2
+      : weight.charge - weight.thrown;
+
+  /**
+   * Moves `tip` (body frame) toward `end` by `amount` along an arc about the
+   * shoulder (`wand.charge.pivot`), so the Wand swings over the top.
+   */
+  const swingTip = (tip: Vector3, end: Triple, amount: number) => {
+    const { forward: pz, height: py } = wand.charge.pivot;
+    const [ex, ey, ez] = end;
+    const from = Math.atan2(tip.y - py, tip.z - pz);
+    const to = Math.atan2(ey - py, ez - pz);
+    const angle = from + (to - from) * amount;
+    const fromRadius = Math.hypot(tip.y - py, tip.z - pz);
+
+    const radius =
+      fromRadius + (Math.hypot(ey - py, ez - pz) - fromRadius) * amount;
+
+    tip.set(
+      tip.x + (ex - tip.x) * amount,
+      py + radius * Math.sin(angle),
+      pz + radius * Math.cos(angle)
+    );
+  };
+
   /** Where the Wand tip should be and which way the Wand points (world), with the flick of a cast. */
   const wandAim = (sample: DuelistSample) => {
     const { forward, height, right } = duelist.wandTip;
     const tipLocal = scratch.set(-right, height, forward);
     const pointing = vector(wand.rest).normalize();
-    pointing.lerp(vector(wand.charge).normalize(), weight.charge).normalize();
+
+    // A Confringo: up overhead while Charging, then down over the top.
+    const swung = throwSwing() * (1 - weight.clash);
+    const { charge } = wand;
+    const end = swung > 0 ? charge : charge.follow;
+    swingTip(tipLocal, end.tip, Math.abs(swung));
+    pointing.lerp(vector(end.pointing).normalize(), Math.abs(swung));
+    pointing.normalize();
     pointing.lerp(vector(wand.shield).normalize(), weight.shield).normalize();
 
     // A Clash: along the beam, straight ahead at the opponent, trembling.
