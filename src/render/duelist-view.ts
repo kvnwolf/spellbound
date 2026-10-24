@@ -1317,30 +1317,6 @@ export const createDuelistView = (
     }
 
     holdWandLow(sample);
-
-    if (sample.looseWand && weight.disarmed > 1e-3) {
-      // Disarmed: the empty hand reaches toward the loose Wand, grasping.
-      const yaw = Math.atan2(sample.facing.x, sample.facing.z);
-      const dx = sample.looseWand.x - sample.position.x;
-      const dz = sample.looseWand.z - sample.position.z;
-      const cos = Math.cos(yaw);
-      const sin = Math.sin(yaw);
-      const { disarmed } = wand;
-
-      const toward = new Vector3(
-        dx * cos - dz * sin,
-        0,
-        Math.max(dx * sin + dz * cos, disarmed.behind)
-      ).normalize();
-
-      joints.upperArms[1].getWorldPosition(shoulder);
-      const local = object.worldToLocal(shoulder.clone());
-      local.y =
-        disarmed.height +
-        disarmed.grasp * Math.sin(clock * disarmed.graspRate * Math.PI * 2);
-      local.addScaledVector(toward, disarmed.reach);
-      reach(1, toWorld(local, handTarget), null, weight.disarmed);
-    }
   };
 
   /** In a Clash the free hand grips the Wand behind the fist. */

@@ -1226,21 +1226,12 @@ export const tuning = {
      * cast flicks it (`flicks`: `raise` radians up, `inward` across, the hand
      * reaching `reach` metres ahead) over `flickSeconds` from the tip, so
      * the Spell leaves the Wand as it starts. Elbows bend toward
-     * `elbowHint`. Disarmed, the empty hand reaches `reach` metres toward
-     * the loose Wand at `height`, grasping, turning back no further than
-     * `behind` (the reach's share pointing ahead, -1 to 1). In a Clash the
+     * `elbowHint`. Disarmed, the empty hand swings with the clips. In a Clash the
      * free hand grips the Wand `clashGrip` metres behind the fist.
      */
     wand: {
       charge: [0.06, 0.62, 0.78],
       clashGrip: 0.11,
-      disarmed: {
-        behind: -0.3,
-        grasp: 0.04,
-        graspRate: 3.2,
-        height: 1.12,
-        reach: 0.5,
-      },
       elbowHint: [-0.5, -1, -0.6],
       flickSeconds: 0.2,
       flicks: {
