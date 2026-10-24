@@ -74,6 +74,11 @@ export interface Intent {
   readonly shield: boolean;
   /** The sprint button is down this tick: sprinting lasts while it is held and Stamina lasts. */
   readonly sprint: boolean;
+  /**
+   * The crouch button is down this tick. The simulation reads the press: it
+   * crouches, or stands back up; pressed while sprinting, it slides.
+   */
+  readonly crouch: boolean;
   /** The Spell Slots: the modifier held, and a slot pressed this tick. */
   readonly spellSlots: SlotsIntent;
   /** The Potion Slots: the modifier held, and a slot pressed this tick. */
@@ -89,6 +94,7 @@ export interface Intent {
 /** The Intent of a Controller that does nothing. */
 export const idleIntent: Intent = {
   clashPump: false,
+  crouch: false,
   dodge: false,
   heavySpell: false,
   jump: false,

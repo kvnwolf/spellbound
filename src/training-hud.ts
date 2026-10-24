@@ -1,6 +1,6 @@
 /**
  * The Training lesson's part of the Duel HUD, top-centre: which lesson of
- * the seventeen, and under it the goal on show with its buttons (face
+ * the eighteen, and under it the goal on show with its buttons (face
  * buttons and D-pad arrows as their icons) and its count, "Acierta Stupefy
  * con □ (1/3)". Once the lesson is completed the goal gives way to
  * "¡Lección completada!" for a moment, before its success scroll. Only

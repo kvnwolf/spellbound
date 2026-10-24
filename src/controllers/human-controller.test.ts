@@ -288,12 +288,42 @@ describe(createHumanController, () => {
     });
   });
 
-  it("leaves L3 unbound", () => {
-    const { press, tick } = holding([0, 0, 0, 0]);
-    const before = tick();
-    press(10, true);
+  describe("L3", () => {
+    const l3 = 10;
 
-    expect(tick()).toStrictEqual(before);
+    it("crouches while L3 is down, and nothing else", () => {
+      const { press, tick } = holding([0, 0, 0, 0]);
+      const before = tick();
+      press(l3, true);
+      const held = tick();
+      press(l3, false);
+
+      expect(before.crouch).toBeFalsy();
+      expect(held).toStrictEqual({ ...before, crouch: true });
+      expect(tick().crouch).toBeFalsy();
+    });
+
+    it("crouches while walking, the left stick still moving", () => {
+      const { press, tick } = holding([0, -1, 0, 0]);
+      tick();
+      press(l3, true);
+
+      expect(tick()).toMatchObject({ crouch: true, move: { x: 0, y: 1 } });
+    });
+
+    it("ignores L3 held across a resume until it is released", () => {
+      const { press, suspend, tick } = holding([0, 0, 0, 0]);
+      suspend();
+      press(l3, true);
+
+      const held = tick();
+      press(l3, false);
+      tick();
+      press(l3, true);
+
+      expect(held.crouch).toBeFalsy();
+      expect(tick().crouch).toBeTruthy();
+    });
   });
 
   describe("the right stick turns the camera", () => {
@@ -465,6 +495,7 @@ describe(createHumanController, () => {
 
     expect(intent).toStrictEqual({
       clashPump: false,
+      crouch: false,
       dodge: false,
       heavySpell: false,
       jump: false,

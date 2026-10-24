@@ -30,6 +30,7 @@ export const en: Dictionary = {
   connectDualSense: "Connect your DualSense and press ✕",
   controls: {
     actions: {
+      crouch: "Crouch",
       dodge: "Dodge",
       heavySpell: "Heavy spell",
       jump: "Jump",
@@ -44,6 +45,7 @@ export const en: Dictionary = {
       sprint: "Run",
     },
     details: {
+      crouch: "While running: slide",
       heavySpell: "Hold to charge · Mash in a Clash",
       look: "Flick it sideways: switch target",
       potionSlots: "Hold and press ↑ ← → ↓",
@@ -74,6 +76,10 @@ export const en: Dictionary = {
         title: "Perfect Dodge",
       },
       {
+        body: "Crouch with L3 once a spell is already flying at your chest and it passes overhead; while running, L3 slides you under it. A spell cast while you're already down comes for you low, and Depulso or a blast still finds you.",
+        title: "Crouch and slide",
+      },
+      {
         body: "Two fully charged heavy spells meeting head-on lock into a beam. Mash △ faster than your rival to push it into them.",
         title: "Clash",
       },
@@ -99,7 +105,7 @@ export const en: Dictionary = {
       },
     ],
     tabs: { controls: "Controls", mechanics: "Mechanics" },
-    triggers: { l1: "L1", l2: "L2", r1: "R1", r2: "R2", r3: "R3" },
+    triggers: { l1: "L1", l2: "L2", l3: "L3", r1: "R1", r2: "R2", r3: "R3" },
   },
   difficulty: {
     duelista: "Duellist",
@@ -218,6 +224,7 @@ export const en: Dictionary = {
         "Get close to the dummy and cast Depulso: hold R2 and press {depulso}",
       disarmed: "Let the dummy disarm you",
       dodge: "Dodge roll with ○",
+      duck: "Crouch with L3 once the spell is flying: let it pass overhead",
       expelliarmus:
         "Disarm the dummy with Expelliarmus: hold R2 and press {expelliarmus}",
       felix: "Drink Felix Felicis: hold L2 and press {felix}",
@@ -233,6 +240,7 @@ export const en: Dictionary = {
       petrificus: "Petrify the dummy: hold R2 and press {petrificus}",
       pickup: "Walk over your wand to pick it up",
       run: "Run by holding R1",
+      slide: "Run with R1 and slide with L3",
       special:
         "Spend that Determination on Depulso: hold R2 and press {depulso} near the dummy",
       strength: "Drink the Maxima Potion: hold L2 and press {strength}",
@@ -250,6 +258,7 @@ export const en: Dictionary = {
     lessonDone: "Lesson complete!",
     lessons: {
       clash: "Win a Clash",
+      crouch: "Crouch and slide",
       depulso: "Depulso",
       disarmed: "Disarmed: get your wand back",
       dodge: "Dodge",
@@ -271,6 +280,8 @@ export const en: Dictionary = {
     previews: {
       clash:
         "Two charged Confringos meeting head-on lock into a beam: mash △ faster than your rival to push it home.",
+      crouch:
+        "Crouch in time and the spell flies overhead; while running, slide under it.",
       depulso:
         "A short cone of force that shoves your rival back and cuts off their charge or potion.",
       disarmed:
@@ -312,6 +323,11 @@ export const en: Dictionary = {
         controls: "Release △ at full charge · Mash △",
         what: "When two fully charged Confringos meet head-on, they lock into a beam between the two wands.",
         when: "Mash △, faster than your rival, to drive the beam into them. Winning it builds your Determination.",
+      },
+      crouch: {
+        controls: "L3: crouch and stand · Running with R1, L3: slide",
+        what: "L3 crouches you: you walk slowly, and spells meant for your chest fly overhead. It costs nothing, but a spell cast while you're already down comes for you low. While running, L3 slides you along the floor, fast and low, for a little stamina, and you end up crouched.",
+        when: "Crouch right after your rival casts, once the spell can no longer correct, and stand before the next one. Depulso and blasts still reach you: for those, roll with ○.",
       },
       depulso: {
         controls: "Hold R2 and press {depulso}",

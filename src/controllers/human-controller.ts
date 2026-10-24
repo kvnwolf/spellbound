@@ -74,6 +74,7 @@ const createFlickDetector = (
  * and the D-pad's Potion Slots are bound in the tuning.
  */
 export const humanBindings = {
+  crouch: "l3",
   dodge: "circle",
   heavySpell: "triangle",
   jump: "cross",
@@ -191,7 +192,14 @@ const createSlotReader = (
 };
 
 /** The buttons whose press the simulation or Lock-on reads as an edge: a held one can be a stray press. */
-const edgeButtons = ["circle", "cross", "square", "triangle", "r3"] as const;
+const edgeButtons = [
+  "circle",
+  "cross",
+  "square",
+  "triangle",
+  "l3",
+  "r3",
+] as const;
 
 /**
  * Buttons that were already down when gameplay (re)started, such as the one
@@ -261,7 +269,9 @@ const curvedWalk = (stick: Vec2, exponent: number): Vec2 => {
  *   moment after the click, which tends to knock it.
  * - □: the Light Spell.
  * - △: the Heavy Spell, held to Charge and released to cast.
- * - ○: Dodge. ✕: jump. L1 (held): the Shield. R1 (held): sprint. L3 is unbound.
+ * - ○: Dodge. ✕: jump. L1 (held): the Shield. R1 (held): sprint.
+ * - L3: crouch, or stand back up; while sprinting, slide (the simulation
+ *   reads the press).
  * - R2 (held): the Spell Slots' modifier. While it is held, pressing a face
  *   button casts from its Spell Slot instead of its usual action (R2 alone
  *   casts nothing); the right stick keeps turning the camera as usual.
@@ -347,6 +357,7 @@ export const createHumanController = (
         // △ is also the Clash pump; the simulation counts the presses, and
         // only during a Clash, so a △ held into one is no press.
         clashPump: pad.buttons[humanBindings.heavySpell],
+        crouch: pad.buttons[humanBindings.crouch],
         // Buttons are passed on as held; the simulation finds the presses
         // (and reads △'s hold over time to Charge Confringo). A face button
         // pressed while R2 is held went to its Spell Slot instead.

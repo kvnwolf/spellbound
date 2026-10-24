@@ -15,12 +15,14 @@ export interface FlightTarget {
   readonly position: GroundPoint;
   /** Height of the cylinder's base (the feet) above the floor. */
   readonly elevation: number;
+  /** How tall the cylinder stands (lower crouched or sliding); `bodyHeight` when not given. */
+  readonly height?: number;
 }
 
 export interface FlightBodies {
   readonly arena: ArenaLayout;
   readonly targets: readonly FlightTarget[];
-  /** Radius and height of a Duelist's body. */
+  /** Radius and height of a Duelist's body (standing: a target can be lower). */
   readonly bodyRadius: number;
   readonly bodyHeight: number;
   /** Radius of a Spell's sphere, which differs by kind (Confringo is a big, slow blast). */
@@ -174,12 +176,13 @@ const firstContact = (
       continue;
     }
 
-    // The body is a cylinder: a Spell passing over the head or under the
-    // feet (a jumping Duelist's) misses.
+    // The body is a cylinder: a Spell passing over the head (a crouching
+    // Duelist's) or under the feet (a jumping Duelist's) misses.
     const position = pointAt(spell, seconds, at);
     const feet = target.elevation;
+    const head = feet + (target.height ?? bodies.bodyHeight);
 
-    if (position.y >= feet && position.y <= feet + bodies.bodyHeight) {
+    if (position.y >= feet && position.y <= head) {
       contacts.push({
         at,
         outcome: { kind: "hit", position, spell, targetId: target.id },

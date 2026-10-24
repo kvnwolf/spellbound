@@ -171,6 +171,9 @@ const scriptFor = (lesson: Lesson, tuning: Tuning): Script => {
     );
   };
 
+  // When the Crouch lesson's learner last went down.
+  let crouchedAt = Number.NEGATIVE_INFINITY;
+
   // The Dodge lesson's last Dodge, and how many so far.
   let dodged = { at: Number.NEGATIVE_INFINITY, count: 0 };
 
@@ -195,6 +198,42 @@ const scriptFor = (lesson: Lesson, tuning: Tuning): Script => {
         charging(moment, script.clash.chargeAt),
       lockOn: lockedOn(moment),
     }),
+    // Crouches as each of the dummy's Stupefies comes and stands once it
+    // has passed; then runs at the dummy and slides, and back, and slides
+    // again.
+    crouch: (moment) => {
+      const { back, duck, slideBack, slideToward, toward } = script.crouch;
+
+      if (moment.seconds < duck.until) {
+        const soon = secondsToHit(moment, reach);
+
+        if (moment.me.crouching) {
+          return { crouch: moment.seconds - crouchedAt >= duck.hold };
+        }
+
+        const down = soon !== undefined && soon <= duck.lead;
+
+        if (down) {
+          crouchedAt = moment.seconds;
+        }
+
+        return { crouch: down };
+      }
+
+      let { move } = idleIntent;
+
+      if (during(moment, toward)) {
+        move = { x: 0, y: 1 };
+      } else if (during(moment, back)) {
+        move = { x: 0, y: -1 };
+      }
+
+      return {
+        crouch: pressedAt(moment, [slideToward, slideBack], press),
+        move,
+        sprint: move !== idleIntent.move,
+      };
+    },
     depulso: (moment) => ({
       lockOn: lockedOn(moment),
       ...special(
@@ -377,15 +416,22 @@ export const demoIsSolo = (lesson: Lesson, settings: DemoTuning) =>
 /**
  * The Duel `lesson`'s demo plays: a Practice under the lesson's rules, the
  * learner at the lane's +x end (the left of the shot) and the dummy at the
- * other, facing each other, closer for the lessons fought up close.
+ * other, facing each other, closer for the lessons fought up close and
+ * further apart for those fought from afar.
  */
 export const demoDuelConfig = (
   lesson: Lesson,
   arena: DuelConfig["arena"],
   tuning: Tuning
 ): DuelConfig => {
-  const { lane, nearLessons } = tuning.lessonDemo;
-  const half = (nearLessons.includes(lesson) ? lane.near : lane.far) / 2;
+  const { lane, longLessons, nearLessons } = tuning.lessonDemo;
+  let apart = nearLessons.includes(lesson) ? lane.near : lane.far;
+
+  if (longLessons.includes(lesson)) {
+    apart = lane.long;
+  }
+
+  const half = apart / 2;
 
   return {
     arena,

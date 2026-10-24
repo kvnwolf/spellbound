@@ -173,6 +173,7 @@ const labelledActions: readonly HumanAction[] = [
   "jump",
   "shield",
   "sprint",
+  "crouch",
   "spellSlots",
   "potionSlots",
 ];
@@ -245,9 +246,12 @@ const markTraining = (
       return item;
     }
 
-    return trainingComplete(training)
-      ? { ...item, done: true }
-      : { ...item, hint: text.training.locked };
+    if (trainingComplete(training)) {
+      return { ...item, done: true };
+    }
+
+    // Welcomed before a lesson was added: nothing is closed, nothing to say.
+    return training.certified ? item : { ...item, hint: text.training.locked };
   });
 
 /** The glyph each face button and D-pad arrow is written as, drawn as its icon. */

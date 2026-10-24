@@ -74,6 +74,24 @@ describe("what each screen shows", () => {
     ]);
   });
 
+  it("leaves Duelo and Práctica open, with nothing said, for a player welcomed before a lesson was added", () => {
+    const view = viewOf(
+      { kind: "main", selected: "duel" },
+      {
+        certified: true,
+        completed: lessons.filter((each) => each !== "crouch"),
+      }
+    );
+
+    expect(view?.items).toStrictEqual([
+      { label: "Duelo", selected: true },
+      { label: "Práctica", selected: false },
+      { label: "Entrenamiento", selected: false },
+      { label: "Controles", selected: false },
+      { label: "Opciones", selected: false },
+    ]);
+  });
+
   it("greys out Duelo and Práctica until Training is complete, and says so under Entrenamiento", () => {
     const view = viewOf(
       { kind: "main", selected: "training" },
@@ -93,7 +111,7 @@ describe("what each screen shows", () => {
     ]);
   });
 
-  it("lists the seventeen lessons on Entrenamiento in their sections, numbered, the completed ones ticked", () => {
+  it("lists the eighteen lessons on Entrenamiento in their sections, numbered, the completed ones ticked", () => {
     const view = viewOf(
       { kind: "lessons", selected: "light" },
       { certified: false, completed: ["move", "heavy"] }
@@ -108,27 +126,30 @@ describe("what each screen shows", () => {
     ).toStrictEqual([
       ["Movimiento", ["1. Moverse y mirar", "2. Fijar objetivo"]],
       ["Hechizos", ["3. Stupefy", "4. Confringo con carga"]],
-      ["Defensa", ["5. Escudo y Parry", "6. Esquiva"]],
+      [
+        "Defensa",
+        ["5. Escudo y Parry", "6. Esquiva", "7. Agacharse y deslizarse"],
+      ],
       [
         "Determinación y especiales",
         [
-          "7. La Determinación",
-          "8. Expelliarmus",
-          "9. Incendio",
-          "10. Petrificus Totalus",
-          "11. Depulso",
+          "8. La Determinación",
+          "9. Expelliarmus",
+          "10. Incendio",
+          "11. Petrificus Totalus",
+          "12. Depulso",
         ],
       ],
       [
         "Pociones",
         [
-          "12. Wiggenweld",
-          "13. Poción Máxima",
-          "14. Poción Vigorizante",
-          "15. Felix Felicis",
+          "13. Wiggenweld",
+          "14. Poción Máxima",
+          "15. Poción Vigorizante",
+          "16. Felix Felicis",
         ],
       ],
-      ["Combate", ["16. Ganar un Clash", "17. Desarme y recoger la varita"]],
+      ["Combate", ["17. Ganar un Clash", "18. Desarme y recoger la varita"]],
     ]);
     expect(
       view?.lessons?.sections.flatMap((section) => section.lessons).slice(0, 4)
@@ -170,7 +191,7 @@ describe("what each screen shows", () => {
         { kind: "lessons", selected: "light" },
         { certified: false, completed: ["move", "heavy"] }
       )?.lessons?.progress
-    ).toBe("2 de 17 completadas");
+    ).toBe("2 de 18 completadas");
   });
 
   it("previews the highlighted lesson beside the list: its title, what it teaches and its buttons", () => {
@@ -178,13 +199,13 @@ describe("what each screen shows", () => {
       body: "Un hechizo rápido que puedes encadenar: el tercero seguido aturde.",
       controls: "□: Stupefy",
       done: false,
-      eyebrow: "Lección 3 de 17",
+      eyebrow: "Lección 3 de 18",
       heading: "Stupefy",
       lesson: "light",
     });
     expect(preview("clash")).toMatchObject({
       done: true,
-      eyebrow: "Lección 16 de 17",
+      eyebrow: "Lección 17 de 18",
       heading: "Ganar un Clash",
       lesson: "clash",
     });
@@ -344,6 +365,7 @@ describe("what the Controls show", () => {
         label: "Escudo",
       },
       { control: "r1", label: "Correr" },
+      { control: "l3", detail: "Corriendo: deslizarse", label: "Agacharse" },
       {
         control: "r2",
         detail: "Mantén y pulsa △ □ ○ ✕",
@@ -387,6 +409,7 @@ describe("what the Controls show", () => {
       "Sobrecarga y Fallo",
       "Escudo y Parry",
       "Esquiva perfecta",
+      "Agacharse y deslizarse",
       "Clash",
       "Determinación",
       "Quemadura",
@@ -440,7 +463,7 @@ describe("the Training scrolls", () => {
 
     expect(scroll).toMatchObject({
       controls: "Mantén R2 y pulsa ○",
-      eyebrow: "Lección 8 de 17",
+      eyebrow: "Lección 9 de 18",
       heading: "Expelliarmus",
       items: [{ label: "Empezar", selected: true }],
       kind: "briefing",
@@ -476,7 +499,7 @@ describe("the Training scrolls", () => {
         selected: "next",
       })
     ).toMatchObject({
-      eyebrow: "Lección 3 de 17",
+      eyebrow: "Lección 3 de 18",
       heading: "¡Lección completada!",
       items: [
         { label: "Repetir", selected: false },
@@ -665,7 +688,7 @@ describe("in English", () => {
       scrollOf({ duel: inLesson("swiftness"), kind: "briefing" })
     ).toMatchObject({
       controls: "Hold L2 and press →",
-      eyebrow: "Lesson 14 of 17",
+      eyebrow: "Lesson 15 of 18",
       heading: "Invigoration Draught",
     });
   });

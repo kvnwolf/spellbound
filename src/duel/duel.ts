@@ -16,6 +16,7 @@ import {
 import { chargeLevel, chargeStage } from "./charge";
 import type { Difficulty } from "./difficulty";
 import { fly } from "./flight";
+import type { FlightOutcome } from "./flight";
 import {
   angleBetween,
   clamp,
@@ -167,6 +168,20 @@ export interface DuelistState {
   readonly shielding: boolean;
   /** Running at sprint speed this tick, draining Stamina. */
   readonly sprinting: boolean;
+  /**
+   * Crouched (L3): low, walking slowly, until L3 again (or a run, a jump, a
+   * Dodge, a Shield, a cast, a Charge or a Potion) stands them back up. A
+   * slide ends crouched.
+   */
+  readonly crouching: boolean;
+  /**
+   * How tall the body stands, metres: Spells hit it from the feet up to
+   * here. `tuning.duelist.height` standing, lower crouched and lower still
+   * sliding, easing between (see `tuning.defence.crouch`).
+   */
+  readonly height: number;
+  /** Seconds left of a slide (L3 while sprinting); 0 when not sliding. */
+  readonly slideSeconds: number;
   /**
    * Ground velocity over the last tick, m/s. Walking eases it toward what
    * the stick asks (see `tuning.movement`), so starting, stopping and
@@ -426,6 +441,21 @@ export type DuelEvent =
       readonly duelistId: DuelistId;
       readonly spell: SpellState;
     }
+  /** A sprinting Duelist slid (L3), low along `direction` (a unit vector on the floor). */
+  | {
+      readonly type: "slide";
+      readonly duelistId: DuelistId;
+      readonly direction: GroundPoint;
+    }
+  /**
+   * A Spell flew over a crouching or sliding Duelist that it would have hit
+   * had they been standing. Once per Spell and Duelist.
+   */
+  | {
+      readonly type: "ducked";
+      readonly duelistId: DuelistId;
+      readonly spell: SpellState;
+    }
   /** A Shield stopped a Spell; the Spell is gone. */
   | {
       readonly type: "spell-blocked";
@@ -548,8 +578,8 @@ export type DuelEvent =
 /** The defences paid for with Stamina. */
 export type DefenceAction = "dodge" | "jump" | "shield" | "sprint";
 
-/** Everything paid for with Stamina: the defences, and the Light and Heavy Spells' casts. */
-export type StaminaAction = DefenceAction | "confringo" | "stupefy";
+/** Everything paid for with Stamina: the defences, the slide, and the Light and Heavy Spells' casts. */
+export type StaminaAction = DefenceAction | "confringo" | "slide" | "stupefy";
 
 /** The outcome of one tick: the new snapshot and the events emitted during it. */
 export interface DuelTick {
@@ -750,7 +780,10 @@ const nearest = (
 /** A Duelist's chest, wherever it is mid-jump: where Lock-on and Aim Assist aim at them. */
 const chestOf = (duelist: DuelistState, tuning: Tuning): Point3 => ({
   x: duelist.position.x,
-  y: tuning.duelist.chestHeight + duelist.elevation,
+  // Crouched or sliding, the chest keeps its share of the lowered body.
+  y:
+    (tuning.duelist.chestHeight * duelist.height) / tuning.duelist.height +
+    duelist.elevation,
   z: duelist.position.z,
 });
 
@@ -834,6 +867,23 @@ interface DuelistMemory {
   wand: LostWand | undefined;
   /** The Clash pump was down last tick: a Clash counts presses, not the hold. */
   pumpHeld: boolean;
+  /**
+   * L3 as it was last tick (a press crouches, stands or slides), whether
+   * crouched, and a slide in progress: `ticks` long, `ticksLeft` of them to
+   * go, from `speed` (m/s) along `heading`.
+   */
+  crouch: {
+    held: boolean;
+    down: boolean;
+    slide:
+      | {
+          readonly heading: GroundPoint;
+          readonly speed: number;
+          readonly ticks: number;
+          ticksLeft: number;
+        }
+      | undefined;
+  };
   /** The Potion being drunk and the ticks until it is down. */
   drink: { readonly kind: PotionKind; ticksLeft: number } | undefined;
   /** Ticks left of each lasting Potion's effect. */
@@ -865,6 +915,7 @@ const freshMemory = (): DuelistMemory => ({
   chain: 0,
   chargeTicks: 0,
   cooldownTicks: { depulso: 0, expelliarmus: 0, incendio: 0, petrificus: 0 },
+  crouch: { down: false, held: false, slide: undefined },
   dodgeStep: { x: 0, z: 0 },
   dodgeTicks: 0,
   drink: undefined,
@@ -1344,7 +1395,7 @@ export const createDuel = (config: DuelConfig): Duel => {
           ? []
           : [
               {
-                height: tuning.duelist.height,
+                height: other.height,
                 position: other.position,
                 radius: bodyRadius,
               },
@@ -1382,6 +1433,7 @@ export const createDuel = (config: DuelConfig): Duel => {
       burnSeconds: 0,
       chargeSeconds: 0,
       cooldowns: { depulso: 0, expelliarmus: 0, incendio: 0, petrificus: 0 },
+      crouching: false,
       dodgeSeconds: 0,
       downSeconds: 0,
       drinking: null,
@@ -1390,6 +1442,7 @@ export const createDuel = (config: DuelConfig): Duel => {
       // Focus starts empty every Round.
       focus: 0,
       health: tuning.duelist.health,
+      height: tuning.duelist.height,
       id: setup.id,
       knockbackSeconds: 0,
       knockedOut: false,
@@ -1402,6 +1455,7 @@ export const createDuel = (config: DuelConfig): Duel => {
       // Every Potion's charges refill every Round.
       potions: fullCharges(tuning),
       shielding: false,
+      slideSeconds: 0,
       spellSlotsHeld: false,
       sprinting: false,
       staggerSeconds: 0,
@@ -1473,7 +1527,7 @@ export const createDuel = (config: DuelConfig): Duel => {
 
     for (const opponent of inSight(self, duelists, range)) {
       const angle = angleToBody(viewpoint, ray, {
-        height: tuning.duelist.height,
+        height: opponent.height,
         position: opponent.position,
         radius: bodyRadius,
       });
@@ -1942,6 +1996,81 @@ export const createDuel = (config: DuelConfig): Duel => {
   };
 
   /**
+   * Slides along the run, if there is Stamina for it: crouched at once, the
+   * run's speed carried into the slide, the sprint over until R1 is pressed
+   * again.
+   */
+  const startSlide = (self: DuelistState, purse: Purse, draft: Draft) => {
+    const { slide } = defence;
+
+    if (purse.stamina < slide.cost) {
+      refuse(self, "slide", draft);
+
+      return;
+    }
+
+    spend(purse, slide.cost);
+
+    const book = books(self.id);
+    const speed = Math.hypot(self.velocity.x, self.velocity.z);
+
+    const heading =
+      speed > 1e-6 ? direction({ x: 0, z: 0 }, self.velocity) : self.facing;
+
+    const ticks = ticksOf(slide.seconds);
+    book.crouch.down = true;
+    book.crouch.slide = { heading, speed, ticks, ticksLeft: ticks };
+    book.sprintHeld = false;
+    book.acceleration = { x: 0, z: 0 };
+    draft.events.push({
+      direction: heading,
+      duelistId: self.id,
+      type: "slide",
+    });
+  };
+
+  /**
+   * One tick of a slide in progress, as the offset to move by: the run's
+   * speed held for `holdSeconds`, then falling steadily to the crouched
+   * walk's by the end. Undefined when not sliding; the last tick ends it,
+   * crouched.
+   */
+  const glide = (book: DuelistMemory): GroundPoint | undefined => {
+    const { slide } = book.crouch;
+
+    if (!slide) {
+      return undefined;
+    }
+
+    const { holdSeconds, seconds } = defence.slide;
+    const elapsed = (slide.ticks - slide.ticksLeft + 1) * tickSeconds;
+
+    const end = Math.min(
+      tuning.duelist.walkSpeed * defence.crouch.walkScale,
+      slide.speed
+    );
+
+    const easing = clamp(
+      (elapsed - holdSeconds) / (seconds - holdSeconds),
+      0,
+      1
+    );
+
+    const speed = slide.speed + (end - slide.speed) * easing;
+
+    slide.ticksLeft -= 1;
+
+    if (slide.ticksLeft === 0) {
+      book.crouch.slide = undefined;
+    }
+
+    return {
+      x: slide.heading.x * speed * tickSeconds,
+      z: slide.heading.z * speed * tickSeconds,
+    };
+  };
+
+  /**
    * Whether a held action (the Shield or the sprint) carries on this tick:
    * it starts on a press with any Stamina left, lasts while `held` (and
    * while `allowed`), and once it ends, only a new press starts it again.
@@ -2011,22 +2140,85 @@ export const createDuel = (config: DuelConfig): Duel => {
     }
   };
 
-  /** The walking stride's multiplier: slower behind the Shield, faster sprinting. */
-  const paceOf = (shielding: boolean, sprinting: boolean) => {
+  /** The walking stride's multiplier: slower behind the Shield or crouched, faster sprinting. */
+  const paceOf = (
+    shielding: boolean,
+    sprinting: boolean,
+    crouching: boolean
+  ) => {
     if (shielding) {
       return defence.shield.walkScale;
     }
 
+    if (crouching) {
+      return defence.crouch.walkScale;
+    }
+
     return sprinting ? defence.sprint.speedScale : 1;
+  };
+
+  /**
+   * Whether a Duelist is crouched after this tick's defence: L3 pressed on
+   * the floor crouches or stands back up; anything that takes control away
+   * (`canAct` false: Staggered, knocked back, drinking...) or that a
+   * crouched body cannot do (`standing`: a Dodge, the Shield, a run, the
+   * air) stands them up.
+   */
+  const crouchOrStand = (
+    book: DuelistMemory,
+    {
+      canAct,
+      crouchPressed,
+      grounded,
+      sliding,
+      standing,
+    }: {
+      readonly canAct: boolean;
+      readonly crouchPressed: boolean;
+      readonly grounded: boolean;
+      readonly sliding: boolean;
+      readonly standing: boolean;
+    }
+  ): boolean => {
+    if (sliding) {
+      book.crouch.down = true;
+    } else if (!canAct || standing) {
+      book.crouch.down = false;
+    } else if (crouchPressed && grounded) {
+      book.crouch.down = !book.crouch.down;
+    }
+
+    return book.crouch.down;
+  };
+
+  /** The body's height after one tick of going down toward (or back up from) a crouch or a slide. */
+  const heightToward = (from: number, crouching: boolean, sliding = false) => {
+    const { crouch, slide } = defence;
+    let goal = crouching ? crouch.height : tuning.duelist.height;
+
+    if (sliding) {
+      goal = slide.height;
+    }
+
+    return from > goal
+      ? Math.max(from - crouch.dropSpeed * tickSeconds, goal)
+      : Math.min(from + crouch.riseSpeed * tickSeconds, goal);
   };
 
   /** What a Duelist's defence settled this tick, for `act` to move and cast by. */
   interface Guard {
     readonly state: Pick<
       DuelistState,
-      "dodgeSeconds" | "elevation" | "shielding" | "sprinting" | "stamina"
+      | "crouching"
+      | "dodgeSeconds"
+      | "elevation"
+      | "height"
+      | "shielding"
+      | "slideSeconds"
+      | "sprinting"
+      | "stamina"
     >;
-    /** How far a Dodge carries the Duelist this tick; it replaces walking. */
+    /** How far a Dodge or a slide carries the Duelist this tick; it replaces walking. */
     readonly dash: GroundPoint | undefined;
     /** The walking stride's multiplier: faster sprinting, slower behind the Shield. */
     readonly pace: number;
@@ -2037,6 +2229,70 @@ export const createDuel = (config: DuelConfig): Duel => {
     /** The Stamina left once the defence is paid for, which a cast spends from. */
     readonly purse: Purse;
   }
+
+  /**
+   * The moves a press starts on the floor this tick, one at a time: a slide
+   * (L3 while running), a Dodge, a jump. Losing control ends a slide.
+   * Returns how far the slide carries the Duelist this tick, while sliding.
+   */
+  const startMoves = (
+    self: DuelistState,
+    intent: Intent,
+    {
+      canAct,
+      crouchPressed,
+      grounded,
+      pressed,
+      target,
+    }: {
+      readonly canAct: boolean;
+      readonly crouchPressed: boolean;
+      readonly grounded: boolean;
+      readonly pressed: (action: DefenceAction) => boolean;
+      readonly target: DuelistState | undefined;
+    },
+    purse: Purse,
+    draft: Draft
+  ): GroundPoint | undefined => {
+    const book = books(self.id);
+    const ready = canAct && grounded && book.dodgeTicks === 0;
+
+    if (!canAct) {
+      book.crouch.slide = undefined;
+    } else if (
+      ready &&
+      crouchPressed &&
+      self.sprinting &&
+      book.crouch.slide === undefined
+    ) {
+      startSlide(self, purse, draft);
+    }
+
+    const slideStep = glide(book);
+    const free = ready && slideStep === undefined;
+
+    if (free && pressed("dodge")) {
+      startDodge(self, intent.move, target, purse, draft);
+    }
+
+    if (free && book.dodgeTicks === 0 && pressed("jump")) {
+      startJump(self, purse, draft);
+    }
+
+    return slideStep;
+  };
+
+  /**
+   * Whether a Duelist runs this tick: R1 held and the stick pushed, and
+   * not `held` back (Shielding or Dodging) or Charging, which keeps them
+   * to a creep. Only actually running costs anything.
+   */
+  const runs = (book: DuelistMemory, intent: Intent, held: boolean) =>
+    book.sprintHeld &&
+    book.chargeTicks === 0 &&
+    !intent.heavySpell &&
+    !held &&
+    Math.hypot(intent.move.x, intent.move.y) > 0;
 
   /**
    * Defence for one Duelist this tick: the jump's flight, then Dodge, jump,
@@ -2068,20 +2324,24 @@ export const createDuel = (config: DuelConfig): Duel => {
       sprint: intent.sprint,
     };
 
+    const crouchPressed = intent.crouch && !book.crouch.held;
+    book.crouch.held = intent.crouch;
+
     const purse = purseOf(self, book);
     const elevation = fall(self, book, draft);
     const grounded = elevation === 0 && book.verticalSpeed === 0;
     book.dodgeTicks = Math.max(book.dodgeTicks - 1, 0);
 
-    if (canAct && grounded && book.dodgeTicks === 0 && pressed("dodge")) {
-      startDodge(self, intent.move, target, purse, draft);
-    }
+    const slideStep = startMoves(
+      self,
+      intent,
+      { canAct, crouchPressed, grounded, pressed, target },
+      purse,
+      draft
+    );
 
+    const sliding = slideStep !== undefined;
     const dodging = book.dodgeTicks > 0;
-
-    if (canAct && grounded && !dodging && pressed("jump")) {
-      startJump(self, purse, draft);
-    }
 
     const handy = handsFree(book);
 
@@ -2090,7 +2350,7 @@ export const createDuel = (config: DuelConfig): Duel => {
       self,
       "shield",
       {
-        allowed: canGuard && handy,
+        allowed: canGuard && handy && !sliding,
         held: intent.shield,
         pressed: pressed("shield"),
         running: book.shieldHeld,
@@ -2103,7 +2363,7 @@ export const createDuel = (config: DuelConfig): Duel => {
       self,
       "sprint",
       {
-        allowed: canAct,
+        allowed: canAct && !sliding,
         held: intent.sprint,
         pressed: pressed("sprint"),
         running: book.sprintHeld,
@@ -2112,29 +2372,35 @@ export const createDuel = (config: DuelConfig): Duel => {
       draft
     );
 
-    // Sprinting only costs anything while actually running, and holding a
-    // Charge (△) keeps the Duelist to a creep.
-    const sprinting =
-      book.sprintHeld &&
-      book.chargeTicks === 0 &&
-      !intent.heavySpell &&
-      !shielding &&
-      !dodging &&
-      Math.hypot(intent.move.x, intent.move.y) > 0;
+    const sprinting = runs(book, intent, shielding || dodging);
+
+    // After a jump has left the floor this tick, if one did.
+    const onFloor = elevation === 0 && book.verticalSpeed === 0;
+
+    const crouching = crouchOrStand(book, {
+      canAct,
+      crouchPressed,
+      grounded: onFloor,
+      sliding,
+      standing: dodging || shielding || pressed("sprint") || !onFloor,
+    });
 
     drain(book, shielding, sprinting, purse);
     regenerate(book, purse);
 
     return {
       airborne: elevation > 0 || book.verticalSpeed > 0,
-      canCast: handy && !shielding,
-      dash: dodging ? book.dodgeStep : undefined,
-      pace: paceOf(shielding, sprinting),
+      canCast: handy && !shielding && !sliding,
+      dash: dodging ? book.dodgeStep : slideStep,
+      pace: paceOf(shielding, sprinting, crouching),
       purse,
       state: {
+        crouching,
         dodgeSeconds: book.dodgeTicks * tickSeconds,
         elevation,
+        height: heightToward(self.height, crouching, sliding),
         shielding: book.shieldHeld,
+        slideSeconds: (book.crouch.slide?.ticksLeft ?? 0) * tickSeconds,
         sprinting,
         stamina: purse.stamina,
       },
@@ -2452,7 +2718,7 @@ export const createDuel = (config: DuelConfig): Duel => {
     );
 
     const feet = self.elevation;
-    const head = feet + tuning.duelist.height;
+    const head = feet + self.height;
     const up = Math.max(feet - centre.y, centre.y - head, 0);
 
     return Math.hypot(across, up) <= incendio.blastRadius;
@@ -2998,6 +3264,115 @@ export const createDuel = (config: DuelConfig): Duel => {
     }
   };
 
+  /** The Spells already reported ducked, by Spell and Duelist, so each is reported once. */
+  /**
+   * Spells over a crouching or sliding Duelist that would have hit them
+   * standing, by "spell:Duelist", until they are clear of the body (then
+   * reported ducked) or hit it after all (standing up under one, or one
+   * coming down onto the back of the head); and those settled either way.
+   */
+  const overhead = new Map<
+    string,
+    { readonly duelistId: DuelistId; readonly spell: SpellState }
+  >();
+
+  const passed = new Set<string>();
+
+  /**
+   * Notes every Spell this tick's flight carried over a crouching or sliding
+   * Duelist, where it would have hit them standing (the same flight, flown
+   * against those Duelists at their full height, hits what the real one did
+   * not), and reports each one ducked once it is clear of them unhurt.
+   */
+  const reportDucks = (
+    draft: Draft,
+    spells: readonly SpellState[],
+    flight: {
+      readonly flying: readonly SpellState[];
+      readonly outcomes: readonly FlightOutcome[];
+    },
+    targets: readonly DuelistState[]
+  ) => {
+    const keyOf = (spell: SpellState, duelistId: DuelistId) =>
+      `${spell.id}:${duelistId}`;
+
+    const low = targets.filter((each) => each.height < tuning.duelist.height);
+
+    // Spells that met anything for real (a body, another Spell, Cover)
+    // flew over no one this tick.
+    const settled = new Set(
+      flight.outcomes.flatMap((outcome) =>
+        ("spells" in outcome ? outcome.spells : [outcome.spell]).map(
+          (spell) => spell.id
+        )
+      )
+    );
+
+    const standing =
+      low.length === 0
+        ? []
+        : fly(
+            spells,
+            {
+              arena,
+              bodyHeight: tuning.duelist.height,
+              bodyRadius,
+              radiusOf: spellRadius,
+              targets: low.map(({ elevation, id, position, team }) => ({
+                elevation,
+                id,
+                position,
+                team,
+              })),
+            },
+            tickSeconds
+          ).outcomes;
+
+    for (const outcome of standing) {
+      if (outcome.kind !== "hit" || settled.has(outcome.spell.id)) {
+        continue;
+      }
+
+      const key = keyOf(outcome.spell, outcome.targetId);
+
+      if (!passed.has(key) && !overhead.has(key)) {
+        overhead.set(key, {
+          duelistId: outcome.targetId,
+          spell: outcome.spell,
+        });
+      }
+    }
+
+    const struck = new Set(
+      flight.outcomes.flatMap((outcome) =>
+        outcome.kind === "hit" ? [keyOf(outcome.spell, outcome.targetId)] : []
+      )
+    );
+
+    for (const [key, { duelistId, spell }] of overhead) {
+      const still = flight.flying.find((each) => each.id === spell.id);
+      const body = draft.duelists.find((each) => each.id === duelistId);
+
+      const over =
+        still !== undefined &&
+        body !== undefined &&
+        distanceBetween(
+          { x: still.position.x, z: still.position.z },
+          body.position
+        ) <=
+          bodyRadius + spellRadius(still);
+
+      if (struck.has(key) || !over) {
+        overhead.delete(key);
+        passed.add(key);
+      }
+
+      if (!struck.has(key) && !over) {
+        draft.events.push({ duelistId, spell, type: "ducked" });
+      }
+    }
+  };
+
   /**
    * Spells in flight travel against where everyone stood at the start of the
    * tick. Duelists can only be hit while the Round is being fought, so a
@@ -3006,25 +3381,30 @@ export const createDuel = (config: DuelConfig): Duel => {
    * Duelist took.
    */
   const flySpells = (draft: Draft): Map<DuelistId, number> => {
+    const homed = draft.spells.map((spell) => home(spell, draft.duelists));
+
+    // A Dodging Duelist cannot be hit: Spells fly straight through.
+    const targets =
+      draft.round.phase === "fighting"
+        ? draft.duelists.filter(
+            (each) => onFeet(each) && each.dodgeSeconds === 0
+          )
+        : [];
+
     const flight = fly(
-      draft.spells.map((spell) => home(spell, draft.duelists)),
+      homed,
       {
         arena,
         bodyHeight: tuning.duelist.height,
         bodyRadius,
         clash: { locks: locksIntoClash(draft), reach: tuning.clash.reach },
         radiusOf: spellRadius,
-        // A Dodging Duelist cannot be hit: Spells fly straight through.
-        targets:
-          draft.round.phase === "fighting"
-            ? draft.duelists.filter(
-                (each) => onFeet(each) && each.dodgeSeconds === 0
-              )
-            : [],
+        targets,
       },
       tickSeconds
     );
 
+    reportDucks(draft, homed, flight, targets);
     draft.spells = flight.flying;
     const damage = new Map<DuelistId, number>();
 
@@ -3657,6 +4037,21 @@ export const createDuel = (config: DuelConfig): Duel => {
       guard.dash ? undefined : walkHeading(self.aim.yaw, move)
     );
 
+  /** Casting or Charging, a Duelist stands up out of a crouch: their posture after it, if it changes. */
+  const standToCast = (
+    self: DuelistState,
+    book: DuelistMemory,
+    release: Release | undefined
+  ): Partial<Pick<DuelistState, "crouching" | "height">> => {
+    if (release === undefined && book.chargeTicks === 0) {
+      return {};
+    }
+
+    book.crouch.down = false;
+
+    return { crouching: false, height: heightToward(self.height, false) };
+  };
+
   /**
    * Duelists aim, move and decide to cast. Looking around works during the
    * intro's countdown and while Staggered; moving, Charging and casting only
@@ -3782,6 +4177,8 @@ export const createDuel = (config: DuelConfig): Duel => {
         releases.set(self.id, release);
       }
 
+      const posture = standToCast(self, book, release);
+
       const move = clampLength(intent.move, 1);
 
       // Charging is a commitment: the Duelist creeps (and cannot sprint).
@@ -3813,6 +4210,7 @@ export const createDuel = (config: DuelConfig): Duel => {
 
       return status({
         ...defended,
+        ...posture,
         chargeSeconds,
         facing: faceAfterActing(self, book, guard, release, move),
         focus: self.focus - (special?.cost ?? 0),

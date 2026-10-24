@@ -293,6 +293,8 @@ const eventSounds: EventSounds = {
     place.on(event.duelistId, { kind: "disarm" }, event.position),
   ],
   dodge: bodily,
+  // A Spell passing over a crouch is heard as it flies, nothing more.
+  ducked: () => [],
   "duel-end": (event, frame) => [
     announce({ kind: "duel-end", won: event.winner === localTeamOf(frame) }),
   ],
@@ -341,6 +343,10 @@ const eventSounds: EventSounds = {
           }),
         ],
   "round-start": () => [announce({ kind: "duel-start" })],
+  // The slide sounds like the roll: a body thrown along the stone.
+  slide: (event, _frame, place) => [
+    place.by(event.duelistId, { kind: "dodge" }),
+  ],
   "spell-blocked": (event, _frame, place) => {
     const heavy =
       event.spell.kind === "confringo" ||

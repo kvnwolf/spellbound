@@ -194,6 +194,7 @@ const callouts: Partial<Record<PadControl, Callout>> = {
 
 /** A control whose label stacks under another's, as R3's under the right stick's. */
 const stacksUnder: Partial<Record<PadControl, PadControl>> = {
+  l3: "leftStick",
   r3: "rightStick",
 };
 

@@ -220,11 +220,17 @@ export const noTraining: TrainingRecord = { certified: false, completed: [] };
 export const trainingComplete = (record: TrainingRecord): boolean =>
   lessons.every((lesson) => record.completed.includes(lesson));
 
-/** The main menu entries closed until Training is complete. */
+/**
+ * The main menu entries closed until Training is complete. A player already
+ * welcomed to the Club de Duelo keeps them open when a lesson is added
+ * later: the new lesson waits for them on Entrenamiento, not completed.
+ */
 export const lockedOptions = (
   record: TrainingRecord
 ): ReadonlySet<MainMenuOption> =>
-  new Set<MainMenuOption>(trainingComplete(record) ? [] : ["duel", "practice"]);
+  new Set<MainMenuOption>(
+    trainingComplete(record) || record.certified ? [] : ["duel", "practice"]
+  );
 
 export interface ScreenState {
   readonly screen: Screen;

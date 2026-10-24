@@ -1074,6 +1074,36 @@ describe("Training is required", () => {
     ).toStrictEqual({ kind: "main", selected: "training" });
   });
 
+  it("keeps Duelo and Práctica open for a player welcomed to the Club de Duelo before a lesson was added", () => {
+    const main = onMainWith({
+      certified: true,
+      completed: allButLast.completed,
+    });
+
+    expect(main.screen).toMatchObject({ selected: "duel" });
+    expect(play(main, press("down")).screen).toMatchObject({
+      selected: "practice",
+    });
+  });
+
+  it("does not welcome such a player to the Club de Duelo again once the new lesson is done", () => {
+    const after = play(
+      inLesson(lastLesson, {
+        certified: true,
+        completed: allButLast.completed,
+      }),
+      { type: "lesson-done" },
+      tick(2),
+      press("confirm")
+    );
+
+    expect(after.screen).toStrictEqual({ kind: "main", selected: "training" });
+    expect(after.training).toStrictEqual({
+      certified: true,
+      completed: [...lessons],
+    });
+  });
+
   it("opens Duelo and Práctica once every lesson is completed", () => {
     const main = onMainWith({ certified: false, completed: [...lessons] });
 

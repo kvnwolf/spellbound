@@ -1,5 +1,5 @@
 /**
- * Training: seventeen short lessons that teach the Duel one thing at a time,
+ * Training: eighteen short lessons that teach the Duel one thing at a time,
  * each a Practice against the Training Dummy that fits it, set up as the
  * lesson needs, with one goal after another on screen. A goal is met from
  * what the Duel simulation reports (its snapshots and events), never from
@@ -29,6 +29,7 @@ export const lessons = [
   "heavy",
   "shield",
   "dodge",
+  "crouch",
   "focus",
   "expelliarmus",
   "incendio",
@@ -60,7 +61,7 @@ export const lessonSections: readonly {
 }[] = [
   { lessons: ["move", "lockOn"], section: "movement" },
   { lessons: ["light", "heavy"], section: "spells" },
-  { lessons: ["shield", "dodge"], section: "defence" },
+  { lessons: ["shield", "dodge", "crouch"], section: "defence" },
   {
     lessons: ["focus", "expelliarmus", "incendio", "petrificus", "depulso"],
     section: "specials",
@@ -98,6 +99,7 @@ const plan = (
 
 export const lessonPlans: Readonly<Record<Lesson, LessonPlan>> = {
   clash: plan("clash", ["clash"]),
+  crouch: plan("casts", ["duck", "slide"]),
   depulso: plan("idle", ["depulso"], "fullFocus"),
   disarmed: plan("disarms", ["disarmed", "pickup"]),
   dodge: plan("casts", ["dodge", "perfectDodge"]),
@@ -266,6 +268,9 @@ const counters: Readonly<Record<Goal, Counter>> = {
   dodge: counting(
     (event, me) => event.type === "dodge" && event.duelistId === me
   ),
+  duck: counting(
+    (event, me) => event.type === "ducked" && event.duelistId === me
+  ),
   expelliarmus: counting(
     (event, me) =>
       event.type === "disarm" && event.casterId === me && event.duelistId !== me
@@ -314,6 +319,9 @@ const counters: Readonly<Record<Goal, Counter>> = {
       event.how === "pickup"
   ),
   run: metresWhen((after) => after.sprinting),
+  slide: counting(
+    (event, me) => event.type === "slide" && event.duelistId === me
+  ),
   special: counting(
     (event, me) =>
       event.type === "spell-cast" &&

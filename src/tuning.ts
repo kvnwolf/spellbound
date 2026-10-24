@@ -916,6 +916,27 @@ export const tuning = {
    * points per second.
    */
   defence: {
+    /**
+     * The crouch (L3, standing or walking; L3 again stands back up, as do
+     * R1, ✕, ○ and anything that raises the Wand or a Potion). It costs
+     * nothing and saves from nothing by itself: it lowers the body, so a
+     * Spell aimed at the chest of a Duelist who was standing flies over
+     * them. Spells aimed while they are down find them (Lock-on aims at the
+     * chest as it is now, which drops with the body), so it answers a
+     * Spell already in the air, timed, not every Spell.
+     *
+     * Spells hit a crouched Duelist from the floor up to `height` (the
+     * crouched wizard's head is about there); a chest-high Spell flies at
+     * `duelist.chestHeight` (1.3 m) plus or minus the little a launch from
+     * the Wand tilts it, so it clears the crouch by about 0.15 m. The chest,
+     * where Lock-on and Aim Assist aim, keeps the same share of the body's
+     * height. The body goes down at `dropSpeed` metres a second (about 0.12
+     * s from standing to crouched, so a crouch only saves from a Spell more
+     * than about 0.1 s away) and back up at `riseSpeed`. Crouched, the walk
+     * is `walkScale` of its speed: about 1.7 m/s, a third slower than
+     * behind the Shield.
+     */
+    crouch: { dropSpeed: 10, height: 1.15, riseSpeed: 8, walkScale: 0.45 },
     dodge: {
       /** Stamina a Dodge costs; refused with less than this left. */
       cost: 25,
@@ -952,6 +973,18 @@ export const tuning = {
       /** Walking speed while the Shield is up, as a share of the normal speed. */
       walkScale: 0.5,
     },
+    /**
+     * The slide (L3 while sprinting): fast and low along the run, ending
+     * crouched. It costs `cost` Stamina, a little over half a Dodge's (25):
+     * the Dodge rolls through anything, the slide only under chest-high
+     * Spells, and a cone or a blast on the floor still finds it. It keeps
+     * the run's speed (about 7.6 m/s) for `holdSeconds`, then slows
+     * steadily to the crouched walk by `seconds`, covering about 3.3 m (the
+     * Dodge 3.6 m in 0.35 s), and nothing else (no cast, Shield, jump or
+     * Dodge) can start until it ends. Spells hit it up to `height`, below
+     * the crouch.
+     */
+    slide: { cost: 15, height: 1.05, holdSeconds: 0.2, seconds: 0.6 },
     sprint: {
       /** Stamina drained every second spent sprinting (only while moving). */
       drain: 5,
@@ -1332,6 +1365,28 @@ export const tuning = {
       },
       clashAt: 0,
       /**
+       * Crouched (L3). Standing still the legs play `Crouch_Idle_Loop`;
+       * there is no crouch-walk clip, so walking crouched keeps the gait and,
+       * after it, drops the pelvis `walkDrop` metres, each leg reaching by
+       * IK back to where the gait put its foot (the knees bend, pushed
+       * `kneeForward` metres ahead, and planted feet stay put), the chest
+       * leaning `lean` radians over them and the neck lifting `headUp` of
+       * that back, so the eyes stay on the way ahead. The upper body takes
+       * `upper` of the crouch clip's hunch either way, and the steps come
+       * `cadence` times quicker (so shorter: a crouched walk shuffles, it
+       * does not lunge). The crouch eases in and out at `sharpness` per
+       * second.
+       */
+      crouch: {
+        cadence: 1.6,
+        headUp: 0.8,
+        kneeForward: 0.15,
+        lean: 0.55,
+        sharpness: 20,
+        upper: 0.6,
+        walkDrop: 0.4,
+      },
+      /**
        * Drinking: the left wrist goes to `lips` (metres from the head joint,
        * the Duelist's frame), rising over the first `raise` of the drink and
        * coming down over its last `lower`, and the head tips back up to
@@ -1524,6 +1579,29 @@ export const tuning = {
         pickup: { from: 0, peak: 0.42, seconds: 0.55, to: 0.83 },
         push: { from: 0, peak: 0.25, seconds: 0.32, to: 0 },
         strike: { from: 0.27, peak: 0.15, seconds: 0.42, to: 0.58 },
+      },
+      /**
+       * The slide, a held pose built by IK over the crouch (there is no
+       * slide clip), in the body's frame (metres; +z ahead, +x left, +y
+       * up): the pelvis at `pelvis`, tipped `tilt` radians back, and the
+       * chest leaning `lean` more, the head bowing `headForward` of both
+       * back toward the horizon;
+       * the left foot out ahead at `lead` (knee bending toward `leadKnee`),
+       * the right folded under at `trail` (knee toward `trailKnee`, down
+       * and ahead); the free hand trailing at `hand`. It eases in and out at
+       * `sharpness` per second.
+       */
+      slide: {
+        hand: [0.45, 0.04, -0.35],
+        headForward: 0.6,
+        lead: [0.1, 0.08, 1],
+        leadKnee: [0, 1, 0.1],
+        lean: 0.5,
+        pelvis: [0, 0.36, -0.1],
+        sharpness: 20,
+        tilt: 0.5,
+        trail: [-0.16, 0.08, -0.3],
+        trailKnee: [0, -0.4, 1],
       },
       /** The armed upper-body stance (`Spell_Simple_Idle_Loop`): its weight standing, and how much of it stays at a run. */
       stance: { moving: 0.35, standing: 1 },
@@ -1995,13 +2073,20 @@ export const tuning = {
     fadeSeconds: 0.18,
     /**
      * The lane the two stand in, along the near wall: its middle, and how
-     * far apart they start (`near` for the lessons fought up close). The
-     * learner stands at its +x end, on the left of the shot.
+     * far apart they start (`near` for the lessons fought up close, `long`
+     * for those fought from afar). The learner stands at its +x end, on the
+     * left of the shot.
      */
-    lane: { far: 6, near: 3, x: -1.5, z: 10 },
+    lane: { far: 6, long: 12, near: 3, x: -1.5, z: 10 },
+    /**
+     * The lessons played from afar: a crouch only lets a Stupefy over once
+     * its homing is spent, which up close it never is.
+     */
+    longLessons: ["crouch"],
     /** How long each lesson's loop runs before it starts again. */
     loopSeconds: {
       clash: 6,
+      crouch: 5,
       depulso: 3.6,
       disarmed: 6.4,
       dodge: 4.4,
@@ -2024,6 +2109,21 @@ export const tuning = {
     /** The learner's script, lesson by lesson. */
     script: {
       clash: { chargeAt: 0.7, pumpRate: 9 },
+      /**
+       * Until `duck.until`, crouches when a Spell would land within
+       * `duck.lead` (late enough that its homing cannot follow, early
+       * enough for the body to be down) and stands `duck.hold` later, once
+       * it has passed; then runs at the dummy over `toward` and slides at
+       * `slideToward`, and back over `back`, sliding at `slideBack` (under
+       * the dummy's strong third Stupefy, which would Stagger a runner).
+       */
+      crouch: {
+        back: [3.45, 3.9],
+        duck: { hold: 0.3, lead: 0.15, until: 2.3 },
+        slideBack: 3.85,
+        slideToward: 2.8,
+        toward: [2.4, 2.85],
+      },
       /** Dodges when a Spell would land within `lead`, at most once every `every`. */
       dodge: { every: 1.1, from: 0.6, lead: 0.1 },
       /** After Felix Felicis: Depulso. */
@@ -2431,6 +2531,55 @@ export const tuning = {
     resultDelaySeconds: 3,
     /** Opciones' music and effects volumes: this many steps from silent to as mixed, where both start. */
     volumeSteps: 10,
+  },
+
+  /**
+   * Each Spell's colours as hex: the main hue and its white-hot heart. The
+   * VFX draw Spells in them (the DualSense lightbar has its own, in `haptics.lightbar`).
+   */
+  /**
+   * The dust a slide kicks up (Depulso's dust puffs, in a pool of
+   * `slots`): `burst` puffs where it starts, thrown back at `burstSpeed`
+   * times `kick`, then `perMetre` puffs a metre slid, born `ahead` metres in
+   * front of the feet and `height` off the floor, up to `spread` metres to
+   * either side, thrown back off the slide at `kick` of its speed and up at
+   * `lift` (m/s), stalling over `drag` seconds and rising at `rise`,
+   * growing between the `size` ranges over a life in `life` (seconds),
+   * `aspect` times wider than tall, at `opacity`; with grit skimming the
+   * stone (`grit.burst` at the start, then a `grit.share` chance a puff;
+   * sparks: `lift` up, `gravity` pulling them back down). Colours hex.
+   */
+  slideDust: {
+    ahead: 0.35,
+    aspect: 1.8,
+    burst: 7,
+    burstSpeed: 5,
+    color: "#ab9d86",
+    drag: 0.3,
+    grit: {
+      burst: 6,
+      color: "#c9b79a",
+      gravity: 0.6,
+      intensity: 0.8,
+      life: 0.35,
+      lift: 0.15,
+      share: 0.4,
+      size: 0.02,
+      speed: 4,
+      spread: 0.4,
+      streak: 0.04,
+    },
+    height: 0.12,
+    kick: 0.25,
+    life: [0.7, 1.1],
+    lift: 0.5,
+    opacity: 0.32,
+    perMetre: 4,
+    rise: 0.15,
+    size: { from: [0.25, 0.4], to: [0.8, 1.2] },
+    slots: 48,
+    spread: 0.35,
+    wander: 0.3,
   },
 
   /**
@@ -3264,10 +3413,6 @@ export const tuning = {
     },
   },
 
-  /**
-   * Each Spell's colours as hex: the main hue and its white-hot heart. The
-   * VFX draw Spells in them (the DualSense lightbar has its own, in `haptics.lightbar`).
-   */
   spellPalette: {
     /** Fire: a deep orange with a pale gold heart. */
     confringo: { hot: "#ffe2a0", main: "#ff6a12" },
@@ -3559,7 +3704,7 @@ export const tuning = {
   tickRate: 60,
 
   /**
-   * Training: seventeen lessons, each a Practice against the Training Dummy
+   * Training: eighteen lessons, each a Practice against the Training Dummy
    * that fits it and one goal after another on screen. Each goal's count is
    * met when the Duel has reported it this many times (or, for walking,
    * looking round and running, this many metres or degrees).
@@ -3578,6 +3723,8 @@ export const tuning = {
       disarmed: 1,
       /** Dodges (○). */
       dodge: 2,
+      /** Chest-high Spells that fly over the crouching (or sliding) learner. */
+      duck: 2,
       /** Expelliarmus that Disarm the dummy. */
       expelliarmus: 1,
       /** Felix Felicis drunk all the way down. */
@@ -3604,6 +3751,8 @@ export const tuning = {
       pickup: 1,
       /** Metres run holding R1. */
       run: 8,
+      /** Slides (L3 while running with R1). */
+      slide: 2,
       /** Special Spells cast (R2 + a face button). */
       special: 1,
       /** Strength Potions drunk all the way down. */

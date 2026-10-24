@@ -44,6 +44,7 @@ const es = {
   controls: {
     /** What each control does, as labelled on the drawn DualSense. */
     actions: {
+      crouch: "Agacharse",
       dodge: "Esquivar",
       heavySpell: "Hechizo pesado",
       jump: "Saltar",
@@ -59,6 +60,7 @@ const es = {
     },
     /** A second line under some labels. */
     details: {
+      crouch: "Corriendo: deslizarse",
       heavySpell: "Mantén para cargar\u00A0· Pulsa en un Clash",
       look: "Muévelo rápido a un lado: cambiar de objetivo",
       potionSlots: "Mantén y pulsa ↑ ← → ↓",
@@ -91,6 +93,10 @@ const es = {
         title: "Esquiva perfecta",
       },
       {
+        body: "Agáchate con L3 cuando un hechizo ya vuela hacia tu pecho y pasará por encima; corriendo, L3 te desliza por debajo. Un hechizo lanzado mientras estás agachado te busca abajo, y Depulso o una explosión te alcanzan igual.",
+        title: "Agacharse y deslizarse",
+      },
+      {
         body: "Dos Hechizos pesados cargados del todo que chocan de frente se traban en un rayo. Pulsa △ más rápido que tu rival para empujárselo encima.",
         title: "Clash",
       },
@@ -117,7 +123,7 @@ const es = {
     ],
     tabs: { controls: "Controles", mechanics: "Mecánicas" },
     /** The buttons printed on the drawn DualSense, by their own names. */
-    triggers: { l1: "L1", l2: "L2", r1: "R1", r2: "R2", r3: "R3" },
+    triggers: { l1: "L1", l2: "L2", l3: "L3", r1: "R1", r2: "R2", r3: "R3" },
   },
   difficulty: {
     duelista: "Duelista",
@@ -277,6 +283,7 @@ const es = {
         "Acércate al maniquí y lanza Depulso: mantén R2 y pulsa {depulso}",
       disarmed: "Deja que el maniquí te desarme",
       dodge: "Esquiva rodando con ○",
+      duck: "Agáchate con L3 cuando el hechizo ya vuela: que pase por encima",
       expelliarmus:
         "Desarma al maniquí con Expelliarmus: mantén R2 y pulsa {expelliarmus}",
       felix: "Bebe Felix Felicis: mantén L2 y pulsa {felix}",
@@ -293,6 +300,7 @@ const es = {
       petrificus: "Petrifica al maniquí: mantén R2 y pulsa {petrificus}",
       pickup: "Recoge tu varita caminando sobre ella",
       run: "Corre manteniendo R1",
+      slide: "Corre con R1 y deslízate con L3",
       special:
         "Gasta esa Determinación en Depulso: mantén R2 y pulsa {depulso} cerca del maniquí",
       strength: "Bebe la Poción Máxima: mantén L2 y pulsa {strength}",
@@ -311,6 +319,7 @@ const es = {
     lessonDone: "¡Lección completada!",
     lessons: {
       clash: "Ganar un Clash",
+      crouch: "Agacharse y deslizarse",
       depulso: "Depulso",
       disarmed: "Desarme y recoger la varita",
       dodge: "Esquiva",
@@ -334,6 +343,8 @@ const es = {
     previews: {
       clash:
         "Dos Confringos cargados que chocan se traban en un rayo: empújalo pulsando △ más rápido que tu rival.",
+      crouch:
+        "Agáchate a tiempo y el hechizo pasa por encima; corriendo, deslízate por debajo.",
       depulso:
         "Un cono corto de fuerza que aparta al rival y le corta la carga o la poción.",
       disarmed:
@@ -383,6 +394,12 @@ const es = {
         controls: "Suelta △ con la carga llena · Pulsa △ sin parar",
         what: "Si dos Confringos cargados del todo chocan de frente, se traban en un rayo entre las dos varitas.",
         when: "Pulsa △ sin parar, más rápido que tu rival, para empujarle el rayo encima. Ganarlo suma Determinación.",
+      },
+      crouch: {
+        controls:
+          "L3: agacharse y levantarse · Corriendo con R1, L3: deslizarse",
+        what: "L3 te agacha: caminas despacio y los hechizos que iban a tu pecho pasan por encima. No cuesta nada, pero uno lanzado cuando ya estás agachado te busca abajo. Corriendo, L3 te desliza por el suelo, rápido y bajo, por algo de resistencia, y acabas agachado.",
+        when: "Agáchate justo después de que el rival lance, cuando el hechizo ya no puede corregir, y levántate antes del siguiente. Depulso y las explosiones te alcanzan igual: para eso, rueda con ○.",
       },
       depulso: {
         controls: "Mantén R2 y pulsa {depulso}",

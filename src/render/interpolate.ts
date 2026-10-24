@@ -36,6 +36,10 @@ export interface DuelistSample {
   readonly clashing: boolean;
   /** Running at sprint speed. */
   readonly sprinting: boolean;
+  /** Crouched (or sliding, which ends crouched). */
+  readonly crouching: boolean;
+  /** Sliding along the floor out of a run. */
+  readonly sliding: boolean;
   /** Charging a Heavy Spell: the Wand stays raised. */
   readonly charging: boolean;
   /** Height of the feet off the floor, mid-jump. */
@@ -92,6 +96,7 @@ export const sampleDuelist = (
   burning: current.burnSeconds > 0,
   charging: current.chargeSeconds > 0,
   clashing: clashOpponentOf(clash, current.id) !== undefined,
+  crouching: current.crouching,
   disarmed: current.looseWand !== null,
   dodging: current.dodgeSeconds > 0,
   downSeconds: current.downSeconds,
@@ -110,6 +115,7 @@ export const sampleDuelist = (
   },
   potionEffects: current.potionEffects,
   shielding: current.shielding,
+  sliding: current.slideSeconds > 0,
   sprinting: current.sprinting,
   staggered: current.staggerSeconds > 0,
   stamina: lerp(previous.stamina, current.stamina, alpha),

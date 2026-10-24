@@ -148,7 +148,7 @@ const learnerIn = (duel: Duel) =>
   duel.snapshot().duelists.find((each) => each.id === "learner");
 
 describe("the lessons", () => {
-  it("are the seventeen lessons, one thing each, in order", () => {
+  it("are the eighteen lessons, one thing each, in order", () => {
     expect(lessons).toStrictEqual([
       "move",
       "lockOn",
@@ -156,6 +156,7 @@ describe("the lessons", () => {
       "heavy",
       "shield",
       "dodge",
+      "crouch",
       "focus",
       "expelliarmus",
       "incendio",
@@ -176,6 +177,7 @@ describe("the lessons", () => {
       "idle",
       "idle",
       "idle",
+      "casts",
       "casts",
       "casts",
       "casts",
@@ -393,6 +395,46 @@ describe("Esquiva", () => {
     });
 
     expect(perfect.done).toBeTruthy();
+  });
+});
+
+describe("Agacharse y deslizarse", () => {
+  it("counts chest-high Spells passing over the crouching learner, then slides", () => {
+    const ducked = withEvents(
+      startLesson("crouch"),
+      { duelistId: "learner", spell: spell(), type: "ducked" },
+      {
+        duelistId: "rival",
+        spell: spell({ casterId: "learner" }),
+        type: "ducked",
+      }
+    );
+
+    expect(goalOf(ducked)).toMatchObject({ count: 1, goal: "duck" });
+
+    const sliding = atGoal("crouch", 1);
+    const duel = practiceFor("crouch", 20);
+
+    // Runs at the dummy, sliding on L3 every second.
+    const slid = play(duel, sliding, ticksOf(3.2), (tick) =>
+      intent({
+        crouch: tick % ticksOf(1) === ticksOf(0.5),
+        move: { x: 0, y: 1 },
+        sprint: tick % ticksOf(1) < ticksOf(0.5),
+      })
+    );
+
+    expect(slid.done).toBeTruthy();
+  });
+
+  it("does not count a crouch with nothing passing over", () => {
+    const duel = practiceFor("crouch");
+
+    const crouched = play(duel, startLesson("crouch"), ticksOf(2), (tick) =>
+      intent({ crouch: tick % ticksOf(0.5) === 0 })
+    );
+
+    expect(goalOf(crouched)).toMatchObject({ count: 0, goal: "duck" });
   });
 });
 
