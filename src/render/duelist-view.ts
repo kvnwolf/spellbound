@@ -398,7 +398,7 @@ export const createDuelistView = (
   let winded = 0;
   let breathPhase = 0;
   // Each Duelist breathes and shifts their weight to their own rhythm.
-  const rhythm = id.length * 0.37;
+  const rhythm = id.length * motion.breath.rhythmPerLetter;
 
   // Eased state weights.
   const weight = {
@@ -911,13 +911,17 @@ export const createDuelistView = (
     const airTime = loopTime(clock, durationOf("Jump_Loop"));
     const { takeoff } = jump;
     const launch = unit(jumpAge / takeoff.seconds);
-    const launching = jumpAge === idle ? 0 : 1 - smooth((launch - 0.7) / 0.3);
+
+    const launching =
+      jumpAge === idle
+        ? 0
+        : 1 - smooth((launch - takeoff.handOver) / (1 - takeoff.handOver));
 
     const reaching = climb < 0 ? 1 - smooth(sample.elevation / jump.reach) : 0;
 
     for (const [layer, share] of [
       [lower, 1],
-      [upper, 0.4],
+      [upper, jump.upperAir],
     ] as const) {
       over(layer, "Jump_Loop", airTime, weight.air * share);
       over(
@@ -1006,7 +1010,9 @@ export const createDuelistView = (
         layer,
         "Death01",
         Math.min(knockoutAge, knockout.lieAt),
-        knockoutAge === idle ? 0 : smooth(knockoutAge / 0.12)
+        knockoutAge === idle
+          ? 0
+          : smooth(knockoutAge / knockout.fallFadeSeconds)
       );
       over(layer, "LayToIdle", riseAge, rising);
     }
@@ -1428,7 +1434,8 @@ export const createDuelistView = (
     // Drinking: the vial goes to the lips, the head tipping back as it empties.
     if (sample.drinking && weight.drink > 1e-3) {
       const share = unit(1 - sample.drinking.secondsLeft / potion.drinkSeconds);
-      const lifted = smooth(share / 0.3) * smooth((1 - share) / 0.15);
+      const { lower: drop, raise: rise } = motion.drink;
+      const lifted = smooth(share / rise) * smooth((1 - share) / drop);
       joints.head.getWorldPosition(handTarget);
       object.worldToLocal(handTarget).add(vector(motion.drink.lips));
       reach(0, toWorld(handTarget, handTarget), null, weight.drink * lifted);
@@ -1558,7 +1565,7 @@ export const createDuelistView = (
   const kickFrom = (where: Point3) => {
     const { kick: tuned } = motion;
     const local = object.worldToLocal(scratch.set(where.x, where.y, where.z));
-    const side = Math.max(-1, Math.min(1, local.x / 0.3));
+    const side = Math.max(-1, Math.min(1, local.x / tuned.sideWidth));
     kick.pitchRate -= tuned.impulse;
     kick.rollRate += tuned.impulse * tuned.sideShare * side;
   };

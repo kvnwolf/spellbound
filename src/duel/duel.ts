@@ -2398,7 +2398,12 @@ export const createDuel = (config: DuelConfig): Duel => {
     const struck =
       by === "bounds"
         ? undefined
-        : struckAt(structures, position, by, spellRadius(spell) + 0.01);
+        : struckAt(
+            structures,
+            position,
+            by,
+            spellRadius(spell) + tuning.structures.strikeReach
+          );
 
     if (struck) {
       hitStructure(draft, struck, {
@@ -2496,12 +2501,11 @@ export const createDuel = (config: DuelConfig): Duel => {
    * Cover or an Obstruction, so its owner can always walk to it.
    */
   const landingOf = (from: GroundPoint, heading: GroundPoint): GroundPoint => {
-    const { clearance, flightDistance } = expelliarmus.wand;
+    const { clearance, flightDistance, landingStep } = expelliarmus.wand;
     const maxX = arena.bounds.halfWidth - bodyRadius;
     const maxZ = arena.bounds.halfDepth - bodyRadius;
     const blockers = [...arena.cover, ...arena.obstructions];
-    const stepLength = 0.05;
-    const steps = Math.ceil(flightDistance / stepLength);
+    const steps = Math.ceil(flightDistance / landingStep);
     let landing = from;
 
     for (let index = 1; index <= steps; index += 1) {

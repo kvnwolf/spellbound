@@ -69,6 +69,7 @@ import {
   Vector3,
 } from "three/webgpu";
 
+import { between } from "../controllers/random";
 import type {
   DuelEvent,
   DuelistId,
@@ -362,11 +363,11 @@ const createShockwaves = (
   ring: SpellLook["incendio"]["ring"]
 ) => {
   const { main, hot } = palette;
-  const geometry = new RingGeometry(0.82, 1, 64);
+  const geometry = new RingGeometry(ring.inner, 1, 64);
   // Flat on the floor.
   geometry.rotateX(-Math.PI / 2);
 
-  const rings = Array.from({ length: 3 }, () => {
+  const rings = Array.from({ length: ring.pool }, () => {
     const strength = uniform(0);
 
     const material = new MeshBasicNodeMaterial({
@@ -416,7 +417,7 @@ const createShockwaves = (
         each.age = 0;
         // On the floor under the blast, wherever it went off, so it marks
         // the ground the blast reaches; just off it, so it never z-fights.
-        each.mesh.position.set(at.x, 0.05, at.z);
+        each.mesh.position.set(at.x, ring.lift, at.z);
       }
     },
   };
@@ -547,7 +548,7 @@ export const createSpellVfx = (settings: SpellVfxSettings): SpellVfx => {
 
     if (state) {
       state.metres = reach;
-      state.seed = spell.id * 0.37;
+      state.seed = spell.id * look.jetSeedPerId;
     }
   };
 
@@ -675,6 +676,7 @@ export const createSpellVfx = (settings: SpellVfxSettings): SpellVfx => {
     });
 
     const { wisps, streaks } = style;
+    const jitter = look.impactJitter;
 
     for (let index = 0; index < Math.round(wisps.count * scale); index += 1) {
       impacts.wisp(at, palette, {
@@ -682,8 +684,8 @@ export const createSpellVfx = (settings: SpellVfxSettings): SpellVfx => {
         grow: wisps.grow,
         heading: lean,
         intensity: wisps.intensity,
-        life: wisps.life * (0.7 + random() * 0.3),
-        size: wisps.size * scale * (0.7 + random() * 0.6),
+        life: wisps.life * between(random, jitter.life),
+        size: wisps.size * scale * between(random, jitter.size),
         speed: wisps.speed * scale,
       });
     }
@@ -699,10 +701,14 @@ export const createSpellVfx = (settings: SpellVfxSettings): SpellVfx => {
         {
           gravity: style.smoke.gravity,
           grow: style.smoke.grow,
-          heading: lean && { x: lean.x * 0.4, y: 0.3, z: lean.z * 0.4 },
+          heading: lean && {
+            x: lean.x * jitter.smokeLean,
+            y: jitter.smokeRise,
+            z: lean.z * jitter.smokeLean,
+          },
           intensity: style.smoke.intensity,
-          life: style.smoke.life * (0.7 + random() * 0.3),
-          size: style.smoke.size * scale * (0.7 + random() * 0.6),
+          life: style.smoke.life * between(random, jitter.life),
+          size: style.smoke.size * scale * between(random, jitter.size),
           speed: style.smoke.speed * scale,
         },
         true
@@ -713,9 +719,9 @@ export const createSpellVfx = (settings: SpellVfxSettings): SpellVfx => {
       sparks.emit(at, index % 2 === 0 ? palette.hot : palette.main, {
         heading: lean,
         intensity: streaks.intensity,
-        life: streaks.life * (0.7 + random() * 0.3),
+        life: streaks.life * between(random, jitter.life),
         size: streaks.size,
-        speed: streaks.speed * scale * (0.7 + random() * 0.5),
+        speed: streaks.speed * scale * between(random, jitter.speed),
         streak: streaks.streak,
       });
     }
@@ -749,12 +755,12 @@ export const createSpellVfx = (settings: SpellVfxSettings): SpellVfx => {
     // Embers over the scorched floor of the blast, drifting up on the heat.
     for (let ember = 0; ember < embers.count; ember += 1) {
       sparks.emit(
-        scatter(at, settings.blastRadius, random() * 0.6),
+        scatter(at, settings.blastRadius, random() * embers.height),
         ember % 3 === 0 ? hot : main,
         {
           gravity: -embers.rise,
-          intensity: 5,
-          life: embers.life * (0.6 + random() * 0.4),
+          intensity: embers.intensity,
+          life: embers.life * between(random, embers.lifeShare),
           size: embers.size,
           speed: embers.speed,
         }

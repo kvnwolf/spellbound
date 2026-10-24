@@ -1299,12 +1299,15 @@ export const tuning = {
        * radians `restRate` times a second at rest, up to `windedAmplitude`
        * at `windedRate` when winded (all the Stamina spent; winded at
        * `windSharpness`, recovering over `recoverSeconds`). Standing, the
-       * hips sway `sway` radians `swayRate` times a second.
+       * hips sway `sway` radians `swayRate` times a second, each Duelist to
+       * their own rhythm: a phase of `rhythmPerLetter` radians a letter of
+       * their id.
        */
       breath: {
         recoverSeconds: 3,
         restAmplitude: 0.012,
         restRate: 0.25,
+        rhythmPerLetter: 0.37,
         sway: 0.02,
         swayRate: 0.12,
         windSharpness: 6,
@@ -1328,8 +1331,18 @@ export const tuning = {
         twist: 0.3,
       },
       clashAt: 0,
-      /** Drinking: the left wrist goes to `lips` (metres from the head joint, the Duelist's frame) and the head tips back up to `headBack` radians as the vial empties. */
-      drink: { headBack: 0.45, lips: [0.03, -0.02, 0.2] },
+      /**
+       * Drinking: the left wrist goes to `lips` (metres from the head joint,
+       * the Duelist's frame), rising over the first `raise` of the drink and
+       * coming down over its last `lower`, and the head tips back up to
+       * `headBack` radians as the vial empties.
+       */
+      drink: {
+        headBack: 0.45,
+        lips: [0.03, -0.02, 0.2],
+        lower: 0.15,
+        raise: 0.3,
+      },
       /**
        * Walking and running. The clips' own strides are long and slow (their
        * jog covers 2.9 m a step at 1.5 steps a second at our running
@@ -1425,26 +1438,38 @@ export const tuning = {
        * `takeoff.to` seconds of the clip over the first `takeoff.seconds` in
        * the air (the push off the floor and the legs tucking), then the air
        * pose (`Jump_Loop`); falling, the legs reach for the floor
-       * (`Jump_Land`'s first pose) over the last `reach` metres. Airborne
-       * poses ease at `sharpness`. The landing (`shots.land`) takes
-       * `landWeight` of `Jump_Land`'s crouch.
+       * (`Jump_Land`'s first pose) over the last `reach` metres. The take-off
+       * hands over to the air pose from `takeoff.handOver` of it on; the
+       * upper body takes `upperAir` of the air pose. Airborne poses ease at
+       * `sharpness`. The landing (`shots.land`) takes `landWeight` of
+       * `Jump_Land`'s crouch.
        */
       jump: {
         landWeight: 0.5,
         reach: 0.7,
         sharpness: 30,
-        takeoff: { from: 0.04, seconds: 0.26, to: 0.36 },
+        takeoff: { from: 0.04, handOver: 0.7, seconds: 0.26, to: 0.36 },
+        upperAir: 0.4,
       },
       /**
        * A Spell landing kicks the upper body back (and `sideShare` of it to
        * the side it struck) at `impulse` radians a second, springing back at
-       * `frequency` Hz with `damping` (under 1, so it rebounds once).
+       * `frequency` Hz with `damping` (under 1, so it rebounds once). A Spell
+       * landing `sideWidth` metres or more off the body's middle kicks fully
+       * to that side.
        */
-      kick: { damping: 0.5, frequency: 4, impulse: 4.5, sideShare: 0.5 },
+      kick: {
+        damping: 0.5,
+        frequency: 4,
+        impulse: 4.5,
+        sideShare: 0.5,
+        sideWidth: 0.3,
+      },
       /**
-       * The Knockout: `Death01` held lying from `lieAt` seconds; getting up
-       * (`LayToIdle`) fades out over its last `riseFadeSeconds`. The fall
-       * lays the body down behind the feet, so it finds `room` to lie in:
+       * The Knockout: `Death01` fading in over `fallFadeSeconds` and held
+       * lying from `lieAt` seconds; getting up (`LayToIdle`) fades out over
+       * its last `riseFadeSeconds`. The fall lays the body down behind the
+       * feet, so it finds `room` to lie in:
        * the body as it lies is `body`, discs `[x, z, radius]` on the floor
        * of the Duelist's frame (metres, +x left, +z ahead: feet, legs, hips,
        * chest, head and the two flung hands). Every turn of the fall
@@ -1455,6 +1480,7 @@ export const tuning = {
        * slide at `sharpness` as it falls, and back once it is up again.
        */
       knockout: {
+        fallFadeSeconds: 0.12,
         lieAt: 1.9,
         riseFadeSeconds: 0.35,
         room: {
@@ -1606,12 +1632,15 @@ export const tuning = {
      * (by `clearance` metres) and the Arena's walls. Once it lies on the
      * floor its owner picks it up with their body's centre within
      * `pickupRadius` of it; either way it returns `returnSeconds` after the Disarm.
+     * Where it must stop short is found by trying its flight every
+     * `landingStep` metres.
      */
     wand: {
       clearance: 0.35,
       flightDistance: 4,
       flightHeight: 1.1,
       flightSeconds: 0.6,
+      landingStep: 0.05,
       pickupRadius: 0.8,
       returnSeconds: 6,
     },
@@ -2866,6 +2895,18 @@ export const tuning = {
      */
     hitFlare: { fill: 0.05, power: 1.5, radiance: 2.8, seconds: 0.3 },
     /**
+     * How each wisp, puff of smoke and streak of an impact varies: its life,
+     * size and speed are scaled by a share drawn from these ranges. Smoke
+     * drifts `smokeRise` up and leans `smokeLean` as far as the splash.
+     */
+    impactJitter: {
+      life: { max: 1, min: 0.7 },
+      size: { max: 1.3, min: 0.7 },
+      smokeLean: 0.4,
+      smokeRise: 0.3,
+      speed: { max: 1.2, min: 0.7 },
+    },
+    /**
      * Where a Spell's energy lands, as the films draw it: a flare of rays
      * (`flare`: radiance, life, full size), soft `wisps` of energy swelling
      * `grow` times as they fade (fire for the fire Spells), `smoke` laid over
@@ -3144,13 +3185,26 @@ export const tuning = {
     /**
      * Incendio's explosion (its fireball and smoke are `impacts.incendio`): a
      * shockwave ring on the floor as wide as the gameplay blast (reaching it
-     * over `ring.life`), and embers scattered over the blast that drift up
-     * and die out.
+     * over `ring.life`; a band from `inner` of its radius out, `lift` metres
+     * off the floor so it never z-fights, `pool` of them reused), and embers
+     * scattered over the blast up to `height` metres off the floor, glowing
+     * `intensity`, that drift up and die out after `lifeShare` of `life`.
      */
     incendio: {
-      embers: { count: 40, life: 1.9, rise: 0.4, size: 0.05, speed: 0.7 },
-      ring: { life: 0.4, radiance: 3.4 },
+      embers: {
+        count: 40,
+        height: 0.6,
+        intensity: 5,
+        life: 1.9,
+        lifeShare: { max: 1, min: 0.6 },
+        rise: 0.4,
+        size: 0.05,
+        speed: 0.7,
+      },
+      ring: { inner: 0.82, life: 0.4, lift: 0.05, pool: 3, radiance: 3.4 },
     },
+    /** Each Spell's jet churns its own way: its noise seed is the Spell's id times `jetSeedPerId`. */
+    jetSeedPerId: 0.37,
     /** The pool of point lights that follow the brightest Spells and flashes, and how far a flash's light reaches. */
     lights: { flashDistance: 7, pool: 4 },
     /**
@@ -3465,6 +3519,12 @@ export const tuning = {
     },
     /** The fountain: sturdier, and Spells fly over it, so mostly blasts wear it down. */
     obstruction: { health: 140 },
+    /**
+     * A Spell stopped by Cover, or come down into an Obstruction, strikes the
+     * piece whose edge is within its radius and this many metres more (it is
+     * stopped just short of touching).
+     */
+    strikeReach: 0.01,
   },
 
   /** Stupefy, the Light Spell. Damage is in Health points. */
