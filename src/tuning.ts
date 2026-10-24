@@ -1973,12 +1973,10 @@ export const tuning = {
 
   /** The game flow between the title, the Difficulty select, the Duel and its result. */
   screens: {
-    /** A Training lesson's "¡Lección completada!" holds this long before the next lesson starts. */
-    lessonDoneSeconds: 2.5,
+    /** A Training lesson's "¡Lección completada!" holds this long, the lesson still playing, before its success scroll. */
+    lessonDoneSeconds: 1.2,
     /** The Duel's victory or defeat call-out plays this long before the result screen. */
     resultDelaySeconds: 3,
-    /** The last lesson's "¡Entrenamiento completado!" holds this long before the main menu. */
-    trainingDoneSeconds: 4,
   },
 
   /**
@@ -2458,10 +2456,10 @@ export const tuning = {
   tickRate: 60,
 
   /**
-   * Training: ten lessons, each a Practice against the Training Dummy that
-   * fits it and one goal after another on screen. Each goal's count is met
-   * when the Duel has reported it this many times (or, for walking, looking
-   * round and running, this many metres or degrees).
+   * Training: seventeen lessons, each a Practice against the Training Dummy
+   * that fits it and one goal after another on screen. Each goal's count is
+   * met when the Duel has reported it this many times (or, for walking,
+   * looking round and running, this many metres or degrees).
    */
   training: {
     goals: {
@@ -2471,10 +2469,20 @@ export const tuning = {
       clash: 1,
       /** Confringos (△, Charged) that land. */
       confringo: 1,
+      /** Depulsos that blast the dummy. */
+      depulso: 1,
       /** Times Disarmed by the dummy's Expelliarmus. */
       disarmed: 1,
       /** Dodges (○). */
       dodge: 2,
+      /** Expelliarmus that Disarm the dummy. */
+      expelliarmus: 1,
+      /** Felix Felicis drunk all the way down. */
+      felix: 1,
+      /** Whole Focus segments earned. */
+      focusSegment: 1,
+      /** Incendio blasts that leave the dummy Burning. */
+      incendio: 1,
       /** Lock-on releases (R3). */
       lockOff: 1,
       /** Lock-ons (R3). */
@@ -2487,19 +2495,31 @@ export const tuning = {
       perfectDodge: 1,
       /** Perfect Releases. */
       perfectRelease: 1,
+      /** Petrificus Totalus that Petrify the dummy. */
+      petrificus: 1,
       /** Wands picked up off the floor by walking over them. */
       pickup: 1,
-      /** Potions drunk (L2 + a face button) all the way down. */
-      potion: 2,
       /** Metres run holding R1. */
       run: 8,
       /** Special Spells cast (R2 + a face button). */
-      special: 3,
+      special: 1,
+      /** Strength Potions drunk all the way down. */
+      strength: 1,
+      /** Spells that land while the Strength Potion works. */
+      strongHit: 2,
       /** Stupefys (□) that land. */
       stupefy: 3,
+      /** Metres moved, walking or running, while the Swiftness Potion works. */
+      swiftRun: 15,
+      /** Swiftness Potions drunk all the way down. */
+      swiftness: 1,
       /** Metres walked with the left stick. */
       walk: 5,
+      /** Wiggenweld drunk all the way down. */
+      wiggenweld: 1,
     },
+    /** How lessons set the learner up: Wiggenweld's lesson starts them on this share of full Health. */
+    setup: { hurtHealthShare: 0.4 },
   },
 
   /**

@@ -674,7 +674,7 @@ describe(menuSoundFor, () => {
     });
   });
 
-  it("rings out a completed Training lesson, and the last one louder", () => {
+  it("rings out every completed Training lesson, and Training's completion louder as the Club de Duelo welcomes the player", () => {
     const lessonDone = { type: "lesson-done" } as const;
 
     expect(
@@ -689,6 +689,17 @@ describe(menuSoundFor, () => {
         lessonScreen("disarmed"),
         lessonCompleted(lessonScreen("disarmed")),
         lessonDone
+      )
+    ).toStrictEqual({ kind: "lesson-complete" });
+    expect(
+      menuSoundFor(
+        {
+          duel: lessonScreen("disarmed"),
+          kind: "lessonDone",
+          selected: "next",
+        },
+        { duel: lessonScreen("disarmed"), kind: "certificate" },
+        input("confirm")
       )
     ).toStrictEqual({ kind: "training-complete" });
     expect(

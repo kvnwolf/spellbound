@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 
+import { lessons, startLesson } from "../duel/training";
+import type { Lesson } from "../duel/training";
 import { text } from "../text";
 import type { DuelScreen, Screen } from "./screens";
-import { viewOf } from "./view";
+import { goalLineOf, scrollOf, viewOf } from "./view";
 
 const result = (won: boolean): Screen => ({
   difficulty: "maestro",
@@ -49,10 +51,10 @@ describe("what each screen shows", () => {
     );
   });
 
-  it("names the game over the main menu and lists Duelo, Práctica, Entrenamiento and Controles", () => {
+  it("names the game over the main menu and lists Duelo, Práctica, Entrenamiento and Controles, Training ticked once complete", () => {
     const view = viewOf(
       { kind: "main", selected: "practice" },
-      { completed: [], finished: true }
+      { certified: true, completed: [...lessons] }
     );
 
     expect(view?.heading).toBe(text.title);
@@ -64,36 +66,59 @@ describe("what each screen shows", () => {
     ]);
   });
 
-  it("points a first-timer at Entrenamiento until Training has been played through", () => {
-    const training = viewOf(
-      { kind: "main", selected: "duel" },
-      { completed: ["move", "lockOn"], finished: false }
-    )?.items?.[2];
+  it("greys out Duelo and Práctica until Training is complete, and says so under Entrenamiento", () => {
+    const view = viewOf(
+      { kind: "main", selected: "training" },
+      { certified: false, completed: ["move", "lockOn"] }
+    );
 
-    expect(training).toStrictEqual({
-      hint: "¿Primera vez? Empieza aquí",
-      label: "Entrenamiento",
-      selected: false,
-    });
+    expect(view?.items).toStrictEqual([
+      { disabled: true, label: "Duelo", selected: false },
+      { disabled: true, label: "Práctica", selected: false },
+      {
+        hint: "Completa el entrenamiento para desbloquear Duelo y Práctica",
+        label: "Entrenamiento",
+        selected: true,
+      },
+      { label: "Controles", selected: false },
+    ]);
   });
 
-  it("lists the ten lessons on Entrenamiento, the completed ones ticked", () => {
+  it("lists the seventeen lessons on Entrenamiento, the completed ones ticked", () => {
     const view = viewOf(
       { kind: "lessons", selected: "light" },
-      { completed: ["move", "heavy"], finished: false }
+      { certified: false, completed: ["move", "heavy"] }
     );
 
     expect(view).toMatchObject({
       body: text.training.pick,
       heading: "Entrenamiento",
     });
+    expect(view?.items?.map((item) => item.label)).toStrictEqual([
+      "1. Moverse y mirar",
+      "2. Fijar objetivo",
+      "3. Stupefy",
+      "4. Confringo con carga",
+      "5. Escudo y Parry",
+      "6. Esquiva",
+      "7. La Determinación",
+      "8. Expelliarmus",
+      "9. Incendio",
+      "10. Petrificus Totalus",
+      "11. Depulso",
+      "12. Wiggenweld",
+      "13. Poción Máxima",
+      "14. Poción Vigorizante",
+      "15. Felix Felicis",
+      "16. Ganar un Clash",
+      "17. Desarme y recoger la varita",
+    ]);
     expect(view?.items?.slice(0, 4)).toStrictEqual([
       { done: true, label: "1. Moverse y mirar", selected: false },
       { label: "2. Fijar objetivo", selected: false },
-      { label: "3. Hechizo ligero", selected: true },
-      { done: true, label: "4. Hechizo pesado", selected: false },
+      { label: "3. Stupefy", selected: true },
+      { done: true, label: "4. Confringo con carga", selected: false },
     ]);
-    expect(view?.items).toHaveLength(10);
   });
 
   it("heads the Difficulty select of a Duel with Duelo, and that of a Practice with Práctica", () => {
@@ -165,7 +190,7 @@ describe("what each screen shows", () => {
     ]);
   });
 
-  it("offers Continuar, Saltar lección, Controles and Salir del entrenamiento when a lesson is paused", () => {
+  it("offers Continuar, Controles and Salir del entrenamiento when a lesson is paused", () => {
     const lesson: DuelScreen = {
       ...duel,
       practice: "idle",
@@ -176,7 +201,6 @@ describe("what each screen shows", () => {
       viewOf({ duel: lesson, kind: "pause", selected: "continue" })?.items
     ).toStrictEqual([
       { label: "Continuar", selected: true },
-      { label: "Saltar lección", selected: false },
       { label: "Controles", selected: false },
       { label: "Salir del entrenamiento", selected: false },
     ]);
@@ -310,5 +334,133 @@ describe("what the Controls show", () => {
     });
 
     expect(overPause).toStrictEqual(viewOf(controls("controls")));
+  });
+});
+
+/** The lesson `lesson` on screen, as a Practice against its Training Dummy. */
+const inLesson = (lesson: Lesson): DuelScreen => ({
+  ...duel,
+  practice: "idle",
+  training: { doneSecondsLeft: null, lesson },
+});
+
+describe("the Training scrolls", () => {
+  it("leave the menu frame off, so the frozen lesson shows behind them", () => {
+    expect(
+      viewOf({ duel: inLesson("move"), kind: "briefing" })
+    ).toBeUndefined();
+    expect(
+      viewOf({ duel: inLesson("move"), kind: "lessonDone", selected: "next" })
+    ).toBeUndefined();
+    expect(
+      viewOf({ duel: inLesson("disarmed"), kind: "certificate" })
+    ).toBeUndefined();
+    expect(scrollOf(inLesson("move"))).toBeUndefined();
+  });
+
+  it("open a lesson with its name, what it teaches, when to use it and its buttons, the slot drawn as its button", () => {
+    const scroll = scrollOf({
+      duel: inLesson("expelliarmus"),
+      kind: "briefing",
+    });
+
+    expect(scroll).toMatchObject({
+      controls: "Mantén R2 y pulsa ○",
+      eyebrow: "Lección 8 de 17",
+      heading: "Expelliarmus",
+      items: [{ label: "Empezar", selected: true }],
+      kind: "briefing",
+    });
+    expect(scroll?.paragraphs).toHaveLength(2);
+  });
+
+  it("draw a Potion's slot as its D-pad arrow", () => {
+    expect(
+      scrollOf({ duel: inLesson("wiggenweld"), kind: "briefing" })?.controls
+    ).toBe("Mantén L2 y pulsa ←");
+    expect(
+      scrollOf({ duel: inLesson("felix"), kind: "briefing" })?.controls
+    ).toBe("Mantén L2 y pulsa ↓, luego R2 y ✕");
+  });
+
+  it("give every lesson its own scroll, saying when it pays off", () => {
+    for (const lesson of lessons) {
+      const scroll = scrollOf({ duel: inLesson(lesson), kind: "briefing" });
+
+      expect(scroll?.heading).toBe(text.training.lessons[lesson]);
+      expect(scroll?.paragraphs.every((line) => line.length > 20)).toBeTruthy();
+      expect(scroll?.paragraphs.join(" ")).not.toMatch(/\{/u);
+      expect(scroll?.controls).not.toMatch(/\{/u);
+    }
+  });
+
+  it("celebrate a completed lesson and offer Repetir or Siguiente lección", () => {
+    expect(
+      scrollOf({
+        duel: inLesson("light"),
+        kind: "lessonDone",
+        selected: "next",
+      })
+    ).toMatchObject({
+      eyebrow: "Lección 3 de 17",
+      heading: "¡Lección completada!",
+      items: [
+        { label: "Repetir", selected: false },
+        { label: "Siguiente lección", selected: true },
+      ],
+      kind: "lessonDone",
+    });
+  });
+
+  it("offer Terminar instead after the last lesson", () => {
+    expect(
+      scrollOf({
+        duel: inLesson("disarmed"),
+        kind: "lessonDone",
+        selected: "repeat",
+      })?.items
+    ).toStrictEqual([
+      { label: "Repetir", selected: true },
+      { label: "Terminar", selected: false },
+    ]);
+  });
+
+  it("welcome the player to the Club de Duelo once Training is complete", () => {
+    expect(
+      scrollOf({ duel: inLesson("disarmed"), kind: "certificate" })
+    ).toMatchObject({
+      heading: "Club de Duelo",
+      items: [{ label: "Continuar", selected: true }],
+      kind: "certificate",
+    });
+  });
+});
+
+describe("a lesson's goal line", () => {
+  it("names the goal with its button and counts it", () => {
+    expect(goalLineOf(startLesson("light"))).toBe(
+      "Acierta Stupefy con □ (0/3)"
+    );
+    expect(goalLineOf({ ...startLesson("move"), count: 2.6 })).toBe(
+      "Camina con el stick izquierdo (2/5 m)"
+    );
+  });
+
+  it("draws a Special Spell's or a Potion's slot as its button", () => {
+    expect(goalLineOf(startLesson("petrificus"))).toBe(
+      "Petrifica al maniquí: mantén R2 y pulsa □ (0/1)"
+    );
+    expect(goalLineOf(startLesson("swiftness"))).toBe(
+      "Bebe la Poción Vigorizante: mantén L2 y pulsa → (0/1)"
+    );
+    expect(goalLineOf({ ...startLesson("felix"), goal: 1 })).toBe(
+      "Gasta esa Determinación en Depulso: mantén R2 y pulsa ✕ cerca del maniquí (0/1)"
+    );
+  });
+
+  it("calls the lesson completed once it is", () => {
+    expect(goalLineOf({ ...startLesson("light"), done: true, goal: 1 })).toBe(
+      "¡Lección completada!"
+    );
   });
 });

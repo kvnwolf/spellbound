@@ -6,7 +6,8 @@
  * A new sound is one line in `sampleOfSound` (plus its kind in `cues.ts`).
  */
 import type { PotionKind } from "../duel/potions";
-import type { DuelScreen, PauseScreen, Screen } from "../screens/screens";
+import { duelOf } from "../screens/screens";
+import type { Screen } from "../screens/screens";
 import type { Tuning } from "../tuning";
 import type { LoopSound, MenuSound, RoundOutcome, Sound } from "./cues";
 
@@ -254,10 +255,6 @@ export interface MusicState {
   readonly dimmed: boolean;
 }
 
-/** The Duel a Duel-showing screen shows. */
-const duelOf = (screen: DuelScreen | PauseScreen): DuelScreen =>
-  screen.kind === "pause" ? screen.duel : screen;
-
 /** The music the screens call for. */
 export const musicFor = (screen: Screen): MusicState => {
   if (screen.kind === "unsupported") {
@@ -281,13 +278,13 @@ export const musicFor = (screen: Screen): MusicState => {
     return { ambience: false, dimmed: false, theme: "menu-theme" };
   }
 
-  const duel = duelOf(screen.kind === "disconnected" ? screen.resume : screen);
+  const duel = duelOf(screen);
 
   return {
     ambience: true,
     dimmed: screen.kind !== "duel",
     // Once the Duel is decided its fanfare plays instead.
-    theme: duel.over === null ? "duel-theme" : null,
+    theme: duel?.over ? null : "duel-theme",
   };
 };
 

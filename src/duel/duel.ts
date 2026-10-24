@@ -1683,10 +1683,14 @@ export const createDuel = (config: DuelConfig): Duel => {
 
   let current: DuelSnapshot = {
     clash: null,
-    // A Training lesson on Special Spells starts the learner with full Focus.
+    // A Training lesson sets the learner's Focus and Health up as it needs.
     duelists: lineUp().map((self) =>
-      practice?.fullFocus === true && self.id === practice.learner
-        ? { ...self, focus: tuning.focus.max }
+      practice && self.id === practice.learner
+        ? {
+            ...self,
+            focus: tuning.focus.max * practice.setup.focusShare,
+            health: tuning.duelist.health * practice.setup.healthShare,
+          }
         : self
     ),
     round: {

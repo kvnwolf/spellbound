@@ -32,7 +32,7 @@ import { idleIntent } from "./duel/intent";
 import type { Intent } from "./duel/intent";
 import { practiceRulesFor } from "./duel/practice";
 import type { PracticeRival } from "./duel/practice";
-import { advanceLesson, lessonPlans, startLesson } from "./duel/training";
+import { advanceLesson, lessonRules, startLesson } from "./duel/training";
 import type { LessonProgress } from "./duel/training";
 import { createFixedStepClock } from "./game-loop";
 import { createHud } from "./hud";
@@ -59,6 +59,7 @@ import { createSpellVfx, spellVfxSettings } from "./render/spell-vfx";
 import { loadWizardAssets } from "./render/wizard-assets";
 import { createWorldHud } from "./render/world-hud";
 import {
+  duelOf,
   initialScreenState,
   practiceOf,
   reduceScreens,
@@ -70,9 +71,10 @@ import type {
   Screen,
   ScreenEvent,
 } from "./screens/screens";
-import { viewOf } from "./screens/view";
+import { scrollOf, viewOf } from "./screens/view";
 import { createSpellSlotsHud } from "./spell-slots-hud";
 import { createTrainingHud } from "./training-hud";
+import { createTrainingScroll } from "./training-scroll";
 import { loadTraining, saveTraining } from "./training-store";
 import { tuning } from "./tuning";
 
@@ -92,18 +94,9 @@ const element = <T extends HTMLElement>(
   return found;
 };
 
-/** The Training lesson on show, running, paused or waiting for the controller. */
-const trainingOf = (screen: Screen): DuelScreen["training"] => {
-  if (screen.kind === "duel") {
-    return screen.training;
-  }
-
-  if (screen.kind === "pause") {
-    return screen.duel.training;
-  }
-
-  return screen.kind === "disconnected" ? trainingOf(screen.resume) : undefined;
-};
+/** The Training lesson on show: running, paused, under a scroll or waiting for the controller. */
+const trainingOf = (screen: Screen): DuelScreen["training"] =>
+  duelOf(screen)?.training;
 
 /** Where every Duelist that passes `test` stands: their feet. */
 const feetOf = (
@@ -201,20 +194,24 @@ const start = async () => {
   // Behind the menus sits a fresh Duel (run 0), frozen at its start.
   const waiting: Match = { difficulty: "duelista", practice: null };
 
-  const createDuelFor = ({ difficulty, practice, training }: Match) =>
+  /** The Practice rules `match` is played under: a Training lesson's own, or none for a Duel. */
+  const rulesFor = ({ practice, training }: Match) => {
+    if (training) {
+      return lessonRules(training.lesson, localId, tuning);
+    }
+
+    return practice === null ? undefined : practiceRulesFor(practice, localId);
+  };
+
+  const createDuelFor = (match: Match) =>
     createDuel({
       arena: courtyard,
-      difficulty,
+      difficulty: match.difficulty,
       duelists: [
         { id: localId, spawn: courtyardSpawns.near, team: "near" },
         { id: opponentId, spawn: courtyardSpawns.far, team: "far" },
       ],
-      practice:
-        practice === null
-          ? undefined
-          : practiceRulesFor(practice, localId, {
-              fullFocus: training && lessonPlans[training.lesson].fullFocus,
-            }),
+      practice: rulesFor(match),
       tuning,
     });
 
@@ -491,7 +488,10 @@ const start = async () => {
   const clashHud = createClashHud(hudElement, localId, tuning.hud.clash);
 
   // A Training lesson's goal, top-centre.
-  const trainingHud = createTrainingHud(hudElement, tuning);
+  const trainingHud = createTrainingHud(hudElement);
+
+  // The parchment scrolls before and after a Training lesson, over it.
+  const trainingScroll = createTrainingScroll(document.body);
 
   // Opponents' floating Health bars and the damage numbers on them.
   const worldHud = createWorldHud(hudElement, localId, {
@@ -593,9 +593,11 @@ const start = async () => {
     }
 
     const { screen } = screens;
+    // A lesson's Duel is built as its scroll opens, to wait behind it.
+    const shown = duelOf(screen);
 
-    if (screen.kind === "duel" && screen.run !== activeRun) {
-      startRun(screen.run, screen);
+    if (shown && shown.run !== activeRun) {
+      startRun(shown.run, shown);
     } else if (
       (screen.kind === "connect" ||
         screen.kind === "main" ||
@@ -881,14 +883,8 @@ const start = async () => {
     hud.show(current, events, seconds);
     specialsHud.show(current);
     clashHud.show(current, events);
-    const training = trainingOf(screens.screen);
-    trainingHud.show(
-      training &&
-        lesson && {
-          done: training.doneSecondsLeft !== null,
-          progress: lesson,
-        }
-    );
+    trainingHud.show(trainingOf(screens.screen) && lesson);
+    trainingScroll.show(scrollOf(screens.screen));
     clashVfx.handle(events);
     clashVfx.update(previous.clash, current.clash, alpha, simSeconds, (id) =>
       views.get(id)?.wandTipPosition()

@@ -11,12 +11,13 @@ import { createDuel } from "./duel";
 import type { Duel, DuelEvent, DuelSnapshot, SpellState } from "./duel";
 import { idleIntent } from "./intent";
 import type { Intent } from "./intent";
-import { practiceRulesFor } from "./practice";
+import { potionIn, potionSlots } from "./potions";
 import { boundTo, spellSlots } from "./spell-slots";
 import {
   advanceLesson,
   goalOf as goalWith,
   lessonPlans,
+  lessonRules,
   lessons,
   startLesson,
 } from "./training";
@@ -28,8 +29,8 @@ const goalOf = (progress: LessonProgress) => goalWith(progress, tuning);
 
 const ticksOf = (seconds: number) => Math.round(seconds * tuning.tickRate);
 
-/** The Practice a lesson is played in: the learner ten metres from its Training Dummy. */
-const practiceFor = (lesson: Lesson): Duel =>
+/** The Practice a lesson is played in, set up as the lesson asks: the learner `gap` metres from its Training Dummy. */
+const practiceFor = (lesson: Lesson, gap = 10): Duel =>
   createDuel({
     arena: {
       bounds: { halfDepth: 15, halfWidth: 15 },
@@ -37,12 +38,10 @@ const practiceFor = (lesson: Lesson): Duel =>
       obstructions: [],
     },
     duelists: [
-      { id: "learner", spawn: { x: 0, z: 5 }, team: "near" },
-      { id: "rival", spawn: { x: 0, z: -5 }, team: "far" },
+      { id: "learner", spawn: { x: 0, z: gap / 2 }, team: "near" },
+      { id: "rival", spawn: { x: 0, z: -gap / 2 }, team: "far" },
     ],
-    practice: practiceRulesFor(lessonPlans[lesson].rival, "learner", {
-      fullFocus: lessonPlans[lesson].fullFocus,
-    }),
+    practice: lessonRules(lesson, "learner", tuning),
     tuning,
   });
 
@@ -132,8 +131,24 @@ const atGoal = (lesson: Lesson, goal: number): LessonProgress => ({
 const slotOf = (kind: string) =>
   spellSlots.find((slot) => boundTo(slot, tuning) === kind) ?? "circle";
 
+const potionSlotOf = (kind: string) =>
+  potionSlots.find((slot) => potionIn(slot, tuning) === kind) ?? "up";
+
+/** Casts the Special Spell `kind` from its Spell Slot on even ticks. */
+const casting = (kind: string) =>
+  tapping(intent({ spellSlots: { held: true, press: slotOf(kind) } }));
+
+/** Starts drinking the Potion `kind` on the first tick, then stands still while it goes down. */
+const drinking = (kind: string) => (tick: number) =>
+  tick === 0
+    ? intent({ potionSlots: { held: true, press: potionSlotOf(kind) } })
+    : idleIntent;
+
+const learnerIn = (duel: Duel) =>
+  duel.snapshot().duelists.find((each) => each.id === "learner");
+
 describe("the lessons", () => {
-  it("are the ten lessons, in order", () => {
+  it("are the seventeen lessons, one thing each, in order", () => {
     expect(lessons).toStrictEqual([
       "move",
       "lockOn",
@@ -141,8 +156,15 @@ describe("the lessons", () => {
       "heavy",
       "shield",
       "dodge",
-      "specials",
-      "potions",
+      "focus",
+      "expelliarmus",
+      "incendio",
+      "petrificus",
+      "depulso",
+      "wiggenweld",
+      "strength",
+      "swiftness",
+      "felix",
       "clash",
       "disarmed",
     ]);
@@ -156,6 +178,13 @@ describe("the lessons", () => {
       "idle",
       "casts",
       "casts",
+      "casts",
+      "idle",
+      "idle",
+      "idle",
+      "idle",
+      "idle",
+      "idle",
       "idle",
       "idle",
       "clash",
@@ -253,7 +282,7 @@ describe("Fijar objetivo", () => {
   });
 });
 
-describe("Hechizo ligero", () => {
+describe("Stupefy", () => {
   it("counts only the Stupefys that land", () => {
     const duel = practiceFor("light");
     const cast = tapping(intent({ lightSpell: true }));
@@ -276,7 +305,7 @@ describe("Hechizo ligero", () => {
   });
 });
 
-describe("Hechizo pesado", () => {
+describe("Confringo con carga", () => {
   it("counts a Confringo that lands, then a Perfect Release", () => {
     const landed = withEvents(startLesson("heavy"), {
       damage: 30,
@@ -367,53 +396,239 @@ describe("Esquiva", () => {
   });
 });
 
-describe("Hechizos especiales", () => {
-  it("starts the learner with full Focus", () => {
-    const learner = practiceFor("specials")
-      .snapshot()
-      .duelists.find((each) => each.id === "learner");
+describe("La Determinación", () => {
+  it("starts the learner with no Focus, and gives none back while it is earned", () => {
+    const duel = practiceFor("focus");
+    play(duel, startLesson("focus"), ticksOf(3), () => idleIntent);
 
-    expect(learner?.focus).toBe(tuning.focus.max);
+    expect(learnerIn(duel)?.focus).toBe(0);
   });
 
-  it("starts the other lessons' learners with no Focus", () => {
-    const learner = practiceFor("light")
-      .snapshot()
-      .duelists.find((each) => each.id === "learner");
+  it("ends once a whole Focus segment is earned, here by landing Stupefys", () => {
+    const duel = practiceFor("focus");
+    const cast = tapping(intent({ lightSpell: true }));
 
-    expect(learner?.focus).toBe(0);
-  });
+    const one = play(duel, startLesson("focus"), ticksOf(0.6), cast);
 
-  it("counts Special Spells cast with R2 and a face button", () => {
-    const duel = practiceFor("specials");
-    const slot = slotOf("depulso");
-    const cast = tapping(intent({ spellSlots: { held: true, press: slot } }));
-    const once = play(duel, startLesson("specials"), 2, cast);
-
-    expect(goalOf(once).count).toBe(1);
+    expect(goalOf(one)).toStrictEqual({
+      count: 0,
+      goal: "focusSegment",
+      target: goals.focusSegment,
+    });
+    expect(play(duel, one, ticksOf(4), cast).done).toBeTruthy();
+    expect(learnerIn(duel)?.focus).toBeGreaterThanOrEqual(tuning.focus.segment);
   });
 });
 
-describe("Pociones", () => {
-  it("counts the Potions drunk with L2 and a face button, once down", () => {
-    const duel = practiceFor("potions");
-    const slot = "left" as const;
-    const press = intent({ potionSlots: { held: true, press: slot } });
-    const hold = intent({ potionSlots: { held: true, press: null } });
+describe("the Special Spell lessons", () => {
+  it.each(["expelliarmus", "incendio", "petrificus", "depulso"] as const)(
+    "start the learner with full Focus for %s",
+    (lesson) => {
+      expect(learnerIn(practiceFor(lesson))?.focus).toBe(tuning.focus.max);
+    }
+  );
 
-    const drinking = play(duel, startLesson("potions"), 2, (tick) =>
-      tick === 0 ? press : hold
+  it("Expelliarmus ends once it Disarms the dummy", () => {
+    const duel = practiceFor("expelliarmus");
+
+    const cast = play(
+      duel,
+      startLesson("expelliarmus"),
+      2,
+      casting("expelliarmus")
     );
 
-    expect(goalOf(drinking).count).toBe(0);
+    expect(cast.done).toBeFalsy();
+    expect(play(duel, cast, ticksOf(2), () => idleIntent).done).toBeTruthy();
+  });
 
-    const drunk = play(duel, drinking, ticksOf(1.2), () => idleIntent);
+  it("Incendio ends once its blast leaves the dummy Burning", () => {
+    const duel = practiceFor("incendio");
 
-    expect(goalOf(drunk).count).toBe(1);
+    const progress = play(
+      duel,
+      startLesson("incendio"),
+      ticksOf(3),
+      casting("incendio")
+    );
+
+    expect(progress.done).toBeTruthy();
+  });
+
+  it("Petrificus Totalus ends once it Petrifies the dummy", () => {
+    const duel = practiceFor("petrificus");
+
+    const progress = play(
+      duel,
+      startLesson("petrificus"),
+      ticksOf(3),
+      casting("petrificus")
+    );
+
+    expect(progress.done).toBeTruthy();
+  });
+
+  it("Depulso cast out of reach does not count; up close it does", () => {
+    const far = play(
+      practiceFor("depulso"),
+      startLesson("depulso"),
+      ticksOf(1),
+      casting("depulso")
+    );
+
+    const close = play(
+      practiceFor("depulso", 2),
+      startLesson("depulso"),
+      ticksOf(1),
+      casting("depulso")
+    );
+
+    expect(far.done).toBeFalsy();
+    expect(close.done).toBeTruthy();
+  });
+
+  it("does not count another Special Spell than the lesson's", () => {
+    const progress = play(
+      practiceFor("petrificus"),
+      startLesson("petrificus"),
+      ticksOf(3),
+      casting("incendio")
+    );
+
+    expect(progress.done).toBeFalsy();
   });
 });
 
-describe("Clash", () => {
+describe("Wiggenweld", () => {
+  it("starts the learner hurt, and leaves the Health where it is", () => {
+    const duel = practiceFor("wiggenweld");
+    const start = learnerIn(duel)?.health ?? 0;
+    play(duel, startLesson("wiggenweld"), ticksOf(3), () => idleIntent);
+
+    expect(start).toBe(
+      tuning.duelist.health * tuning.training.setup.hurtHealthShare
+    );
+    expect(learnerIn(duel)?.health).toBe(start);
+  });
+
+  it("ends once Wiggenweld is down, the Health restored", () => {
+    const duel = practiceFor("wiggenweld");
+    const start = learnerIn(duel)?.health ?? 0;
+
+    const progress = play(
+      duel,
+      startLesson("wiggenweld"),
+      ticksOf(1.3),
+      drinking("wiggenweld")
+    );
+
+    expect(progress.done).toBeTruthy();
+    expect(learnerIn(duel)?.health).toBeGreaterThan(start);
+  });
+
+  it("does not count another Potion", () => {
+    const progress = play(
+      practiceFor("wiggenweld"),
+      startLesson("wiggenweld"),
+      ticksOf(1.3),
+      drinking("swiftness")
+    );
+
+    expect(progress.done).toBeFalsy();
+  });
+});
+
+describe("Poción Máxima", () => {
+  it("counts the Potion down, then the Spells that land while it works", () => {
+    const duel = practiceFor("strength");
+
+    const drunk = play(
+      duel,
+      startLesson("strength"),
+      ticksOf(1.3),
+      drinking("strength")
+    );
+
+    expect(goalOf(drunk)).toStrictEqual({
+      count: 0,
+      goal: "strongHit",
+      target: goals.strongHit,
+    });
+
+    const cast = tapping(intent({ lightSpell: true }));
+
+    expect(play(duel, drunk, ticksOf(4), cast).done).toBeTruthy();
+  });
+
+  it("does not count a Spell that lands without it", () => {
+    const progress = play(
+      practiceFor("strength"),
+      atGoal("strength", 1),
+      ticksOf(3),
+      tapping(intent({ lightSpell: true }))
+    );
+
+    expect(goalOf(progress).count).toBe(0);
+  });
+});
+
+describe("Poción Vigorizante", () => {
+  it("counts the Potion down, then the metres run while it works", () => {
+    const duel = practiceFor("swiftness");
+
+    const drunk = play(
+      duel,
+      startLesson("swiftness"),
+      ticksOf(1.3),
+      drinking("swiftness")
+    );
+
+    expect(goalOf(drunk).goal).toBe("swiftRun");
+
+    const sprint = intent({ move: { x: 1, y: 0 }, sprint: true });
+
+    expect(play(duel, drunk, ticksOf(5), () => sprint).done).toBeTruthy();
+  });
+
+  it("does not count running without it", () => {
+    const sprint = intent({ move: { x: 1, y: 0 }, sprint: true });
+
+    const progress = play(
+      practiceFor("swiftness"),
+      atGoal("swiftness", 1),
+      ticksOf(2),
+      () => sprint
+    );
+
+    expect(goalOf(progress).count).toBe(0);
+  });
+});
+
+describe("Felix Felicis", () => {
+  it("starts the learner with no Focus, and gives none back", () => {
+    const duel = practiceFor("felix");
+    play(duel, startLesson("felix"), ticksOf(3), () => idleIntent);
+
+    expect(learnerIn(duel)?.focus).toBe(0);
+  });
+
+  it("counts Felix Felicis down, then the Special Spell its Focus pays for", () => {
+    const duel = practiceFor("felix");
+
+    const drunk = play(
+      duel,
+      startLesson("felix"),
+      ticksOf(1.3),
+      drinking("felix")
+    );
+
+    expect(goalOf(drunk).goal).toBe("special");
+    expect(learnerIn(duel)?.focus).toBe(tuning.focus.segment);
+    expect(play(duel, drunk, 2, casting("depulso")).done).toBeTruthy();
+  });
+});
+
+describe("Ganar un Clash", () => {
   it("ends on a Clash the learner wins, not on one that explodes", () => {
     const clash = {
       along: 0.5,
@@ -451,7 +666,7 @@ describe("Clash", () => {
   });
 });
 
-describe("Desarmado", () => {
+describe("Desarme y recoger la varita", () => {
   const disarm: DuelEvent = {
     casterId: "rival",
     duelistId: "learner",

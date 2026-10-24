@@ -15,7 +15,6 @@ import type {
   TeamId,
 } from "../duel/duel";
 import type { Point3 } from "../duel/geometry";
-import { lessons } from "../duel/training";
 import type { Screen, ScreenEvent } from "../screens/screens";
 import type { Tuning } from "../tuning";
 
@@ -491,11 +490,12 @@ export const menuSoundFor = (
   }
 
   if (event.type === "lesson-done") {
-    const lesson = after.kind === "duel" ? after.training?.lesson : undefined;
+    return { kind: "lesson-complete" };
+  }
 
-    return {
-      kind: lesson === lessons.at(-1) ? "training-complete" : "lesson-complete",
-    };
+  // Every lesson completed: the Club de Duelo's welcome.
+  if (after.kind === "certificate") {
+    return { kind: "training-complete" };
   }
 
   if (

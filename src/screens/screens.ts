@@ -2,8 +2,11 @@
  * The screen state machine: which screen the game is on, from the unsupported
  * browser, the title and the connect prompt through the main menu (the root once a
  * DualSense is there), the Difficulty select, the Practice rival picker and
- * Entrenamiento's lessons, to the Duel, Practice or Training lesson, its
- * pause and the result; it also keeps what Training remembers. Pure: it is fed events
+ * Entrenamiento's lessons, to the Duel, Practice or Training lesson (with
+ * its scrolls: the lesson's before it, its success after it, and the Club de
+ * Duelo's welcome once Training is complete), its pause and the result; it
+ * also keeps what Training remembers, which opens Duelo and Práctica once
+ * every lesson is completed. Pure: it is fed events
  * (the start click, the controller coming and going, menu inputs, the Duel
  * ending, time) and
  * lands on the next screen. It owns no three.js, no DOM and no clock; the
@@ -48,10 +51,14 @@ export const practicePauseOptions = [
 /** The pause of a Training lesson; Salir del entrenamiento goes to the main menu. */
 export const trainingPauseOptions = [
   "continue",
-  "skipLesson",
   "controls",
   "quitTraining",
 ] as const;
+
+/** A completed lesson's success scroll: play it again, or go on (Terminar after the last). */
+export const lessonDoneOptions = ["repeat", "next"] as const;
+
+export type LessonDoneOption = (typeof lessonDoneOptions)[number];
 
 export type PauseOption =
   | (typeof pauseOptions)[number]
@@ -79,7 +86,7 @@ export interface DuelScreen {
   /**
    * Set for a Training lesson, a Practice against the lesson's Training
    * Dummy: which lesson, and once it is completed, how long its call-out
-   * still holds before the next one.
+   * still holds before its success scroll.
    */
   readonly training?: {
     readonly lesson: Lesson;
@@ -102,6 +109,24 @@ export interface PauseScreen {
   readonly duel: DuelScreen;
   readonly selected: PauseOption;
 }
+
+/**
+ * A parchment scroll over a Training lesson, the Duel frozen behind it: the
+ * lesson's own before it starts (✕ starts it), its success once completed
+ * (Repetir or Siguiente lección), or the Club de Duelo's welcome once every
+ * lesson is completed (✕ goes on to the main menu).
+ */
+export type ScrollScreen =
+  | { readonly kind: "briefing"; readonly duel: DuelScreen }
+  | {
+      readonly kind: "lessonDone";
+      readonly duel: DuelScreen;
+      readonly selected: LessonDoneOption;
+    }
+  | { readonly kind: "certificate"; readonly duel: DuelScreen };
+
+/** The screens a Duel shows behind: running, paused, or under a Training scroll. */
+export type DuelShowing = DuelScreen | PauseScreen | ScrollScreen;
 
 export type Screen =
   /** WebGPU is missing: nothing else can happen. */
@@ -142,10 +167,11 @@ export type Screen =
   | { readonly kind: "lessons"; readonly selected: Lesson }
   | DuelScreen
   | PauseScreen
+  | ScrollScreen
   /** The DualSense dropped out mid-Duel; `resume` is where to return to. */
   | {
       readonly kind: "disconnected";
-      readonly resume: DuelScreen | PauseScreen;
+      readonly resume: DuelShowing;
       /** The DualSense is back; the next button press resumes. */
       readonly reconnected: boolean;
     }
@@ -160,11 +186,21 @@ export type Screen =
 export interface TrainingRecord {
   /** The lessons completed at least once, in lesson order. */
   readonly completed: readonly Lesson[];
-  /** The last lesson has been completed: Training has been played through. */
-  readonly finished: boolean;
+  /** The player has been welcomed to the Club de Duelo: Training's certificate is seen. */
+  readonly certified: boolean;
 }
 
-export const noTraining: TrainingRecord = { completed: [], finished: false };
+export const noTraining: TrainingRecord = { certified: false, completed: [] };
+
+/** Every lesson completed once: Duelo and Práctica are open. */
+export const trainingComplete = (record: TrainingRecord): boolean =>
+  lessons.every((lesson) => record.completed.includes(lesson));
+
+/** The main menu entries closed until Training is complete. */
+export const lockedOptions = (
+  record: TrainingRecord
+): ReadonlySet<MainMenuOption> =>
+  new Set<MainMenuOption>(trainingComplete(record) ? [] : ["duel", "practice"]);
 
 export interface ScreenState {
   readonly screen: Screen;
@@ -199,10 +235,8 @@ export type ScreenEvent =
 export interface ScreenSettings {
   /** How long a finished Duel's call-out plays before the result screen. */
   readonly resultDelaySeconds: number;
-  /** How long a completed lesson's call-out holds before the next lesson. */
+  /** How long a completed lesson's call-out holds before its success scroll. */
   readonly lessonDoneSeconds: number;
-  /** How long the last lesson's call-out holds before the main menu. */
-  readonly trainingDoneSeconds: number;
 }
 
 /** The Difficulty highlighted the first time the select opens. */
@@ -259,9 +293,15 @@ const step = <T>(
   return selected;
 };
 
+/** The main menu on `selected`, or on Entrenamiento while `selected` is closed. */
 const toMain = (state: ScreenState, selected: MainMenuOption): ScreenState => ({
   ...state,
-  screen: { kind: "main", selected },
+  screen: {
+    kind: "main",
+    selected: lockedOptions(state.training).has(selected)
+      ? "training"
+      : selected,
+  },
 });
 
 /** The Controls on their first tab, going back to `from`. */
@@ -277,19 +317,30 @@ const toControls = (
 const lessonAfter = (lesson: Lesson): Lesson | null =>
   lessons[lessons.indexOf(lesson) + 1] ?? null;
 
-/** Starts a Training lesson: a Practice against its Training Dummy, as a new run. */
-const startLesson = (state: ScreenState, lesson: Lesson): ScreenState => ({
-  ...state,
-  runs: state.runs + 1,
-  screen: {
+/**
+ * Starts a Training lesson: a Practice against its Training Dummy, as a new
+ * run, under its scroll (or straight away, played again).
+ */
+const startLesson = (
+  state: ScreenState,
+  lesson: Lesson,
+  briefed = true
+): ScreenState => {
+  const duel: DuelScreen = {
     difficulty: defaultDifficulty,
     kind: "duel",
     over: null,
     practice: lessonPlans[lesson].rival,
     run: state.runs + 1,
     training: { doneSecondsLeft: null, lesson },
-  },
-});
+  };
+
+  return {
+    ...state,
+    runs: state.runs + 1,
+    screen: briefed ? { duel, kind: "briefing" } : duel,
+  };
+};
 
 /** Entrenamiento's lessons, on the first not completed yet (or the first, all done). */
 const toLessons = (state: ScreenState): ScreenState => ({
@@ -302,8 +353,21 @@ const toLessons = (state: ScreenState): ScreenState => ({
   },
 });
 
-/** On to the lesson after `lesson`, or out to the main menu after the last. */
-const nextLesson = (state: ScreenState, lesson: Lesson): ScreenState => {
+/**
+ * On from a completed lesson: to the Club de Duelo's welcome if Training is
+ * now complete and the player has not been welcomed yet, else to the next
+ * lesson, or out to the main menu after the last.
+ */
+const nextLesson = (
+  state: ScreenState,
+  screen: Extract<ScrollScreen, { kind: "lessonDone" }>
+): ScreenState => {
+  const lesson = screen.duel.training?.lesson ?? lessons[0];
+
+  if (trainingComplete(state.training) && !state.training.certified) {
+    return { ...state, screen: { duel: screen.duel, kind: "certificate" } };
+  }
+
   const next = lessonAfter(lesson);
 
   return next === null ? toMain(state, "training") : startLesson(state, next);
@@ -350,6 +414,14 @@ const onStart = (state: ScreenState, pad: PadKind): ScreenState =>
     ? toMain(state, "duel")
     : { ...state, screen: { kind: "connect", pad } };
 
+/** Whether `screen` shows a Duel directly: running, paused or under a Training scroll. */
+const isDuelShowing = (screen: Screen): screen is DuelShowing =>
+  screen.kind === "duel" ||
+  screen.kind === "pause" ||
+  screen.kind === "briefing" ||
+  screen.kind === "lessonDone" ||
+  screen.kind === "certificate";
+
 const onPad = (state: ScreenState, pad: PadKind): ScreenState => {
   const { screen } = state;
   const connected = pad === "dualsense";
@@ -363,7 +435,7 @@ const onPad = (state: ScreenState, pad: PadKind): ScreenState => {
     return { ...state, screen: { ...screen, pad } };
   }
 
-  if (screen.kind === "duel" || screen.kind === "pause") {
+  if (isDuelShowing(screen)) {
     return connected
       ? state
       : {
@@ -411,9 +483,50 @@ const onMainInput = (
     return toLessons(state);
   }
 
-  const selected = step(mainMenuOptions, screen.selected, input);
+  const selected = step(
+    mainMenuOptions,
+    screen.selected,
+    input,
+    lockedOptions(state.training)
+  );
 
   return { ...state, screen: { ...screen, selected } };
+};
+
+/**
+ * A Training scroll: ✕ starts the lesson under its own; on the success
+ * scroll, up and down choose and ✕ plays it again or goes on; ✕ on the Club
+ * de Duelo's welcome remembers it and opens the main menu on Duelo.
+ */
+const onScrollInput = (
+  state: ScreenState,
+  screen: ScrollScreen,
+  input: MenuInput
+): ScreenState => {
+  if (screen.kind === "briefing") {
+    return input === "confirm" ? { ...state, screen: screen.duel } : state;
+  }
+
+  if (screen.kind === "certificate") {
+    return input === "confirm"
+      ? toMain(
+          { ...state, training: { ...state.training, certified: true } },
+          "duel"
+        )
+      : state;
+  }
+
+  if (input !== "confirm") {
+    const selected = step(lessonDoneOptions, screen.selected, input);
+
+    return { ...state, screen: { ...screen, selected } };
+  }
+
+  const lesson = screen.duel.training?.lesson ?? lessons[0];
+
+  return screen.selected === "repeat"
+    ? startLesson(state, lesson, false)
+    : nextLesson(state, screen);
 };
 
 const onDifficultyInput = (
@@ -488,10 +601,6 @@ const onPauseInput = (
     const selected = step(pauseOptionsFor(duel), screen.selected, input);
 
     return { ...state, screen: { ...screen, selected } };
-  }
-
-  if (screen.selected === "skipLesson" && duel.training) {
-    return nextLesson(state, duel.training.lesson);
   }
 
   if (screen.selected === "quitTraining") {
@@ -600,10 +709,18 @@ const onInput = (state: ScreenState, input: MenuInput): ScreenState => {
     return onPauseInput(state, screen, input);
   }
 
+  if (
+    screen.kind === "briefing" ||
+    screen.kind === "lessonDone" ||
+    screen.kind === "certificate"
+  ) {
+    return onScrollInput(state, screen, input);
+  }
+
   return screen.kind === "result" ? onResultInput(state, screen, input) : state;
 };
 
-/** Counts a completed lesson's call-out down, then moves on. */
+/** Counts a completed lesson's call-out down, then shows its success scroll. */
 const onTrainingTick = (
   state: ScreenState,
   screen: DuelScreen,
@@ -622,7 +739,10 @@ const onTrainingTick = (
         ...state,
         screen: { ...screen, training: { ...training, doneSecondsLeft } },
       }
-    : nextLesson(state, training.lesson);
+    : {
+        ...state,
+        screen: { duel: screen, kind: "lessonDone", selected: "next" },
+      };
 };
 
 /** A Training lesson completed: remembered, and its call-out held. */
@@ -641,24 +761,18 @@ const onLessonDone = (
   }
 
   const { lesson } = screen.training;
-  const last = lessonAfter(lesson) === null;
 
   return {
     ...state,
     screen: {
       ...screen,
-      training: {
-        doneSecondsLeft: last
-          ? settings.trainingDoneSeconds
-          : settings.lessonDoneSeconds,
-        lesson,
-      },
+      training: { doneSecondsLeft: settings.lessonDoneSeconds, lesson },
     },
     training: {
+      ...state.training,
       completed: lessons.filter(
         (each) => each === lesson || state.training.completed.includes(each)
       ),
-      finished: state.training.finished || last,
     },
   };
 };
@@ -744,21 +858,23 @@ export const reduceScreens = (
     : state;
 };
 
-/** Whether the Duel and its HUD are on show: running, paused or waiting for the controller. */
+/** The Duel on show behind `screen`: running, paused, under a scroll or waiting for the controller. */
+export const duelOf = (screen: Screen): DuelScreen | undefined => {
+  if (screen.kind === "duel") {
+    return screen;
+  }
+
+  if (isDuelShowing(screen)) {
+    return screen.duel;
+  }
+
+  return screen.kind === "disconnected" ? duelOf(screen.resume) : undefined;
+};
+
+/** Whether the Duel and its HUD are on show. */
 export const showsDuel = (screen: Screen): boolean =>
-  screen.kind === "duel" ||
-  screen.kind === "pause" ||
-  screen.kind === "disconnected";
+  duelOf(screen) !== undefined;
 
 /** Whether the Duel on show is a Practice. */
-export const practiceOf = (screen: Screen): PracticeRival | null => {
-  if (screen.kind === "duel") {
-    return screen.practice;
-  }
-
-  if (screen.kind === "pause") {
-    return screen.duel.practice;
-  }
-
-  return screen.kind === "disconnected" ? practiceOf(screen.resume) : null;
-};
+export const practiceOf = (screen: Screen): PracticeRival | null =>
+  duelOf(screen)?.practice ?? null;

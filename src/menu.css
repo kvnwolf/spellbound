@@ -376,10 +376,10 @@
   }
 }
 
-/* Ten lessons: two columns of five, read down the first then the second, so they fit the screen. */
+/* Seventeen lessons: two columns of nine and eight, read down the first then the second, so they fit the screen. */
 #overlay[data-screen="lessons"] ul {
   grid-auto-flow: column;
-  grid-template-rows: repeat(5, auto);
+  grid-template-rows: repeat(9, auto);
   gap: 0.25rem 1.2rem;
 }
 

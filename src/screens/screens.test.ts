@@ -12,8 +12,10 @@ import type {
 const settings = {
   lessonDoneSeconds: 2,
   resultDelaySeconds: 3,
-  trainingDoneSeconds: 4,
 };
+
+/** Every lesson completed and the Club de Duelo's welcome seen: Duelo and Práctica open. */
+const graduated: TrainingRecord = { certified: true, completed: [...lessons] };
 
 const play = (state: ScreenState, ...events: ScreenEvent[]): ScreenState => {
   let next = state;
@@ -33,7 +35,7 @@ const anyButton = { type: "press" } as const;
 const tick = (seconds: number) => ({ seconds, type: "tick" }) as const;
 const start = { type: "start" } as const;
 
-const onTitle = () => initialScreenState(true);
+const onTitle = () => initialScreenState(true, graduated);
 const onConnect = () => play(onTitle(), start);
 const onMain = () => play(onTitle(), padFound, start);
 
@@ -827,33 +829,97 @@ describe("a whole session", () => {
         practice: null,
         run: 3,
       },
-      training: { completed: [], finished: false },
+      training: graduated,
     });
   });
 });
 
+/** The main menu, with `training` remembered. */
+const onMainWith = (training: TrainingRecord): ScreenState =>
+  play(initialScreenState(true, training), padFound, start);
+
 /** Entrenamiento, from the main menu, with `training` remembered. */
-const onLessons = (training: TrainingRecord = noTraining): ScreenState =>
+const onLessons = (training: TrainingRecord = noTraining): ScreenState => {
+  let state = onMainWith(training);
+
+  while (state.screen.kind === "main" && state.screen.selected !== "training") {
+    state = play(state, press("down"));
+  }
+
+  return play(state, press("confirm"));
+};
+
+/** The lesson `steps` down the list, past its scroll, with `training` remembered. */
+const inLesson = (
+  steps: number,
+  training: TrainingRecord = noTraining,
+  ...moves: ScreenEvent[]
+) =>
   play(
-    { ...initialScreenState(true, training) },
-    padFound,
-    start,
-    press("down"),
-    press("down"),
-    press("confirm")
+    onLessons(training),
+    ...Array.from({ length: steps }, () => press("down")),
+    press("confirm"),
+    press("confirm"),
+    ...moves
   );
 
-/** The first lesson, from Entrenamiento. */
+/** The first lesson, from Entrenamiento, past its scroll. */
 const inTraining = (...moves: ScreenEvent[]) =>
-  play(onLessons(), press("confirm"), ...moves);
+  inLesson(0, noTraining, ...moves);
+
+const lastLesson = lessons.length - 1;
+
+/** Every lesson but the last completed: the last one is all that is left. */
+const allButLast: TrainingRecord = {
+  certified: false,
+  completed: lessons.slice(0, -1),
+};
+
+describe("Training is required", () => {
+  it("highlights Entrenamiento on the main menu until every lesson is completed", () => {
+    expect(onMainWith(noTraining).screen).toStrictEqual({
+      kind: "main",
+      selected: "training",
+    });
+    expect(onMainWith(allButLast).screen).toMatchObject({
+      selected: "training",
+    });
+  });
+
+  it("skips Duelo and Práctica until then", () => {
+    const main = onMainWith(noTraining);
+
+    expect(play(main, press("up")).screen).toMatchObject({
+      selected: "training",
+    });
+    expect(play(main, press("down"), press("up")).screen).toMatchObject({
+      selected: "training",
+    });
+  });
+
+  it("goes to the main menu on Entrenamiento from the connect prompt too", () => {
+    expect(
+      play(initialScreenState(true), start, padFound, press("confirm")).screen
+    ).toStrictEqual({ kind: "main", selected: "training" });
+  });
+
+  it("opens Duelo and Práctica once every lesson is completed", () => {
+    const main = onMainWith({ certified: false, completed: [...lessons] });
+
+    expect(main.screen).toMatchObject({ selected: "duel" });
+    expect(play(main, press("down")).screen).toMatchObject({
+      selected: "practice",
+    });
+  });
+});
 
 describe("Training", () => {
   const lessonDone = { type: "lesson-done" } as const;
 
   it("remembers nothing of it to begin with", () => {
     expect(initialScreenState(true).training).toStrictEqual({
+      certified: false,
       completed: [],
-      finished: false,
     });
   });
 
@@ -866,14 +932,12 @@ describe("Training", () => {
 
   it("highlights the first lesson not completed yet", () => {
     expect(
-      onLessons({ completed: ["move", "lockOn"], finished: false }).screen
+      onLessons({ certified: false, completed: ["move", "lockOn"] }).screen
     ).toMatchObject({ selected: "light" });
   });
 
   it("highlights the first lesson again once every lesson is completed", () => {
-    expect(
-      onLessons({ completed: [...lessons], finished: true }).screen
-    ).toMatchObject({ selected: "move" });
+    expect(onLessons(graduated).screen).toMatchObject({ selected: "move" });
   });
 
   it("goes back to the main menu on ○, with Entrenamiento highlighted", () => {
@@ -882,7 +946,26 @@ describe("Training", () => {
     ).toStrictEqual({ kind: "main", selected: "training" });
   });
 
-  it("starts the highlighted lesson as a Practice against its Training Dummy", () => {
+  it("opens a lesson on its scroll, the lesson waiting behind it", () => {
+    expect(play(onLessons(), press("confirm")).screen).toStrictEqual({
+      duel: {
+        difficulty: "duelista",
+        kind: "duel",
+        over: null,
+        practice: "idle",
+        run: 1,
+        training: { doneSecondsLeft: null, lesson: "move" },
+      },
+      kind: "briefing",
+    });
+  });
+
+  it("starts the lesson as a Practice against its Training Dummy once ✕ closes the scroll", () => {
+    const briefing = play(onLessons(), press("confirm"));
+
+    expect(
+      play(briefing, press("up"), press("back"), press("options"), tick(5))
+    ).toStrictEqual(briefing);
     expect(inTraining().screen).toStrictEqual({
       difficulty: "duelista",
       kind: "duel",
@@ -891,39 +974,89 @@ describe("Training", () => {
       run: 1,
       training: { doneSecondsLeft: null, lesson: "move" },
     });
-    expect(
-      play(
-        onLessons(),
-        ...Array.from({ length: 4 }, () => press("down")),
-        press("confirm")
-      ).screen
-    ).toMatchObject({
+    expect(inLesson(4).screen).toMatchObject({
       practice: "casts",
       training: { lesson: "shield" },
     });
   });
 
-  it("holds a completed lesson for its call-out, then starts the next as a new run", () => {
+  it("holds a completed lesson for its call-out, then shows its success scroll on Siguiente lección", () => {
     const done = inTraining(lessonDone, tick(1));
 
     expect(done.screen).toMatchObject({
+      kind: "duel",
       run: 1,
       training: { doneSecondsLeft: 1, lesson: "move" },
     });
 
-    expect(play(done, tick(1)).screen).toMatchObject({
+    const scroll = play(done, tick(1));
+
+    expect(scroll.screen).toMatchObject({
+      duel: { run: 1, training: { lesson: "move" } },
+      kind: "lessonDone",
+      selected: "next",
+    });
+    // No auto-advance: it waits for the player.
+    expect(play(scroll, tick(30))).toStrictEqual(scroll);
+  });
+
+  it("moves between Repetir and Siguiente lección, stopping at the ends", () => {
+    const scroll = inTraining(lessonDone, tick(2));
+
+    expect(play(scroll, press("up")).screen).toMatchObject({
+      selected: "repeat",
+    });
+    expect(play(scroll, press("up"), press("up")).screen).toMatchObject({
+      selected: "repeat",
+    });
+    expect(play(scroll, press("down")).screen).toMatchObject({
+      selected: "next",
+    });
+  });
+
+  it("plays the lesson again on Repetir, as a new run, straight away", () => {
+    const again = inTraining(
+      lessonDone,
+      tick(2),
+      press("up"),
+      press("confirm")
+    );
+
+    expect(again.screen).toStrictEqual({
+      difficulty: "duelista",
       kind: "duel",
+      over: null,
+      practice: "idle",
       run: 2,
-      training: { doneSecondsLeft: null, lesson: "lockOn" },
+      training: { doneSecondsLeft: null, lesson: "move" },
+    });
+  });
+
+  it("opens the next lesson's scroll on Siguiente lección, as a new run", () => {
+    const next = inTraining(lessonDone, tick(2), press("confirm"));
+
+    expect(next.screen).toMatchObject({
+      duel: { run: 2, training: { doneSecondsLeft: null, lesson: "lockOn" } },
+      kind: "briefing",
     });
   });
 
   it("remembers every lesson completed, once each", () => {
-    const state = inTraining(lessonDone, lessonDone, tick(2), lessonDone);
+    const state = inTraining(
+      lessonDone,
+      tick(2),
+      press("up"),
+      press("confirm"),
+      lessonDone,
+      tick(2),
+      press("confirm"),
+      press("confirm"),
+      lessonDone
+    );
 
     expect(state.training).toStrictEqual({
+      certified: false,
       completed: ["move", "lockOn"],
-      finished: false,
     });
   });
 
@@ -935,36 +1068,65 @@ describe("Training", () => {
     );
   });
 
-  it("finishes after the last lesson: a longer call-out, then the main menu on Entrenamiento", () => {
-    const last = play(
-      onLessons(),
-      ...Array.from({ length: 9 }, () => press("down")),
-      press("confirm"),
-      lessonDone
-    );
+  it("welcomes the player to the Club de Duelo after the last lesson, then opens the main menu on Duelo", () => {
+    const finished = inLesson(lastLesson, allButLast, lessonDone, tick(2));
 
-    expect(last.training).toStrictEqual({
-      completed: ["disarmed"],
-      finished: true,
+    expect(finished.screen).toMatchObject({
+      kind: "lessonDone",
+      selected: "next",
     });
-    expect(play(last, tick(3)).screen).toMatchObject({
-      training: { doneSecondsLeft: 1, lesson: "disarmed" },
-    });
-    expect(play(last, tick(4)).screen).toStrictEqual({
-      kind: "main",
-      selected: "training",
+
+    const certificate = play(finished, press("confirm"));
+
+    expect(certificate.screen).toMatchObject({ kind: "certificate" });
+    expect(play(certificate, press("up"), tick(9))).toStrictEqual(certificate);
+
+    const welcomed = play(certificate, press("confirm"));
+
+    expect(welcomed.screen).toStrictEqual({ kind: "main", selected: "duel" });
+    expect(welcomed.training).toStrictEqual({
+      certified: true,
+      completed: [...lessons],
     });
   });
 
-  it("pauses on Options with Continuar, Saltar lección, Controles and Salir del entrenamiento", () => {
+  it("welcomes the player as soon as the lesson that completes Training is left, whichever it is", () => {
+    const record: TrainingRecord = {
+      certified: false,
+      completed: lessons.filter((lesson) => lesson !== "heavy"),
+    };
+
+    expect(play(onLessons(record), press("confirm")).screen).toMatchObject({
+      duel: { training: { lesson: "heavy" } },
+    });
+    expect(
+      play(
+        onLessons(record),
+        press("confirm"),
+        press("confirm"),
+        lessonDone,
+        tick(2),
+        press("confirm")
+      ).screen
+    ).toMatchObject({ kind: "certificate" });
+  });
+
+  it("finishes a replayed last lesson on Terminar back on the main menu, once welcomed", () => {
+    expect(
+      inLesson(lastLesson, graduated, lessonDone, tick(2), press("confirm"))
+        .screen
+    ).toStrictEqual({ kind: "main", selected: "training" });
+  });
+
+  it("pauses on Options with Continuar, Controles and Salir del entrenamiento", () => {
     const pause = inTraining(press("options"));
 
     expect(pause.screen).toMatchObject({ kind: "pause", selected: "continue" });
     expect(play(pause, press("down")).screen).toMatchObject({
-      selected: "skipLesson",
+      selected: "controls",
     });
     expect(play(pause, press("down"), press("down")).screen).toMatchObject({
-      selected: "controls",
+      selected: "quitTraining",
     });
     expect(
       play(pause, press("down"), press("down"), press("down")).screen
@@ -972,11 +1134,7 @@ describe("Training", () => {
   });
 
   it("opens the Controls from the lesson pause and comes back to that pause", () => {
-    const pause = play(
-      inTraining(press("options")),
-      press("down"),
-      press("down")
-    );
+    const pause = play(inTraining(press("options")), press("down"));
 
     const controls = play(pause, press("confirm"));
 
@@ -993,40 +1151,10 @@ describe("Training", () => {
     ).toStrictEqual(inTraining().screen);
   });
 
-  it("skips to the next lesson on Saltar lección, without completing it", () => {
-    const skipped = play(
-      inTraining(press("options")),
-      press("down"),
-      press("confirm")
-    );
-
-    expect(skipped.screen).toMatchObject({
-      kind: "duel",
-      run: 2,
-      training: { lesson: "lockOn" },
-    });
-    expect(skipped.training.completed).toStrictEqual([]);
-  });
-
-  it("leaves Training on Saltar lección from the last lesson, unfinished", () => {
-    const left = play(
-      onLessons(),
-      ...Array.from({ length: 9 }, () => press("down")),
-      press("confirm"),
-      press("options"),
-      press("down"),
-      press("confirm")
-    );
-
-    expect(left.screen).toStrictEqual({ kind: "main", selected: "training" });
-    expect(left.training.finished).toBeFalsy();
-  });
-
   it("leaves for the main menu on Salir del entrenamiento, with Entrenamiento highlighted", () => {
     expect(
       play(
         inTraining(press("options")),
-        press("down"),
         press("down"),
         press("down"),
         press("confirm")
@@ -1044,5 +1172,16 @@ describe("Training", () => {
     const whilePaused = inTraining(press("options"), lessonDone);
 
     expect(whilePaused.training.completed).toStrictEqual([]);
+  });
+
+  it("waits for the controller over a scroll, then returns to it", () => {
+    const scroll = play(onLessons(), press("confirm"));
+    const lost = play(scroll, padLost);
+
+    expect(lost.screen).toMatchObject({
+      kind: "disconnected",
+      reconnected: false,
+    });
+    expect(play(lost, padFound, anyButton).screen).toStrictEqual(scroll.screen);
   });
 });

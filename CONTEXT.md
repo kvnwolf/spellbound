@@ -23,12 +23,16 @@ A Duel with nothing at stake, for learning: no Knockout and no Round end, the pr
 _Avoid_: Sandbox, free play
 
 **Training**:
-Ten Lessons played in order that teach the Duel, each a Practice against the Training Dummy that fits it; what has been completed is remembered in the browser.
+Seventeen Lessons played in order that teach the Duel one thing each, each a Practice against the Training Dummy that fits it; what has been completed is remembered in the browser. It is required: Duel and Practice open once every Lesson has been completed once, and the player is then welcomed to the Club de Duelo.
 _Avoid_: Tutorial
 
 **Lesson**:
-One step of Training: one goal after another on screen, each met from what the Duel reports (a Spell landing, a Shield blocking, a Wand picked up), never from the buttons pressed.
+One step of Training: a scroll first, with the game paused, saying what it teaches and when to use it; then one goal after another on screen, each met from what the Duel reports (a Spell landing, a Shield blocking, a Potion down, a Wand picked up), never from the buttons pressed; then a scroll to play it again or go on.
 _Avoid_: Level, mission
+
+**Club de Duelo**:
+What Training welcomes the player to once every Lesson is completed, after the Duelling Club of _Chamber of Secrets_; from then on Duel and Practice are open.
+_Avoid_: Graduation, unlock
 
 ### Participants
 
@@ -75,7 +79,7 @@ A regenerating pool spent by Shielding, Dodging, jumping and sprinting.
 _Avoid_: Energy, mana
 
 **Focus**:
-A three-segment meter a Duelist builds through skilful play and spends on Special Spells; it starts empty each Round and never decays.
+A three-segment meter a Duelist builds through skilful play and spends on Special Spells; it starts empty each Round and never decays. Shown to the player as "Determinación" (power magic demands determination, as the three D's of Apparition have it).
 _Avoid_: Special meter, super, rage
 
 **Spell**:
@@ -163,19 +167,23 @@ A limited-use consumable a Duelist drinks from a Potion Slot, leaving them brief
 _Avoid_: Item, consumable, buff
 
 **Potion Slot**:
-One of the four face-button positions a Potion is bound to; holding L2 and pressing that face button drinks it.
+One of the four D-pad arrows a Potion is bound to; holding L2 and pressing that arrow drinks it.
 _Avoid_: Potion Wheel, item menu, inventory
 
 **Wiggenweld**:
 A Potion that restores part of the drinker's Health at once.
 
 **Strength Potion**:
-A Potion that raises the drinker's Spell damage for a short time.
+A Potion that raises the drinker's Spell damage for a short time. Shown to the player as "Poción Máxima".
 _Avoid_: Damage buff
 
 **Swiftness Potion**:
-A Potion that gives the drinker unlimited Stamina and extra speed for a short time.
+A Potion that gives the drinker unlimited Stamina and extra speed for a short time. Shown to the player as "Poción Vigorizante".
 _Avoid_: Speed buff
+
+**Felix Felicis**:
+A Potion that grants the drinker one Focus segment at once, never past the full meter.
+_Avoid_: Luck potion, Focus potion
 
 ### Spells
 

@@ -14,17 +14,26 @@ import type { PotionKind, PotionSlot } from "../duel/potions";
 import { practiceRivals } from "../duel/practice";
 import { boundTo, spellSlots } from "../duel/spell-slots";
 import type { SpecialSpellKind, SpellSlot } from "../duel/spell-slots";
-import { lessons } from "../duel/training";
+import { goalOf, lessons } from "../duel/training";
+import type { Lesson, LessonProgress } from "../duel/training";
 import { text } from "../text";
 import { tuning } from "../tuning";
 import {
   controlsTabs,
+  lessonDoneOptions,
+  lockedOptions,
   mainMenuOptions,
   noTraining,
   pauseOptionsFor,
   resultOptions,
+  trainingComplete,
 } from "./screens";
-import type { ControlsTab, Screen, TrainingRecord } from "./screens";
+import type {
+  ControlsTab,
+  Screen,
+  ScrollScreen,
+  TrainingRecord,
+} from "./screens";
 
 export interface ScreenView {
   readonly screen: Screen["kind"];
@@ -177,8 +186,8 @@ const padBodies = {
 };
 
 /**
- * Entrenamiento on the main menu: ticked once played through, and pointed
- * out to a first-timer until then.
+ * Entrenamiento on the main menu: ticked once every lesson is completed,
+ * and until then saying it is what opens Duelo and Práctica.
  */
 const markTraining = (
   items: readonly MenuItem[],
@@ -189,9 +198,9 @@ const markTraining = (
       return item;
     }
 
-    return training.finished
+    return trainingComplete(training)
       ? { ...item, done: true }
-      : { ...item, hint: text.training.firstTime };
+      : { ...item, hint: text.training.locked };
   });
 
 /** What `screen` shows; the menus that name Training read what is remembered of it. */
@@ -226,7 +235,8 @@ export const viewOf = (
         menu(
           mainMenuOptions,
           screen.selected,
-          (option) => text.mainMenu[option]
+          (option) => text.mainMenu[option],
+          lockedOptions(training)
         ),
         training
       ),
@@ -328,6 +338,121 @@ export const viewOf = (
     };
   }
 
-  // The Duel itself is the picture.
+  // The Duel itself is the picture, and the Training scrolls lie over it.
   return undefined;
+};
+
+/** The glyph each face button and D-pad arrow is written as, drawn as its icon. */
+const glyphs: Readonly<Record<PotionSlot | SpellSlot, string>> = {
+  circle: "○",
+  cross: "✕",
+  down: "↓",
+  left: "←",
+  right: "→",
+  square: "□",
+  triangle: "△",
+  up: "↑",
+};
+
+/** The button of the slot `kind` (a Special Spell or a Potion) is bound to, as its glyph. */
+const slotGlyph = (kind: string): string => {
+  const spell = spellSlots.find((slot) => boundTo(slot, tuning) === kind);
+  const potion = potionSlots.find((slot) => potionIn(slot, tuning) === kind);
+  const slot = spell ?? potion;
+
+  return slot === undefined ? "" : glyphs[slot];
+};
+
+/** `line` with each `{kind}` written as the button of that kind's slot. */
+const withSlots = (line: string) =>
+  line.replaceAll(/\{(?<kind>\w+)\}/gu, (_match, kind: string) =>
+    slotGlyph(kind)
+  );
+
+/** The counter's units, for the goals counted in metres or degrees. */
+const units: Partial<Record<string, string>> = text.training.units;
+
+/**
+ * A lesson's line top-centre: the goal on show with its buttons and its
+ * count, "Acierta Stupefy con □ (1/3)", or "¡Lección completada!" once done.
+ */
+export const goalLineOf = (progress: LessonProgress): string => {
+  if (progress.done) {
+    return text.training.lessonDone;
+  }
+
+  const { count, goal, target } = goalOf(progress, tuning);
+
+  return `${withSlots(text.training.goals[goal])} ${text.training.counter(Math.floor(count), target, units[goal])}`;
+};
+
+/** A Training scroll as plain data: the overlay over the frozen lesson draws it. */
+export interface ScrollView {
+  readonly kind: ScrollScreen["kind"];
+  /** A small line over the title: which lesson of how many. */
+  readonly eyebrow?: string;
+  readonly heading: string;
+  readonly paragraphs: readonly string[];
+  /** The buttons involved, drawn as their icons. */
+  readonly controls?: string;
+  /** Its choices, the highlighted one marked. */
+  readonly items: readonly MenuItem[];
+}
+
+const lessonCount = (lesson: Lesson) =>
+  text.training.lessonCount(lessons.indexOf(lesson) + 1, lessons.length);
+
+/** The Training scroll `screen` shows, if it is one. */
+export const scrollOf = (screen: Screen): ScrollView | undefined => {
+  if (
+    screen.kind !== "briefing" &&
+    screen.kind !== "lessonDone" &&
+    screen.kind !== "certificate"
+  ) {
+    return undefined;
+  }
+
+  const lesson = screen.duel.training?.lesson ?? lessons[0];
+
+  if (screen.kind === "certificate") {
+    const { certificate } = text.training;
+
+    return {
+      heading: certificate.heading,
+      items: [{ label: certificate.continue, selected: true }],
+      kind: screen.kind,
+      paragraphs: certificate.lines,
+    };
+  }
+
+  if (screen.kind === "lessonDone") {
+    const last = lesson === lessons.at(-1);
+
+    return {
+      eyebrow: lessonCount(lesson),
+      heading: text.training.lessonDone,
+      items: menu(lessonDoneOptions, screen.selected, (option) => {
+        if (option === "repeat") {
+          return text.training.scrollOptions.repeat;
+        }
+
+        return last
+          ? text.training.scrollOptions.finish
+          : text.training.scrollOptions.next;
+      }),
+      kind: screen.kind,
+      paragraphs: [text.training.lessons[lesson]],
+    };
+  }
+
+  const scroll = text.training.scrolls[lesson];
+
+  return {
+    controls: withSlots(scroll.controls),
+    eyebrow: lessonCount(lesson),
+    heading: text.training.lessons[lesson],
+    items: [{ label: text.training.scrollOptions.start, selected: true }],
+    kind: screen.kind,
+    paragraphs: [withSlots(scroll.what), withSlots(scroll.when)],
+  };
 };

@@ -28,25 +28,45 @@ export interface PracticeRules {
    * Training Dummy can cast one on its beat without earning Focus.
    */
   readonly rivalsCastFree: boolean;
-  /**
-   * The learner starts with full Focus instead of none, as a Training lesson
-   * on Special Spells sets them up.
-   */
-  readonly fullFocus: boolean;
+  /** How the learner starts, as a Training lesson sets them up. */
+  readonly setup: LearnerSetup;
 }
+
+/** The meters Practice keeps up, as every Duelist carries them. */
+type Meter = "focus" | "health" | "stamina";
+
+/**
+ * How a Training lesson sets the learner up: the share of their Focus and
+ * Health they start with (0 empty, 1 full), and the meters Practice leaves
+ * where they are instead of refilling them, for a lesson that teaches
+ * earning Focus or restoring Health. Health at zero still comes back full.
+ */
+export interface LearnerSetup {
+  readonly focusShare: number;
+  readonly healthShare: number;
+  readonly kept: readonly Exclude<Meter, "stamina">[];
+}
+
+/** A plain Practice: no Focus, full Health, every meter refilled. */
+export const plainSetup: LearnerSetup = {
+  focusShare: 0,
+  healthShare: 1,
+  kept: [],
+};
 
 /**
  * The rules for a Practice against `rival`: only Maniquí desarmador casts
- * free, and the learner starts with no Focus unless `fullFocus` is asked for.
+ * free, and the learner starts as `setup` says (plainly, unless a Training
+ * lesson asks otherwise).
  */
 export const practiceRulesFor = (
   rival: PracticeRival,
   learner: string,
-  { fullFocus = false }: { readonly fullFocus?: boolean } = {}
+  setup: LearnerSetup = plainSetup
 ): PracticeRules => ({
-  fullFocus,
   learner,
   rivalsCastFree: rival === "disarms",
+  setup,
 });
 
 /** The meters Practice keeps up, as every Duelist carries them. */
@@ -58,8 +78,6 @@ interface Meters {
   /** Seconds left down after reaching zero Health (see `DuelistState`). */
   readonly downSeconds: number;
 }
-
-type Meter = "focus" | "health" | "stamina";
 
 const meters: readonly Meter[] = ["health", "stamina", "focus"];
 
@@ -92,13 +110,23 @@ export const createPracticeKeeper = (
   // Ticks left before a meter comes back full, by Duelist and meter.
   const waits = new Map<string, number>();
 
-  /** The learner's meters: each back full once it has not dropped for a while, or at once from empty. */
+  const kept: ReadonlySet<Meter> = new Set(rules.setup.kept);
+
+  /**
+   * The learner's meters: each back full once it has not dropped for a
+   * while, or at once from empty; a kept one only from empty.
+   */
   const refill = <T extends Meters>(before: T, after: T): T => {
     const topped: Partial<Record<Meter, number>> = {};
 
     for (const meter of meters) {
       const key = `${after.id}:${meter}`;
       const value = after[meter];
+      const fromEmpty = value <= 0 && neverEmpty.has(meter);
+
+      if (kept.has(meter) && !fromEmpty) {
+        continue;
+      }
 
       if (value >= full[meter]) {
         waits.delete(key);
@@ -110,7 +138,7 @@ export const createPracticeKeeper = (
           ? refillTicks
           : (waits.get(key) ?? refillTicks) - 1;
 
-      if (left <= 0 || (value <= 0 && neverEmpty.has(meter))) {
+      if (left <= 0 || fromEmpty) {
         waits.delete(key);
         topped[meter] = full[meter];
       } else {
