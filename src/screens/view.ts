@@ -14,7 +14,7 @@ import type { PotionKind, PotionSlot } from "../duel/potions";
 import { practiceRivals } from "../duel/practice";
 import { boundTo, spellSlots } from "../duel/spell-slots";
 import type { SpecialSpellKind, SpellSlot } from "../duel/spell-slots";
-import { goalOf, lessons } from "../duel/training";
+import { goalOf, lessonSections, lessons } from "../duel/training";
 import type { Lesson, LessonProgress } from "../duel/training";
 import { text } from "../text";
 import { tuning } from "../tuning";
@@ -58,6 +58,42 @@ export interface ScreenView {
   }[];
   /** The Controls screen's content: its open tab's. */
   readonly help?: ControlsHelp;
+  /** Entrenamiento's lessons: the list by section, and the highlighted one's preview. */
+  readonly lessons?: LessonsView;
+}
+
+/** One lesson in Entrenamiento's list. */
+export interface LessonEntry {
+  readonly lesson: Lesson;
+  /** Its place in Training, from 1. */
+  readonly number: string;
+  readonly label: string;
+  readonly selected: boolean;
+  /** Completed at least once: ticked. */
+  readonly done: boolean;
+}
+
+export interface LessonsView {
+  /** How many lessons are completed, over the list. */
+  readonly progress: string;
+  /** The list, in its sections, in lesson order. */
+  readonly sections: readonly {
+    readonly heading: string;
+    readonly lessons: readonly LessonEntry[];
+  }[];
+  /**
+   * The highlighted lesson, large beside the list: which of how many, its
+   * title, what it teaches in a line and its buttons (drawn as icons). The
+   * game plays it there, too.
+   */
+  readonly preview: {
+    readonly lesson: Lesson;
+    readonly eyebrow: string;
+    readonly heading: string;
+    readonly body: string;
+    readonly controls: string;
+    readonly done: boolean;
+  };
 }
 
 /** A part of the DualSense the Controls draw: a button, or a stick. */
@@ -203,6 +239,70 @@ const markTraining = (
       : { ...item, hint: text.training.locked };
   });
 
+/** The glyph each face button and D-pad arrow is written as, drawn as its icon. */
+const glyphs: Readonly<Record<PotionSlot | SpellSlot, string>> = {
+  circle: "○",
+  cross: "✕",
+  down: "↓",
+  left: "←",
+  right: "→",
+  square: "□",
+  triangle: "△",
+  up: "↑",
+};
+
+/** The button of the slot `kind` (a Special Spell or a Potion) is bound to, as its glyph. */
+const slotGlyph = (kind: string): string => {
+  const spell = spellSlots.find((slot) => boundTo(slot, tuning) === kind);
+  const potion = potionSlots.find((slot) => potionIn(slot, tuning) === kind);
+  const slot = spell ?? potion;
+
+  return slot === undefined ? "" : glyphs[slot];
+};
+
+/** `line` with each `{kind}` written as the button of that kind's slot. */
+const withSlots = (line: string) =>
+  line.replaceAll(/\{(?<kind>\w+)\}/gu, (_match, kind: string) =>
+    slotGlyph(kind)
+  );
+
+/** Which lesson of how many, over a scroll or a preview. */
+const lessonCount = (lesson: Lesson) =>
+  text.training.lessonCount(lessons.indexOf(lesson) + 1, lessons.length);
+
+/** Entrenamiento's list by section, ticked as `training` remembers, and the highlighted lesson's preview. */
+const lessonsView = (
+  selected: Lesson,
+  training: TrainingRecord
+): LessonsView => {
+  const done = (lesson: Lesson) => training.completed.includes(lesson);
+
+  return {
+    preview: {
+      body: text.training.previews[selected],
+      controls: withSlots(text.training.scrolls[selected].controls),
+      done: done(selected),
+      eyebrow: lessonCount(selected),
+      heading: text.training.lessons[selected],
+      lesson: selected,
+    },
+    progress: text.training.progress(
+      lessons.filter(done).length,
+      lessons.length
+    ),
+    sections: lessonSections.map((section) => ({
+      heading: text.training.sections[section.section],
+      lessons: section.lessons.map((lesson) => ({
+        done: done(lesson),
+        label: text.training.lessons[lesson],
+        lesson,
+        number: String(lessons.indexOf(lesson) + 1),
+        selected: lesson === selected,
+      })),
+    })),
+  };
+};
+
 /** What `screen` shows; the menus that name Training read what is remembered of it. */
 export const viewOf = (
   screen: Screen,
@@ -258,20 +358,8 @@ export const viewOf = (
 
   if (screen.kind === "lessons") {
     return {
-      body: text.training.pick,
       heading: text.training.heading,
-      items: menu(
-        lessons,
-        screen.selected,
-        (lesson) =>
-          `${String(lessons.indexOf(lesson) + 1)}. ${text.training.lessons[lesson]}`
-      ).map((item, index) => {
-        const lesson = lessons[index];
-
-        return lesson !== undefined && training.completed.includes(lesson)
-          ? { ...item, done: true as const }
-          : item;
-      }),
+      lessons: lessonsView(screen.selected, training),
       screen: screen.kind,
     };
   }
@@ -342,33 +430,6 @@ export const viewOf = (
   return undefined;
 };
 
-/** The glyph each face button and D-pad arrow is written as, drawn as its icon. */
-const glyphs: Readonly<Record<PotionSlot | SpellSlot, string>> = {
-  circle: "○",
-  cross: "✕",
-  down: "↓",
-  left: "←",
-  right: "→",
-  square: "□",
-  triangle: "△",
-  up: "↑",
-};
-
-/** The button of the slot `kind` (a Special Spell or a Potion) is bound to, as its glyph. */
-const slotGlyph = (kind: string): string => {
-  const spell = spellSlots.find((slot) => boundTo(slot, tuning) === kind);
-  const potion = potionSlots.find((slot) => potionIn(slot, tuning) === kind);
-  const slot = spell ?? potion;
-
-  return slot === undefined ? "" : glyphs[slot];
-};
-
-/** `line` with each `{kind}` written as the button of that kind's slot. */
-const withSlots = (line: string) =>
-  line.replaceAll(/\{(?<kind>\w+)\}/gu, (_match, kind: string) =>
-    slotGlyph(kind)
-  );
-
 /** The counter's units, for the goals counted in metres or degrees. */
 const units: Partial<Record<string, string>> = text.training.units;
 
@@ -398,9 +459,6 @@ export interface ScrollView {
   /** Its choices, the highlighted one marked. */
   readonly items: readonly MenuItem[];
 }
-
-const lessonCount = (lesson: Lesson) =>
-  text.training.lessonCount(lessons.indexOf(lesson) + 1, lessons.length);
 
 /** The Training scroll `screen` shows, if it is one. */
 export const scrollOf = (screen: Screen): ScrollView | undefined => {

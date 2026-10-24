@@ -12,6 +12,7 @@ import { bloom } from "three/addons/tsl/display/BloomNode.js";
 import { pass, screenUV, smoothstep, vec4 } from "three/tsl";
 import {
   ACESFilmicToneMapping,
+  CanvasTarget,
   PCFShadowMap,
   RenderPipeline,
   Vector2,
@@ -39,12 +40,17 @@ export interface FramePipeline {
   readonly gpuTimer: GpuTimer | undefined;
 }
 
-export const createFramePipeline = (
+/**
+ * The image graph both the Duel's frame and the lesson preview draw with:
+ * the MSAA scene pass in scene-linear HDR, bloom, the vignette, and the
+ * renderer's one tone map and output conversion.
+ */
+const createImage = (
   renderer: WebGPURenderer,
   scene: Scene,
   camera: Camera,
   settings: Tuning["render"]
-): FramePipeline => {
+) => {
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = PCFShadowMap;
   renderer.toneMapping = ACESFilmicToneMapping;
@@ -75,6 +81,22 @@ export const createFramePipeline = (
   // The pipeline's default output transform applies the renderer's tone
   // mapping and colour space once, after bloom.
   pipeline.outputNode = vec4(hdr.rgb.add(glare.rgb).mul(vignette), 1);
+
+  return { glare, pipeline, scenePass };
+};
+
+export const createFramePipeline = (
+  renderer: WebGPURenderer,
+  scene: Scene,
+  camera: Camera,
+  settings: Tuning["render"]
+): FramePipeline => {
+  const { glare, pipeline, scenePass } = createImage(
+    renderer,
+    scene,
+    camera,
+    settings
+  );
 
   const resolution = createResolutionControl(settings.resolution);
   const gpuTimer = createGpuTimer(renderer);
@@ -130,6 +152,96 @@ export const createFramePipeline = (
     gpuTimer,
     render,
     scale: () => applied,
+    warm: async (progress) => {
+      render();
+      await prewarm(renderer, scene, camera, scenePass.renderTarget, progress);
+    },
+  };
+};
+
+export interface PreviewPipeline {
+  /**
+   * Sizes the preview's canvas to its laid-out box, CSS pixels, at
+   * `pixelRatio` (held under the scene's pixel cap); its targets follow on
+   * the next render.
+   */
+  readonly fit: (width: number, height: number, pixelRatio: number) => void;
+  /** Renders one frame of `scene` through the preview's camera into its canvas. */
+  readonly render: () => void;
+  /** Renders a first frame, then compiles everything not drawn yet, as `FramePipeline.warm`. */
+  readonly warm: (progress?: (share: number) => void) => Promise<void>;
+}
+
+/**
+ * The lesson preview's image, drawn by the game's own renderer into a
+ * canvas of its own in the menu (a second `CanvasTarget`): its own scene
+ * pass and bloom, sized to the panel rather than the window, so the cost
+ * goes with the panel's pixels, the Duel's frame targets are never
+ * reallocated by it, and the opaque menu needs no hole cut in it. The
+ * renderer is switched to the preview's canvas only for the length of a
+ * render and handed back to the main one straight after. GPU time goes to
+ * the Duel's frame timer (`gpuTimer`), frame by frame.
+ */
+export const createPreviewPipeline = (
+  renderer: WebGPURenderer,
+  scene: Scene,
+  camera: Camera,
+  settings: Tuning["render"],
+  canvas: HTMLCanvasElement,
+  gpuTimer: GpuTimer | undefined
+): PreviewPipeline => {
+  const target = new CanvasTarget(canvas);
+
+  const { pipeline, scenePass } = createImage(
+    renderer,
+    scene,
+    camera,
+    settings
+  );
+
+  /** Runs `draw` with the renderer on the preview's canvas, then hands it back. */
+  const onPreview = (draw: () => void) => {
+    const main = renderer.getCanvasTarget();
+    renderer.setCanvasTarget(target);
+
+    try {
+      draw();
+    } finally {
+      renderer.setCanvasTarget(main);
+    }
+  };
+
+  const render = () => {
+    onPreview(() => {
+      pipeline.render();
+    });
+    gpuTimer?.frameEnd();
+  };
+
+  return {
+    fit: (width, height, pixelRatio) => {
+      const w = Math.max(Math.round(width), 1);
+      const h = Math.max(Math.round(height), 1);
+
+      const ratio = Math.min(
+        pixelRatio,
+        Math.sqrt(settings.resolution.maxPixels / (w * h))
+      );
+
+      if (
+        target.getPixelRatio() !== ratio ||
+        canvas.width !== Math.floor(w * ratio) ||
+        canvas.height !== Math.floor(h * ratio)
+      ) {
+        // On the preview's canvas, so the renderer hears of the resize
+        // and remakes that canvas's attachments.
+        onPreview(() => {
+          target.setPixelRatio(ratio);
+          target.setSize(w, h, false);
+        });
+      }
+    },
+    render,
     warm: async (progress) => {
       render();
       await prewarm(renderer, scene, camera, scenePass.renderTarget, progress);

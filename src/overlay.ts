@@ -1,5 +1,6 @@
 import { writeWithIcons } from "./button-icons";
 import { createControlsHelp } from "./controls-help";
+import { createLessonMenu } from "./lesson-menu";
 import type { ScreenView } from "./screens/view";
 import { text } from "./text";
 
@@ -27,6 +28,8 @@ export const createOverlay = (element: HTMLElement) => {
   // The Controls' tab bar and open tab (controls-help.ts).
   const help = createControlsHelp();
   element.append(heading, help.tabs, body, items, help.panel, veil, legal);
+  // Entrenamiento's lessons and the live preview (lesson-menu.ts).
+  const lessonMenu = createLessonMenu(element);
   let shown: string | undefined;
 
   /**
@@ -86,6 +89,7 @@ export const createOverlay = (element: HTMLElement) => {
       menu.hidden = true;
       shown = undefined;
     },
+    lessonMenu,
     /** Calls `listener` when the screen's action (the title's veil) is clicked. */
     onAction: (listener: () => void) => {
       veil.addEventListener("click", listener);
@@ -102,7 +106,10 @@ export const createOverlay = (element: HTMLElement) => {
       enter(view.screen);
       element.dataset.screen = view.screen;
       heading.textContent = view.heading;
-      heading.hidden = view.heading === text.title;
+      // The lesson menu carries its own title.
+      heading.hidden =
+        view.heading === text.title || view.lessons !== undefined;
+      lessonMenu.show(view.lessons);
       writeWithIcons(body, view.body ?? "");
       body.hidden = view.body === undefined;
       // The veil keeps its words while it fades out.

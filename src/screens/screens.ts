@@ -17,7 +17,7 @@ import { difficulties } from "../duel/difficulty";
 import type { Difficulty } from "../duel/difficulty";
 import { practiceRivals } from "../duel/practice";
 import type { PracticeRival } from "../duel/practice";
-import { lessonPlans, lessons } from "../duel/training";
+import { lessonPlans, lessonSections, lessons } from "../duel/training";
 import type { Lesson } from "../duel/training";
 
 /** What is plugged in, as far as the screens care. */
@@ -568,6 +568,26 @@ const onRivalsInput = (
   return { ...state, screen: { ...screen, selected } };
 };
 
+/**
+ * A section at a time through the lesson list: right to the next section's
+ * first lesson; left to the first of its own section, or from there the
+ * section before's. Stops at both ends.
+ */
+const sectionJump = (from: Lesson, input: "left" | "right"): Lesson => {
+  const firsts = lessonSections.flatMap((section) =>
+    section.lessons.slice(0, 1)
+  );
+
+  const index = lessons.indexOf(from);
+
+  const target =
+    input === "right"
+      ? firsts.find((first) => lessons.indexOf(first) > index)
+      : firsts.findLast((first) => lessons.indexOf(first) < index);
+
+  return target ?? from;
+};
+
 const onLessonsInput = (
   state: ScreenState,
   screen: Extract<Screen, { kind: "lessons" }>,
@@ -581,7 +601,10 @@ const onLessonsInput = (
     return startLesson(state, screen.selected);
   }
 
-  const selected = step(lessons, screen.selected, input);
+  const selected =
+    input === "left" || input === "right"
+      ? sectionJump(screen.selected, input)
+      : step(lessons, screen.selected, input);
 
   return { ...state, screen: { ...screen, selected } };
 };

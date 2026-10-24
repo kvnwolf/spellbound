@@ -12,6 +12,12 @@ import type { MenuSound } from "./audio/cues";
 import { createClashHud } from "./clash-hud";
 import type { Controller } from "./controllers/controller";
 import { createHumanController } from "./controllers/human-controller";
+import {
+  createDemoControllers,
+  demoDuelConfig,
+  demoIsSolo,
+  demoLearner,
+} from "./controllers/lesson-demo";
 import { createRandom } from "./controllers/random";
 import { createRival } from "./controllers/rival";
 import { createDualSenseEffects } from "./dualsense-effects";
@@ -27,13 +33,19 @@ import type {
   DuelistState,
   DuelSnapshot,
 } from "./duel/duel";
-import type { GroundPoint } from "./duel/geometry";
+import { wrapAngle } from "./duel/geometry";
+import type { GroundPoint, Point3 } from "./duel/geometry";
 import { idleIntent } from "./duel/intent";
 import type { Intent } from "./duel/intent";
 import { practiceRulesFor } from "./duel/practice";
 import type { PracticeRival } from "./duel/practice";
-import { advanceLesson, lessonRules, startLesson } from "./duel/training";
-import type { LessonProgress } from "./duel/training";
+import {
+  advanceLesson,
+  lessonPlans,
+  lessonRules,
+  startLesson,
+} from "./duel/training";
+import type { Lesson, LessonProgress } from "./duel/training";
 import { createFixedStepClock } from "./game-loop";
 import { createHud } from "./hud";
 import { createLoadingScreen } from "./loading-screen";
@@ -47,13 +59,14 @@ import { chargingWands } from "./render/charging-wands";
 import { createClashVfx } from "./render/clash-vfx";
 import { createCourtyardScene, torchSpots } from "./render/courtyard-view";
 import { createDefenceVfx } from "./render/defence-vfx";
+import { createDemoCamera } from "./render/demo-camera";
 import { createDepulsoHits } from "./render/depulso-vfx";
 import { createDuelistView } from "./render/duelist-view";
 import { createFrameProbe, perfRequested } from "./render/frame-probe";
 import { sampleDuelist } from "./render/interpolate";
 import type { DuelistSample } from "./render/interpolate";
 import { createLooseWandView } from "./render/loose-wand-view";
-import { createFramePipeline } from "./render/pipeline";
+import { createFramePipeline, createPreviewPipeline } from "./render/pipeline";
 import { createWebGPURenderer } from "./render/renderer";
 import { createReticle } from "./render/reticle";
 import { createSpellVfx, spellVfxSettings } from "./render/spell-vfx";
@@ -245,6 +258,22 @@ const start = async () => {
   let activeRun = 0;
   // The Training lesson being played: its goals, counted from the Duel.
   let lesson: LessonProgress | undefined;
+
+  /**
+   * The live demo of the lesson highlighted on Entrenamiento, while that
+   * menu is up: which lesson, how far into its loop, the learner's aim
+   * when it started (a solo demo's camera turns as the learner looks
+   * round), and a restart under way: the loop starting again or another
+   * lesson, swapped in once the preview has dipped to black.
+   */
+  let demo:
+    | {
+        readonly lesson: Lesson;
+        seconds: number;
+        readonly aimYaw: number;
+        restart?: { readonly lesson: Lesson; readonly at: number };
+      }
+    | undefined;
 
   const shake = createCameraShake(tuning.cameraShake);
 
@@ -442,6 +471,80 @@ const start = async () => {
 
   const frame = createFramePipeline(renderer, scene, rig.camera, tuning.render);
 
+  // The lesson preview's demo: its own framed camera, drawn by this
+  // renderer into the preview's canvas on Entrenamiento's list.
+  const demoCamera = createDemoCamera(
+    tuning.lessonDemo.camera,
+    cameraObstacles
+  );
+
+  const preview = createPreviewPipeline(
+    renderer,
+    scene,
+    demoCamera.camera,
+    tuning.render,
+    overlay.lessonMenu.canvas,
+    frame.gpuTimer
+  );
+
+  /**
+   * Frames the demo: the learner (and the dummy, unless the lesson is the
+   * learner's alone), feet to head and a body's width either side, and any
+   * Wand on the floor, looking down the lane, or for a solo demo turning
+   * as the learner looks round.
+   */
+  const frameDemo = (
+    snapshot: DuelSnapshot,
+    samples: ReadonlyMap<DuelistId, DuelistSample>,
+    seconds: number
+  ) => {
+    if (!demo) {
+      return;
+    }
+
+    const stage = overlay.lessonMenu.canvasSize();
+
+    if (stage.width > 0 && stage.height > 0) {
+      demoCamera.resize(stage.width / stage.height);
+    }
+
+    const solo = demoIsSolo(demo.lesson, tuning.lessonDemo);
+    const { bodyRadius, height } = tuning.duelist;
+    const support: Point3[] = [];
+
+    for (const [id, sample] of samples) {
+      if (solo && id !== demoLearner) {
+        continue;
+      }
+
+      const { x, z } = sample.position;
+      const y = sample.elevation;
+      support.push({ x, y, z }, { x, y: y + height, z });
+
+      for (const [dx, dz] of [
+        [bodyRadius, 0],
+        [-bodyRadius, 0],
+        [0, bodyRadius],
+        [0, -bodyRadius],
+      ] as const) {
+        support.push({ x: x + dx, y: y + height / 2, z: z + dz });
+      }
+    }
+
+    for (const each of snapshot.duelists) {
+      if (each.looseWand && (!solo || each.id === demoLearner)) {
+        support.push(each.looseWand.position);
+      }
+    }
+
+    const learner = samples.get(demoLearner);
+
+    const turned =
+      solo && learner ? wrapAngle(learner.aim.yaw - demo.aimYaw) : 0;
+
+    demoCamera.frame(support, tuning.lessonDemo.camera.yaw + turned, seconds);
+  };
+
   // Sampled sound and music, heard from the camera; silent until the first click or keypress.
   const audio = createDuelAudio({
     camera: rig.camera,
@@ -558,6 +661,62 @@ const start = async () => {
     current = previous;
     activeRun = run;
     lesson = match.training && startLesson(match.training.lesson);
+    demo = undefined;
+  };
+
+  // The run number a demo plays under: never one the screens start.
+  const demoRun = -1;
+
+  /** Swaps in a fresh demo of `shown`: its Practice, the learner's script and the lesson's dummy. */
+  const startDemo = (shown: Lesson) => {
+    vfx.update(current.spells, [], 0, 0);
+    duel = createDuel(demoDuelConfig(shown, courtyard, tuning));
+    controllers = new Map(createDemoControllers(shown, courtyard, tuning));
+    dressRival({ difficulty: "duelista", practice: lessonPlans[shown].rival });
+    clock = createFixedStepClock(tuning.tickRate);
+    previous = duel.snapshot();
+    current = previous;
+    activeRun = demoRun;
+    lesson = undefined;
+
+    const aimYaw =
+      current.duelists.find((each) => each.id === demoLearner)?.aim.yaw ?? 0;
+
+    demo = { aimYaw, lesson: shown, seconds: 0 };
+    demoCamera.cut();
+  };
+
+  /**
+   * Keeps the demo on the lesson highlighted while Entrenamiento's list is
+   * up: the first frame starts it at once; a new highlight, or the end of
+   * the loop, dips the preview to black and swaps the fresh demo in there.
+   */
+  const syncDemo = (screen: Screen, seconds: number) => {
+    if (screen.kind !== "lessons") {
+      return;
+    }
+
+    const { fadeSeconds, loopSeconds } = tuning.lessonDemo;
+
+    if (!demo) {
+      startDemo(screen.selected);
+
+      return;
+    }
+
+    demo.seconds += seconds;
+
+    const wanted = screen.selected;
+    const looped = demo.seconds >= loopSeconds[demo.lesson];
+
+    if ((wanted !== demo.lesson || looped) && demo.restart?.lesson !== wanted) {
+      demo.restart = { at: demo.seconds + fadeSeconds, lesson: wanted };
+      overlay.lessonMenu.blink();
+    }
+
+    if (demo.restart && demo.seconds >= demo.restart.at) {
+      startDemo(demo.restart.lesson);
+    }
   };
 
   const intentsFor = (snapshot: DuelSnapshot) => {
@@ -620,8 +779,7 @@ const start = async () => {
       (screen.kind === "connect" ||
         screen.kind === "main" ||
         screen.kind === "difficulty" ||
-        screen.kind === "rivals" ||
-        screen.kind === "lessons") &&
+        screen.kind === "rivals") &&
       activeRun !== 0
     ) {
       startRun(0, waiting);
@@ -763,6 +921,13 @@ const start = async () => {
 
     defenceVfx.show(samples, seconds);
 
+    // A lesson's demo is framed by its own camera; the rig stays as it was.
+    if (demo) {
+      frameDemo(current, samples, seconds);
+
+      return samples;
+    }
+
     const localSample = samples.get(localId);
     const knockout = knockoutFraming(samples);
 
@@ -820,14 +985,63 @@ const start = async () => {
   // loading screen: the menus never draw the scene, so the first frame of a
   // Duel would otherwise be the one compiling it all.
   await frame.warm((share) => {
-    loading.progress(stages.shaders + (1 - stages.shaders) * share);
+    loading.progress(
+      stages.shaders + (stages.preview - stages.shaders) * share
+    );
   });
+
+  // The same for the lesson preview, through its own camera and canvas,
+  // so neither opening Entrenamiento nor moving its highlight compiles.
+  const { warmSize } = tuning.lessonDemo;
+  preview.fit(warmSize.width, warmSize.height, window.devicePixelRatio);
+  demoCamera.resize(warmSize.width / warmSize.height);
+  demoCamera.frame(
+    demoDuelConfig("clash", courtyard, tuning).duelists.map(({ spawn }) => ({
+      x: spawn.x,
+      y: 1,
+      z: spawn.z,
+    })),
+    tuning.lessonDemo.camera.yaw,
+    0
+  );
+  await preview.warm((share) => {
+    loading.progress(stages.preview + (1 - stages.preview) * share);
+  });
+
+  // The Training Dummy is first drawn when Entrenamiento opens (and in a
+  // lesson): drawn once each way here, posed, its shadow and colour
+  // pipelines exist before then.
+  dressRival({ difficulty: "duelista", practice: "idle" });
+  showDuelists(0, 0);
+  frame.render();
+  preview.render();
+  dressRival(waiting);
   loading.done();
 
   // `?perf`: frame, CPU and per-pass GPU timings in the corner.
   const probe = perfRequested()
     ? createFrameProbe(renderer, frame.gpuTimer)
     : undefined;
+
+  /**
+   * Draws the frame. The menus are opaque: behind them the scene is not
+   * drawn, but for one frame after a resize, so the first frame of a Duel
+   * never has to reallocate the frame's targets. Over Entrenamiento's list,
+   * the preview's demo is the one thing drawn.
+   */
+  const draw = (menu: boolean) => {
+    if (hasArea && (!menu || resized)) {
+      frame.render();
+      resized = false;
+    }
+
+    const stage = overlay.lessonMenu.canvasSize();
+
+    if (demo && stage.width > 0 && stage.height > 0) {
+      preview.fit(stage.width, stage.height, window.devicePixelRatio);
+      preview.render();
+    }
+  };
 
   void renderer.setAnimationLoop((now: number) => {
     probe?.begin(now);
@@ -844,15 +1058,19 @@ const start = async () => {
     menuSounds = [];
     scanned = scan.kind;
     const screen = syncScreens(seconds);
+    syncDemo(screen, seconds);
 
     // The Duel only advances on its own screen: never behind a menu, the
     // pause or the "Reconecta tu mando" prompt. A Knockout plays in slow
-    // motion: slow motion only scales the time fed to the simulation.
-    const playing = screen.kind === "duel";
+    // motion: slow motion only scales the time fed to the simulation. On
+    // Entrenamiento's list the highlighted lesson's demo plays instead,
+    // seen only in its preview: nothing of it is heard, felt or counted.
+    const live = screen.kind === "duel";
+    const playing = live || demo !== undefined;
     const inDuel = showsDuel(screen);
     hudElement.hidden = !inDuel;
     // Behind the pause the Round's call-out would fight the menu for the centre.
-    hudElement.classList.toggle("hud-held", inDuel && !playing);
+    hudElement.classList.toggle("hud-held", inDuel && !live);
     // A Practice has no Rounds: no score at the top.
     hudElement.classList.toggle("hud-practice", practiceOf(screen) !== null);
 
@@ -864,11 +1082,13 @@ const start = async () => {
     const simSeconds = playing ? seconds * timeScale : 0;
 
     const { alpha, events } = advance(simSeconds);
+    // What the player's own Duel did this frame: none of a demo's.
+    const played = live ? events : [];
 
     effects.send(
       haptics.frame({
-        events,
-        live: playing,
+        events: played,
+        live,
         menu: menuSounds,
         seconds,
         snapshot: current,
@@ -876,7 +1096,7 @@ const start = async () => {
       scan.kind === "dualsense" ? scan.gamepad : undefined
     );
 
-    if (playing) {
+    if (live) {
       send({ seconds, type: "tick" });
     }
 
@@ -888,7 +1108,11 @@ const start = async () => {
       overlay.hide();
     }
 
-    shakeOnHits(events);
+    // The Spell VFX face whichever camera is drawing.
+    const viewer = demo ? demoCamera.camera : rig.camera;
+    vfx.watchFrom(viewer);
+    clashVfx.watchFrom(viewer);
+    shakeOnHits(played);
     vfx.handle(events);
     depulsoHits.handle(events);
     depulsoHits.advance(simSeconds);
@@ -901,9 +1125,9 @@ const start = async () => {
       ),
       petrified: feetOf(current, (each) => each.petrifiedSeconds > 0),
     });
-    hud.show(current, events, seconds);
+    hud.show(current, played, seconds);
     specialsHud.show(current);
-    clashHud.show(current, events);
+    clashHud.show(current, played);
     trainingHud.show(trainingOf(screens.screen) && lesson);
     trainingScroll.show(scrollOf(screens.screen));
     clashVfx.handle(events);
@@ -911,7 +1135,9 @@ const start = async () => {
       views.get(id)?.wandTipPosition()
     );
 
-    showCharge(current, events, seconds, inDuel);
+    if (!demo) {
+      showCharge(current, events, seconds, inDuel);
+    }
 
     // Casts, Backfires, Dodges, landings, hits and pickups play on the wizards.
     for (const duelistView of views.values()) {
@@ -923,10 +1149,10 @@ const start = async () => {
     looseWands.show(previous, current, alpha, simSeconds, (id) =>
       views.get(id)?.wandTipPosition()
     );
-    worldHud.show(current, events, samples, rig.camera, seconds);
+    worldHud.show(current, played, samples, rig.camera, seconds);
     audio.frame({
-      events,
-      live: playing,
+      events: played,
+      live,
       screen: screens.screen,
       snapshot: current,
     });
@@ -935,14 +1161,7 @@ const start = async () => {
       reticleElement.hidden = true;
     }
 
-    // The menus are opaque: behind them the scene is not drawn, but for one
-    // frame after a resize, so the first frame of a Duel never has to
-    // reallocate the frame's targets.
-    if (hasArea && (view === undefined || resized)) {
-      frame.render();
-      resized = false;
-    }
-
+    draw(view !== undefined);
     probe?.end(frame.scale());
   });
 };

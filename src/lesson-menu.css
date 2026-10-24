@@ -1,0 +1,278 @@
+/*
+ * Entrenamiento's lesson menu, after the training menus of modern fighting
+ * games: inside the gilt frame, a header (the title and how many lessons are
+ * done), the lesson list down the left by section, and the highlighted
+ * lesson's preview filling the right, its live demo on top and its words
+ * under it. The whole menu fits the screen at any size: only the list
+ * scrolls, and lesson-menu.ts keeps the highlight in it.
+ */
+.lesson-menu {
+  --menu-inset: calc(
+    clamp(0.5rem, 1.6vmin, 1.25rem) + clamp(1rem, 3vmin, 2.25rem)
+  );
+
+  position: fixed;
+  inset: var(--menu-inset);
+  display: grid;
+  grid-template-columns: minmax(15rem, 0.62fr) 1fr;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: clamp(0.6rem, 2vmin, 1.25rem) clamp(1rem, 3vw, 2.5rem);
+  text-align: start;
+}
+
+.lesson-menu[hidden] {
+  display: none;
+}
+
+.lesson-menu-header {
+  display: flex;
+  grid-column: 1 / -1;
+  gap: 1rem;
+  align-items: baseline;
+  justify-content: space-between;
+  padding-bottom: clamp(0.4rem, 1.4vmin, 0.8rem);
+  border-bottom: 1px solid rgb(216 180 106 / 30%);
+}
+
+#overlay .lesson-menu-title {
+  margin: 0;
+  color: var(--gold);
+  font-family: "Cinzel Variable", "Iowan Old Style", Palatino, serif;
+  font-size: clamp(1.3rem, 3vw, 2.1rem);
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-shadow: 0 0 18px rgb(216 180 106 / 35%);
+}
+
+/* No gold rules either side of this title: the header's rule is under it. */
+#overlay .lesson-menu-title::before,
+#overlay .lesson-menu-title::after {
+  content: none;
+}
+
+#overlay .lesson-menu-progress {
+  margin: 0;
+  color: rgb(239 228 200 / 70%);
+  font-size: clamp(0.85rem, 1.6vw, 1rem);
+  letter-spacing: 0.08em;
+}
+
+/* The list: sections, each a small gold heading over its lessons. */
+.lesson-list {
+  position: relative;
+  min-height: 0;
+  padding: 0.2rem 0.4rem 0.6rem 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgb(216 180 106 / 35%) transparent;
+  mask-image: linear-gradient(
+    180deg,
+    transparent,
+    #000 0.6rem,
+    #000 calc(100% - 1.2rem),
+    transparent
+  );
+}
+
+.lesson-section + .lesson-section {
+  margin-top: clamp(0.4rem, 1.4vmin, 0.8rem);
+}
+
+#overlay .lesson-section-heading {
+  margin: 0 0 0.2rem;
+  padding: 0.35rem 0.2rem 0.15rem;
+  color: var(--gold);
+  font-family: "Cinzel Variable", "Iowan Old Style", Palatino, serif;
+  font-size: clamp(0.7rem, 1.3vw, 0.82rem);
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  opacity: 0.85;
+}
+
+.lesson-entry {
+  position: relative;
+  display: grid;
+  grid-template-columns: 2.1em 1fr auto;
+  gap: 0.6rem;
+  align-items: center;
+  padding: clamp(0.3rem, 1vmin, 0.45rem) 0.7rem;
+  color: rgb(239 228 200 / 62%);
+  border: 1px solid transparent;
+  font-size: clamp(0.92rem, 1.7vw, 1.08rem);
+  letter-spacing: 0.04em;
+  transition:
+    color 120ms ease-out,
+    background 120ms ease-out,
+    border-color 120ms ease-out;
+}
+
+.lesson-entry-number {
+  color: rgb(216 180 106 / 70%);
+  font-family: "Cinzel Variable", "Iowan Old Style", Palatino, serif;
+  font-variant-numeric: lining-nums tabular-nums;
+  text-align: end;
+}
+
+.lesson-entry-done {
+  color: var(--gold);
+  visibility: hidden;
+}
+
+.lesson-entry.done .lesson-entry-done {
+  visibility: visible;
+}
+
+/* The highlight: the menus' gold frame on ink, a gold bar at its edge. */
+.lesson-entry.selected {
+  color: var(--gold);
+  border-color: rgb(216 180 106 / 75%);
+  background: linear-gradient(90deg, rgb(216 180 106 / 16%), var(--ink) 70%);
+  box-shadow: 0 0 18px rgb(216 180 106 / 16%);
+  text-shadow: 0 0 12px rgb(216 180 106 / 45%);
+}
+
+.lesson-entry.selected::before {
+  position: absolute;
+  top: -1px;
+  bottom: -1px;
+  left: -1px;
+  width: 3px;
+  background: var(--gold);
+  box-shadow: 0 0 8px rgb(216 180 106 / 80%);
+  content: "";
+}
+
+.lesson-entry.selected .lesson-entry-number {
+  color: var(--gold);
+}
+
+/* The preview: the demo on top, filling what the words leave. */
+.lesson-preview {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: clamp(0.6rem, 1.8vmin, 1rem);
+  min-width: 0;
+  min-height: 0;
+}
+
+.lesson-preview-stage {
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid rgb(216 180 106 / 55%);
+  background: #05070f;
+  box-shadow:
+    0 0 0 4px rgb(216 180 106 / 8%),
+    0 12px 30px rgb(0 0 0 / 45%);
+}
+
+.lesson-preview-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* The demo dips through black as its loop starts again or the lesson changes. */
+.lesson-preview-shade {
+  position: absolute;
+  inset: 0;
+  background: #05070f;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.lesson-preview-shade.blink {
+  animation: lesson-preview-blink var(--blink, 360ms) ease-in-out;
+}
+
+@keyframes lesson-preview-blink {
+  50% {
+    opacity: 1;
+  }
+}
+
+.lesson-preview-details {
+  display: grid;
+  gap: 0.35rem;
+  justify-items: start;
+}
+
+#overlay .lesson-preview-eyebrow {
+  display: flex;
+  gap: 1rem;
+  margin: 0;
+  color: rgb(216 180 106 / 85%);
+  font-size: clamp(0.7rem, 1.3vw, 0.8rem);
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+
+.lesson-preview-done {
+  color: var(--gold);
+  letter-spacing: 0.12em;
+}
+
+#overlay .lesson-preview-heading {
+  margin: 0;
+  color: var(--parchment);
+  font-family: "Cinzel Variable", "Iowan Old Style", Palatino, serif;
+  font-size: clamp(1.25rem, 2.8vw, 1.9rem);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  line-height: 1.15;
+}
+
+#overlay .lesson-preview-body {
+  margin: 0;
+  max-width: 44rem;
+  color: rgb(239 228 200 / 85%);
+  font-size: clamp(0.95rem, 1.8vw, 1.12rem);
+  line-height: 1.4;
+  /* Two lines kept, so the demo above keeps its size from lesson to lesson. */
+  min-height: 2.8em;
+}
+
+/* The buttons involved, in a quiet gold box, drawn as icons. */
+#overlay .lesson-preview-controls {
+  margin: 0.15rem 0 0;
+  padding: 0.35rem 0.8rem;
+  border: 1px solid rgb(216 180 106 / 45%);
+  border-radius: 0.3rem;
+  color: var(--parchment);
+  background: rgb(216 180 106 / 8%);
+  font-size: clamp(0.85rem, 1.6vw, 0.98rem);
+  letter-spacing: 0.02em;
+}
+
+/* Narrow screens: the preview over the list. */
+@media (width < 760px) {
+  .lesson-menu {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1.1fr) minmax(0, 1fr);
+  }
+
+  .lesson-preview {
+    grid-row: 2;
+  }
+}
+
+/* The menu enters with the screen: header, list and preview fading up in turn. */
+#overlay.entering .lesson-menu > * {
+  animation: menu-enter 460ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+
+#overlay.entering .lesson-list {
+  animation-delay: 60ms;
+}
+
+#overlay.entering .lesson-preview {
+  animation-delay: 120ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #overlay.entering .lesson-menu > *,
+  .lesson-preview-shade.blink {
+    animation: none;
+  }
+}

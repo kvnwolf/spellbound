@@ -1889,13 +1889,125 @@ export const tuning = {
   },
 
   /**
+   * The live demo beside Entrenamiento's lesson list: a small Practice of
+   * the highlighted lesson, its learner played by a script and its rival
+   * the lesson's own Training Dummy, looping. Times in seconds from the
+   * start of the loop, distances in metres, angles in radians.
+   */
+  lessonDemo: {
+    /**
+     * The framed camera: its vertical field of view (degrees); the way it
+     * looks (`yaw`, the Duel's yaw: π looks at the lane's wall, from the
+     * courtyard's side of it, and a little more turns it round behind the
+     * learner's shoulder) and how far down (`pitch`); how much of the frame
+     * the Duelists may fill (`safe`, 0 to 1 per axis); how far it never
+     * comes closer than (`minDistance`); and how quickly it follows
+     * (`halflife`: half the gap closed in that long). `lift` raises the
+     * point it looks at above the middle of what it frames. It keeps
+     * `clearance` from the walls and columns behind it and between it and
+     * what it frames (stepping in `clearanceStep` at a time), widening its lens
+     * (up to `maxFov`) when they hold it closer than the fit wants.
+     */
+    camera: {
+      clearance: 0.7,
+      clearanceStep: 0.25,
+      fov: 34,
+      halflife: 0.22,
+      lift: 0.05,
+      maxFov: 62,
+      minDistance: 4.5,
+      pitch: 0.18,
+      safe: 0.82,
+      yaw: 3.5,
+    },
+    /** Maniquí desarmador's first Expelliarmus in its demo, sooner than in a lesson. */
+    disarmsFirstCast: 0.7,
+    /** How long the panel fades through black when the loop starts again or the lesson changes. */
+    fadeSeconds: 0.18,
+    /**
+     * The lane the two stand in, along the near wall: its middle, and how
+     * far apart they start (`near` for the lessons fought up close). The
+     * learner stands at its +x end, on the left of the shot.
+     */
+    lane: { far: 6, near: 3, x: -1.5, z: 10 },
+    /** How long each lesson's loop runs before it starts again. */
+    loopSeconds: {
+      clash: 6,
+      depulso: 3.6,
+      disarmed: 6.4,
+      dodge: 4.4,
+      expelliarmus: 4.6,
+      felix: 4.4,
+      focus: 4.6,
+      heavy: 4,
+      incendio: 4,
+      light: 4,
+      lockOn: 4.2,
+      move: 6,
+      petrificus: 3.8,
+      shield: 5.4,
+      strength: 4.6,
+      swiftness: 5,
+      wiggenweld: 3.4,
+    },
+    /** The lessons played up close: Depulso's cone reaches only so far. */
+    nearLessons: ["depulso", "felix"],
+    /** The learner's script, lesson by lesson. */
+    script: {
+      clash: { chargeAt: 0.7, pumpRate: 9 },
+      /** Dodges when a Spell would land within `lead`, at most once every `every`. */
+      dodge: { every: 1.1, from: 0.6, lead: 0.1 },
+      /** After Felix Felicis: Depulso. */
+      felix: { castAt: 2.2, holdAt: 2 },
+      /** Light Spells, then a Parry from `parryFrom`. */
+      focus: { casts: [0.6, 0.9, 1.2, 1.5], parryFrom: 2.4 },
+      heavy: { chargeAt: 2, tapAt: 0.8, tapSeconds: 0.15 },
+      light: { casts: [0.7, 1, 1.3, 2.5, 2.8, 3.1] },
+      /** Lock-on press, for every lesson fought locked on. */
+      lockAt: 0.2,
+      /** Locked on, circle the dummy toward the wall, then back, then let go. */
+      lockOn: { back: [1.8, 2.8], strafe: [0.8, 1.8], unlockAt: 3.3 },
+      /** Walk away from the dummy, turn the camera round (at `lookRate`), then run back. */
+      move: {
+        look: [2.1, 3.7],
+        lookRate: 4,
+        run: [3.9, 5.2],
+        walk: [0.3, 1.9],
+      },
+      /** Drink at `drinkAt` (L2 held a moment before). */
+      potion: { drinkAt: 0.6, holdAt: 0.4 },
+      /** How long a press is held down. */
+      pressSeconds: 0.1,
+      /** Hold the Shield up over the dummy's first casts, then Parry once from `parryFrom`, `lead` before a Spell lands. */
+      shield: { hold: [0.5, 2.6], lead: 0.08, parryFrom: 3.2 },
+      /** Cast the Special Spell: R2 held from `holdAt`, its button at `castAt`. */
+      special: { castAt: 0.9, holdAt: 0.7 },
+      /** After the Strength Potion: Light Spells. */
+      strength: { casts: [2, 2.3, 2.6] },
+      /** After the Swiftness Potion: run away from the dummy, then back. */
+      swiftness: { away: [1.8, 2.8], back: [2.8, 4] },
+    },
+    /** The lessons that frame the learner alone, moving about. */
+    soloLessons: ["move", "swiftness"],
+    /** The panel's canvas size before it is laid out, CSS pixels: what the warm-up compiles at. */
+    warmSize: { height: 360, width: 640 },
+  },
+
+  /**
    * The loading screen's progress bar: the share of it done once the
    * renderer is up (`renderer`), once the wizard has downloaded (`wizard`,
    * filling in between by its bytes) and once the courtyard's and the
    * wizards' shaders are compiled (`shaders`); compiling every effect not
    * drawn yet fills the rest.
    */
-  loading: { stages: { renderer: 0.1, shaders: 0.9, wizard: 0.8 } },
+  /**
+   * The loading bar's share done as each stage ends: the renderer, the
+   * wizard, the courtyard's shaders, and the warm-up of the Duel's frame
+   * (to `preview`), then of the lesson preview's.
+   */
+  loading: {
+    stages: { preview: 0.96, renderer: 0.1, shaders: 0.9, wizard: 0.8 },
+  },
 
   /** Lock-on: R3 locks a Duelist onto an opponent, who becomes their Target. */
   lockOn: {

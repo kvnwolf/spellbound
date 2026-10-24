@@ -239,6 +239,8 @@ export const text = {
         "Bienvenido al Club de Duelo. El Duelo y la Práctica ya te esperan.",
       ],
     },
+    /** Beside the tick on a completed lesson's preview. */
+    completed: "Completada",
     /** A goal's count against what it asks for, after the goal. */
     counter: (count: number, target: number, unit = "") =>
       `(${String(count)}/${String(target)}${unit})`,
@@ -306,8 +308,43 @@ export const text = {
     },
     /** Under Entrenamiento on the main menu while Duelo and Práctica are closed. */
     locked: "Completa el entrenamiento para desbloquear Duelo y Práctica",
-    /** Over the lesson list. */
-    pick: "Elige una lección",
+    /** Each lesson in a line, in the preview beside the lesson list. */
+    previews: {
+      clash:
+        "Dos Confringos cargados que chocan se traban en un rayo: empújalo pulsando △ más rápido que tu rival.",
+      depulso:
+        "Un cono corto de fuerza que aparta al rival y le corta la carga o la poción.",
+      disarmed:
+        "Sin varita no puedes atacar ni cubrirte: corre a recogerla en cuanto caiga.",
+      dodge:
+        "Rueda y ningún hechizo te toca; justo antes del impacto, es una Esquiva perfecta.",
+      expelliarmus:
+        "Le arranca la varita al rival: no puede atacar ni cubrirse hasta recogerla.",
+      felix:
+        "La suerte líquida: un segmento de Determinación al instante para tu especial.",
+      focus:
+        "Aciertos, Parrys y Esquivas perfectas llenan los tres segmentos que gastan los especiales.",
+      heavy:
+        "Carga Confringo y suéltalo: justo cuando se llena, sale una Liberación perfecta.",
+      incendio:
+        "Explota al impactar y deja ardiendo al rival, aunque se cubra.",
+      light:
+        "Un hechizo rápido que puedes encadenar: el tercero seguido aturde.",
+      lockOn:
+        "Fija la cámara y la puntería en el rival para no perderlo de vista.",
+      move: "Camina, gira la cámara y corre: un duelista quieto es un blanco fácil.",
+      petrificus:
+        "Congela al rival en el sitio un momento: ni se mueve ni se defiende.",
+      shield:
+        "Protego para los hechizos de frente; levántalo justo a tiempo y harás un Parry.",
+      strength: "Durante unos segundos, todos tus hechizos hacen más daño.",
+      swiftness:
+        "Más velocidad y resistencia sin límite durante unos segundos.",
+      wiggenweld: "Te devuelve parte de la salud al instante.",
+    },
+    /** Over the lesson list: how many lessons are completed. */
+    progress: (done: number, total: number) =>
+      `${String(done)} de ${String(total)} completadas`,
     /** The success scroll's choices, and the scroll before a lesson's. */
     scrollOptions: {
       finish: "Terminar",
@@ -407,6 +444,15 @@ export const text = {
         what: "Wiggenweld te devuelve parte de la salud al instante.",
         when: "Bébela con poca salud y lejos del rival: mientras bebes eres vulnerable y un golpe te la hace perder.",
       },
+    },
+    /** The parts the lesson list is grouped into. */
+    sections: {
+      combat: "Combate",
+      defence: "Defensa",
+      movement: "Movimiento",
+      potions: "Pociones",
+      specials: "Determinación y especiales",
+      spells: "Hechizos",
     },
     /** The units of the goals counted in metres or degrees. */
     units: { look: "°", run: " m", swiftRun: " m", walk: " m" },

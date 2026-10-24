@@ -44,6 +44,34 @@ export const lessons = [
 
 export type Lesson = (typeof lessons)[number];
 
+/** The parts Training's lesson list is grouped into. */
+export type LessonSection =
+  | "combat"
+  | "defence"
+  | "movement"
+  | "potions"
+  | "specials"
+  | "spells";
+
+/** The lessons in each part of the list, in lesson order, every lesson once. */
+export const lessonSections: readonly {
+  readonly section: LessonSection;
+  readonly lessons: readonly Lesson[];
+}[] = [
+  { lessons: ["move", "lockOn"], section: "movement" },
+  { lessons: ["light", "heavy"], section: "spells" },
+  { lessons: ["shield", "dodge"], section: "defence" },
+  {
+    lessons: ["focus", "expelliarmus", "incendio", "petrificus", "depulso"],
+    section: "specials",
+  },
+  {
+    lessons: ["wiggenweld", "strength", "swiftness", "felix"],
+    section: "potions",
+  },
+  { lessons: ["clash", "disarmed"], section: "combat" },
+];
+
 /** What a lesson asks for, one at a time; each counted up to `tuning.training.goals`. */
 export type Goal = keyof Tuning["training"]["goals"];
 

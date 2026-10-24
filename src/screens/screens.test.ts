@@ -867,6 +867,10 @@ const inLesson = (
 const inTraining = (...moves: ScreenEvent[]) =>
   inLesson(0, noTraining, ...moves);
 
+/** Entrenamiento's list after `moves`. */
+const lessonsOn = (...moves: MenuInput[]) =>
+  play(onLessons(), ...moves.map(press)).screen;
+
 const lastLesson = lessons.length - 1;
 
 /** Every lesson but the last completed: the last one is all that is left. */
@@ -928,6 +932,64 @@ describe("Training", () => {
       kind: "lessons",
       selected: "move",
     });
+  });
+
+  it("walks the highlight down through every lesson, Ganar un Clash included, and opens the one picked", () => {
+    for (const [index, lesson] of lessons.entries()) {
+      const highlighted = play(
+        onLessons(),
+        ...Array.from({ length: index }, () => press("down"))
+      );
+
+      expect(highlighted.screen).toStrictEqual({
+        kind: "lessons",
+        selected: lesson,
+      });
+      expect(play(highlighted, press("confirm")).screen).toMatchObject({
+        duel: { training: { lesson } },
+        kind: "briefing",
+      });
+    }
+
+    expect(lessons).toContain("clash");
+  });
+
+  it("stops at the last lesson, and comes back up to the first", () => {
+    const bottom = play(
+      onLessons(),
+      ...Array.from({ length: lessons.length + 3 }, () => press("down"))
+    );
+
+    expect(bottom.screen).toMatchObject({ selected: "disarmed" });
+    expect(
+      play(
+        bottom,
+        ...Array.from({ length: lessons.length + 3 }, () => press("up"))
+      ).screen
+    ).toMatchObject({ selected: "move" });
+  });
+
+  it("jumps to the next section's first lesson with right (R1)", () => {
+    expect(lessonsOn("right")).toMatchObject({ selected: "light" });
+    expect(lessonsOn("right", "right", "right")).toMatchObject({
+      selected: "focus",
+    });
+    expect(
+      lessonsOn("right", "right", "right", "right", "right", "right")
+    ).toMatchObject({ selected: "clash" });
+    expect(lessonsOn("right", "right", "right", "down", "down")).toMatchObject({
+      selected: "incendio",
+    });
+  });
+
+  it("jumps back with left (L1): to the first lesson of its own section, then of the one before", () => {
+    expect(
+      lessonsOn("right", "right", "right", "down", "down", "left")
+    ).toMatchObject({ selected: "focus" });
+    expect(
+      lessonsOn("right", "right", "right", "down", "down", "left", "left")
+    ).toMatchObject({ selected: "shield" });
+    expect(lessonsOn("left")).toMatchObject({ selected: "move" });
   });
 
   it("highlights the first lesson not completed yet", () => {

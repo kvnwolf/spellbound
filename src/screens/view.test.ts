@@ -23,6 +23,13 @@ const duel: DuelScreen = {
 
 const practice: DuelScreen = { ...duel, practice: "casts" };
 
+/** Entrenamiento's preview with `selected` highlighted, Ganar un Clash completed. */
+const preview = (selected: Lesson) =>
+  viewOf(
+    { kind: "lessons", selected },
+    { certified: false, completed: ["clash"] }
+  )?.lessons?.preview;
+
 const labels = (screen: Screen) =>
   viewOf(screen)?.items?.map((item) => item.label);
 
@@ -84,41 +91,106 @@ describe("what each screen shows", () => {
     ]);
   });
 
-  it("lists the seventeen lessons on Entrenamiento, the completed ones ticked", () => {
+  it("lists the seventeen lessons on Entrenamiento in their sections, numbered, the completed ones ticked", () => {
     const view = viewOf(
       { kind: "lessons", selected: "light" },
       { certified: false, completed: ["move", "heavy"] }
     );
 
-    expect(view).toMatchObject({
-      body: text.training.pick,
-      heading: "Entrenamiento",
+    expect(view).toMatchObject({ heading: "Entrenamiento" });
+    expect(
+      view?.lessons?.sections.map((section) => [
+        section.heading,
+        section.lessons.map((entry) => `${entry.number}. ${entry.label}`),
+      ])
+    ).toStrictEqual([
+      ["Movimiento", ["1. Moverse y mirar", "2. Fijar objetivo"]],
+      ["Hechizos", ["3. Stupefy", "4. Confringo con carga"]],
+      ["Defensa", ["5. Escudo y Parry", "6. Esquiva"]],
+      [
+        "Determinación y especiales",
+        [
+          "7. La Determinación",
+          "8. Expelliarmus",
+          "9. Incendio",
+          "10. Petrificus Totalus",
+          "11. Depulso",
+        ],
+      ],
+      [
+        "Pociones",
+        [
+          "12. Wiggenweld",
+          "13. Poción Máxima",
+          "14. Poción Vigorizante",
+          "15. Felix Felicis",
+        ],
+      ],
+      ["Combate", ["16. Ganar un Clash", "17. Desarme y recoger la varita"]],
+    ]);
+    expect(
+      view?.lessons?.sections.flatMap((section) => section.lessons).slice(0, 4)
+    ).toStrictEqual([
+      {
+        done: true,
+        label: "Moverse y mirar",
+        lesson: "move",
+        number: "1",
+        selected: false,
+      },
+      {
+        done: false,
+        label: "Fijar objetivo",
+        lesson: "lockOn",
+        number: "2",
+        selected: false,
+      },
+      {
+        done: false,
+        label: "Stupefy",
+        lesson: "light",
+        number: "3",
+        selected: true,
+      },
+      {
+        done: true,
+        label: "Confringo con carga",
+        lesson: "heavy",
+        number: "4",
+        selected: false,
+      },
+    ]);
+  });
+
+  it("says how many lessons are completed over Entrenamiento's list", () => {
+    expect(
+      viewOf(
+        { kind: "lessons", selected: "light" },
+        { certified: false, completed: ["move", "heavy"] }
+      )?.lessons?.progress
+    ).toBe("2 de 17 completadas");
+  });
+
+  it("previews the highlighted lesson beside the list: its title, what it teaches and its buttons", () => {
+    expect(preview("light")).toStrictEqual({
+      body: "Un hechizo rápido que puedes encadenar: el tercero seguido aturde.",
+      controls: "□: Stupefy",
+      done: false,
+      eyebrow: "Lección 3 de 17",
+      heading: "Stupefy",
+      lesson: "light",
     });
-    expect(view?.items?.map((item) => item.label)).toStrictEqual([
-      "1. Moverse y mirar",
-      "2. Fijar objetivo",
-      "3. Stupefy",
-      "4. Confringo con carga",
-      "5. Escudo y Parry",
-      "6. Esquiva",
-      "7. La Determinación",
-      "8. Expelliarmus",
-      "9. Incendio",
-      "10. Petrificus Totalus",
-      "11. Depulso",
-      "12. Wiggenweld",
-      "13. Poción Máxima",
-      "14. Poción Vigorizante",
-      "15. Felix Felicis",
-      "16. Ganar un Clash",
-      "17. Desarme y recoger la varita",
-    ]);
-    expect(view?.items?.slice(0, 4)).toStrictEqual([
-      { done: true, label: "1. Moverse y mirar", selected: false },
-      { label: "2. Fijar objetivo", selected: false },
-      { label: "3. Stupefy", selected: true },
-      { done: true, label: "4. Confringo con carga", selected: false },
-    ]);
+    expect(preview("clash")).toMatchObject({
+      done: true,
+      eyebrow: "Lección 16 de 17",
+      heading: "Ganar un Clash",
+      lesson: "clash",
+    });
+    // A Special Spell's or a Potion's button is its slot's.
+    expect(preview("expelliarmus")?.controls).toBe("Mantén R2 y pulsa ○");
+    expect(preview("felix")?.controls).toBe(
+      "Mantén L2 y pulsa ↓, luego R2 y ✕"
+    );
   });
 
   it("heads the Difficulty select of a Duel with Duelo, and that of a Practice with Práctica", () => {
