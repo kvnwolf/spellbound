@@ -11,7 +11,7 @@ The whole contest between Duelists in one Arena, decided over several Rounds.
 _Avoid_: Game, fight, match
 
 **Round**:
-One segment of a Duel that ends when all Duelists but one Team are knocked out; the Duel goes to the first Team to win two.
+One segment of a Duel that ends when all Duelists but one Team are knocked out; the Duel goes to the first Team to win two. A Round whose last Duelists are knocked out together (in the same tick) is a draw: nobody scores it, and the next Round follows.
 _Avoid_: Set, life
 
 **Knockout**:
