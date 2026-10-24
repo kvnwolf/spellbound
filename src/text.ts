@@ -382,7 +382,7 @@ const es = {
       clash: {
         controls: "Suelta △ con la carga llena · Pulsa △ sin parar",
         what: "Si dos Confringos cargados del todo chocan de frente, se traban en un rayo entre las dos varitas.",
-        when: "Pulsa △ sin parar, más rápido que tu rival, para empujarle el rayo encima. Ganarlo llena tu Determinación.",
+        when: "Pulsa △ sin parar, más rápido que tu rival, para empujarle el rayo encima. Ganarlo suma Determinación.",
       },
       depulso: {
         controls: "Mantén R2 y pulsa {depulso}",

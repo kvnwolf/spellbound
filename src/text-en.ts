@@ -311,7 +311,7 @@ export const en: Dictionary = {
       clash: {
         controls: "Release △ at full charge · Mash △",
         what: "When two fully charged Confringos meet head-on, they lock into a beam between the two wands.",
-        when: "Mash △, faster than your rival, to drive the beam into them. Winning it fills your Determination.",
+        when: "Mash △, faster than your rival, to drive the beam into them. Winning it builds your Determination.",
       },
       depulso: {
         controls: "Hold R2 and press {depulso}",
