@@ -344,14 +344,6 @@
   color: rgb(239 228 200 / 25%);
 }
 
-#overlay .overlay-hint {
-  margin-top: 0.5rem;
-  color: rgb(239 228 200 / 55%);
-  font-size: 0.95rem;
-  letter-spacing: 0.16em;
-  white-space: pre;
-}
-
 /* The click-to-activate hint is for the connect prompt and the root menus, small and quiet under them. */
 #overlay .overlay-effects {
   margin-top: 0.5rem;
@@ -394,9 +386,9 @@
 
 /*
  * A new screen's content enters (overlay.ts adds .entering): fading up, the
- * entries one after another, the hint last.
+ * entries one after another.
  */
-#overlay.entering > :is(h2, p:not([class]), .overlay-hint) {
+#overlay.entering > :is(h2, p:not([class])) {
   animation: menu-enter 460ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
   animation-delay: var(--enter-delay, 0ms);
 }
@@ -404,10 +396,6 @@
 #overlay.entering li {
   animation: menu-enter 420ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
   animation-delay: calc(var(--enter-delay, 0ms) + 70ms + var(--entry) * 60ms);
-}
-
-#overlay.entering > p.overlay-hint {
-  animation-delay: calc(var(--enter-delay, 0ms) + 360ms);
 }
 
 @keyframes menu-enter {
@@ -493,9 +481,7 @@
   animation-delay: calc(var(--clash-delay) + 280ms);
 }
 
-#menu[data-intro="clash"]
-  #overlay
-  > :is(ul, .overlay-veil, .overlay-hint, .overlay-effects) {
+#menu[data-intro="clash"] #overlay > :is(ul, .overlay-veil, .overlay-effects) {
   animation-delay: calc(var(--clash-delay) + 420ms);
 }
 

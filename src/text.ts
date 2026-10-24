@@ -64,7 +64,6 @@ export const text = {
     practice: "Práctica",
     training: "Entrenamiento",
   },
-  menu: { hint: "✕ Confirmar     ○ Atrás" },
   pause: {
     /** In a Practice: back to the rival picker. */
     changeRival: "Cambiar rival",

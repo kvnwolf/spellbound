@@ -14,8 +14,6 @@ export const createOverlay = (element: HTMLElement) => {
   const heading = document.createElement("h2");
   const body = document.createElement("p");
   const items = document.createElement("ul");
-  const hint = document.createElement("p");
-  hint.className = "overlay-hint";
   // The title's veil over everything: one click anywhere starts the game.
   const veil = document.createElement("button");
   const veilLine = document.createElement("span");
@@ -25,7 +23,7 @@ export const createOverlay = (element: HTMLElement) => {
   const legal = document.createElement("p");
   legal.className = "overlay-legal";
   legal.textContent = text.legal;
-  element.append(heading, body, items, hint, veil, legal);
+  element.append(heading, body, items, veil, legal);
   let shown: string | undefined;
 
   /**
@@ -38,7 +36,7 @@ export const createOverlay = (element: HTMLElement) => {
     const laidOut = [...element.children].filter(
       (child): child is HTMLElement =>
         child instanceof HTMLElement &&
-        child.matches("h2, p:not([class]), ul, .overlay-hint") &&
+        child.matches("h2, p:not([class]), ul") &&
         child.offsetParent !== null
     );
 
@@ -104,8 +102,6 @@ export const createOverlay = (element: HTMLElement) => {
       heading.hidden = view.heading === text.title;
       writeWithIcons(body, view.body ?? "");
       body.hidden = view.body === undefined;
-      writeWithIcons(hint, view.hint ?? "");
-      hint.hidden = view.hint === undefined;
       // The veil keeps its words while it fades out.
       veilLine.textContent = view.action ?? veilLine.textContent;
       veil.classList.toggle("shown", view.action !== undefined);

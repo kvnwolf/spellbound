@@ -1,7 +1,7 @@
 /**
  * What each screen shows, as plain data: the heading, an optional line, the
  * menu items with the highlighted one marked (and any not available yet
- * greyed out) and a hint of the controls. The overlay draws it; the Duel
+ * greyed out). The overlay draws it; the Duel
  * screen itself shows nothing here, since the Duel and its HUD are the picture.
  */
 import { difficulties } from "../duel/difficulty";
@@ -25,7 +25,6 @@ export interface ScreenView {
     /** Listed but not available yet: greyed out, never highlighted. */
     readonly disabled?: true;
   }[];
-  readonly hint?: string;
   /** A click anywhere does this (the title's start), said over a veil. */
   readonly action?: string;
 }
@@ -74,7 +73,6 @@ export const viewOf = (screen: Screen): ScreenView | undefined => {
   if (screen.kind === "main") {
     return {
       heading: text.title,
-      hint: text.menu.hint,
       items: menu(
         mainMenuOptions,
         screen.selected,
@@ -89,7 +87,6 @@ export const viewOf = (screen: Screen): ScreenView | undefined => {
     return {
       body: text.difficulty.heading,
       heading: screen.practice ? text.practice.heading : text.mainMenu.duel,
-      hint: text.menu.hint,
       items: menu(
         difficulties,
         screen.selected,
@@ -103,7 +100,6 @@ export const viewOf = (screen: Screen): ScreenView | undefined => {
     return {
       body: text.practice.rivals,
       heading: text.practice.heading,
-      hint: text.menu.hint,
       items: menu(
         practiceRivals,
         screen.selected,
@@ -118,7 +114,6 @@ export const viewOf = (screen: Screen): ScreenView | undefined => {
 
     return {
       heading: text.pause.heading,
-      hint: text.menu.hint,
       items: menu(pauseOptionsFor(screen.duel), screen.selected, (option) =>
         option === "quit" && practice
           ? text.pause.quitToMenu
@@ -141,7 +136,6 @@ export const viewOf = (screen: Screen): ScreenView | undefined => {
   if (screen.kind === "result") {
     return {
       heading: screen.won ? text.hud.victory : text.hud.defeat,
-      hint: text.menu.hint,
       items: menu(
         resultOptions,
         screen.selected,
