@@ -567,20 +567,20 @@ export interface Duel {
 }
 
 /** A circle a Duelist's body cannot overlap: a column of Cover, an Obstruction or another Duelist. */
-interface Obstacle {
+interface Collider {
   readonly center: GroundPoint;
   readonly radius: number;
 }
 
 /**
- * Pushes a Duelist's body (a circle of `radius`) out of every obstacle it
+ * Pushes a Duelist's body (a circle of `radius`) out of every collider it
  * overlaps, then back inside the Arena bounds. Pushing out along the contact
  * normal is what makes a Duelist slide around a column instead of sticking.
  */
 const collide = (
   point: GroundPoint,
   radius: number,
-  obstacles: readonly Obstacle[],
+  colliders: readonly Collider[],
   arena: ArenaLayout
 ): GroundPoint => {
   const maxX = arena.bounds.halfWidth - radius;
@@ -590,17 +590,17 @@ const collide = (
   // Two passes settle the rare case of a column close enough to a wall that
   // resolving one contact pushes the body into the other.
   for (let pass = 0; pass < 2; pass += 1) {
-    for (const obstacle of obstacles) {
-      const distance = distanceBetween(obstacle.center, { x, z });
-      const minDistance = obstacle.radius + radius;
+    for (const collider of colliders) {
+      const distance = distanceBetween(collider.center, { x, z });
+      const minDistance = collider.radius + radius;
 
       if (distance < minDistance && distance > 1e-9) {
         x =
-          obstacle.center.x +
-          ((x - obstacle.center.x) / distance) * minDistance;
+          collider.center.x +
+          ((x - collider.center.x) / distance) * minDistance;
         z =
-          obstacle.center.z +
-          ((z - obstacle.center.z) / distance) * minDistance;
+          collider.center.z +
+          ((z - collider.center.z) / distance) * minDistance;
       }
     }
 
@@ -755,10 +755,13 @@ const chestOf = (duelist: DuelistState, tuning: Tuning): Point3 => ({
 });
 
 /**
- * Per-Duelist bookkeeping the snapshot has no need to show. Timers count
+ * What the simulation remembers of each Duelist from tick to tick that the
+ * snapshot has no need to show: the buttons held last tick, the movement
+ * springs, and every timer (Cooldowns, Stagger, Burn, Petrified, a Dodge, a
+ * knockback, a Potion being drunk or working, a loose Wand). Timers count
  * whole ticks so cadences are exact instead of drifting with float sums.
  */
-interface Bookkeeping {
+interface DuelistMemory {
   /** How the walking velocity is changing, m/s² (world): the velocity spring's other half. */
   acceleration: GroundPoint;
   /**
@@ -854,7 +857,7 @@ type Release =
   | { readonly kind: "confringo"; readonly chargeSeconds: number }
   | { readonly kind: SpecialSpellKind };
 
-const freshBookkeeping = (): Bookkeeping => ({
+const freshMemory = (): DuelistMemory => ({
   acceleration: { x: 0, z: 0 },
   burnCasterId: undefined,
   burnTicks: 0,
@@ -1008,14 +1011,14 @@ export const createDuel = (config: DuelConfig): Duel => {
   const stride = () => tuning.duelist.walkSpeed * tickSeconds;
   const ticksOf = (seconds: number) => Math.round(seconds * tuning.tickRate);
 
-  const bookkeeping = new Map<DuelistId, Bookkeeping>();
+  const memories = new Map<DuelistId, DuelistMemory>();
 
-  const books = (id: DuelistId): Bookkeeping => {
-    let found = bookkeeping.get(id);
+  const books = (id: DuelistId): DuelistMemory => {
+    let found = memories.get(id);
 
     if (!found) {
-      found = freshBookkeeping();
-      bookkeeping.set(id, found);
+      found = freshMemory();
+      memories.set(id, found);
     }
 
     return found;
@@ -1037,7 +1040,7 @@ export const createDuel = (config: DuelConfig): Duel => {
    */
   const turnFacing = (
     self: DuelistState,
-    book: Bookkeeping,
+    book: DuelistMemory,
     aiming: boolean,
     heading: GroundPoint | undefined
   ): GroundPoint => {
@@ -1102,7 +1105,7 @@ export const createDuel = (config: DuelConfig): Duel => {
 
   /** Notes where a walk means to end and the spring's velocity there, and returns the spot. */
   const walkTo = (
-    book: Bookkeeping,
+    book: DuelistMemory,
     to: GroundPoint,
     rate: GroundPoint
   ): GroundPoint => {
@@ -1123,7 +1126,7 @@ export const createDuel = (config: DuelConfig): Duel => {
    */
   const easeStep = (
     self: DuelistState,
-    book: Bookkeeping,
+    book: DuelistMemory,
     wanted: GroundPoint,
     swift: number,
     target: GroundPoint | undefined
@@ -1234,7 +1237,7 @@ export const createDuel = (config: DuelConfig): Duel => {
   };
 
   /** Still facing the aim after a cast: a burst on the move never swings the Duelist about. */
-  const castRecently = (book: Bookkeeping) =>
+  const castRecently = (book: DuelistMemory) =>
     book.ticksSinceCast < aimHoldTicks;
 
   /**
@@ -1371,7 +1374,7 @@ export const createDuel = (config: DuelConfig): Duel => {
    * looking at the nearest opponent's chest and facing the way they look.
    */
   const lineUp = (): DuelistState[] => {
-    bookkeeping.clear();
+    memories.clear();
 
     const spawned: DuelistState[] = config.duelists.map((setup) => ({
       aim: { pitch: tuning.aim.pitch.rest, yaw: 0 },
@@ -1778,7 +1781,7 @@ export const createDuel = (config: DuelConfig): Duel => {
    * The Wand in hand and not mid-Dodge: free to Shield or cast. Disarmed,
    * the Wand is not in hand: no Shield, no Spells.
    */
-  const handsFree = (book: Bookkeeping) =>
+  const handsFree = (book: DuelistMemory) =>
     book.dodgeTicks === 0 && book.wand === undefined;
 
   /** Stamina as it is spent through one tick; `unlimited` under a Swiftness Potion, when nothing costs any. */
@@ -1789,7 +1792,7 @@ export const createDuel = (config: DuelConfig): Duel => {
   }
 
   /** A Duelist's Stamina for this tick: under a Swiftness Potion it stays full and nothing spends it. */
-  const purseOf = (self: DuelistState, book: Bookkeeping): Purse => {
+  const purseOf = (self: DuelistState, book: DuelistMemory): Purse => {
     const unlimited = book.effectTicks.swiftness > 0;
 
     return {
@@ -1809,7 +1812,7 @@ export const createDuel = (config: DuelConfig): Duel => {
   };
 
   /** Stamina regenerates only once nothing has been spent for a moment. */
-  const regenerate = (book: Bookkeeping, purse: Purse) => {
+  const regenerate = (book: DuelistMemory, purse: Purse) => {
     if (purse.spent) {
       book.regenTicks = ticksOf(defence.stamina.regenDelay);
     } else if (book.regenTicks > 0) {
@@ -1829,7 +1832,7 @@ export const createDuel = (config: DuelConfig): Duel => {
    * A Light or Heavy Spell's cast paid for after the defence settled the
    * tick: it spends like any defence, and Stamina waits out the delay again.
    */
-  const payForCast = (book: Bookkeeping, purse: Purse, cost: number) => {
+  const payForCast = (book: DuelistMemory, purse: Purse, cost: number) => {
     spend(purse, cost);
 
     if (purse.spent) {
@@ -1838,7 +1841,7 @@ export const createDuel = (config: DuelConfig): Duel => {
   };
 
   /** The jump's flight: gravity pulls an airborne Duelist down until they land. Returns the new elevation. */
-  const fall = (self: DuelistState, book: Bookkeeping, draft: Draft) => {
+  const fall = (self: DuelistState, book: DuelistMemory, draft: Draft) => {
     if (self.elevation === 0 && book.verticalSpeed <= 0) {
       return 0;
     }
@@ -1983,7 +1986,7 @@ export const createDuel = (config: DuelConfig): Duel => {
    * Shield drops and the sprint ends, until pressed again.
    */
   const drain = (
-    book: Bookkeeping,
+    book: DuelistMemory,
     shielding: boolean,
     sprinting: boolean,
     purse: Purse
@@ -2289,7 +2292,7 @@ export const createDuel = (config: DuelConfig): Duel => {
    * steadily to zero: the steps (2 * ticksLeft - 1) / ticks² sum to exactly
    * the knockback distance over the slide.
    */
-  const slide = (book: Bookkeeping): GroundPoint => {
+  const slide = (book: DuelistMemory): GroundPoint => {
     const { knockback } = book;
 
     if (!knockback) {
@@ -3157,7 +3160,7 @@ export const createDuel = (config: DuelConfig): Duel => {
    * the Wand. Casting happens on the press, or as soon as the last cast's
    * recovery ends if the press came during it.
    */
-  const wantsToCast = (book: Bookkeeping, pressed: boolean) => {
+  const wantsToCast = (book: DuelistMemory, pressed: boolean) => {
     book.queued ||= pressed;
 
     if (!book.queued || book.recoveryTicks > 0) {
@@ -3177,7 +3180,7 @@ export const createDuel = (config: DuelConfig): Duel => {
    */
   const charge = (
     self: DuelistState,
-    book: Bookkeeping,
+    book: DuelistMemory,
     {
       intent,
       pressed,
@@ -3213,8 +3216,8 @@ export const createDuel = (config: DuelConfig): Duel => {
    */
   const sidelined = (
     self: DuelistState,
-    book: Bookkeeping,
-    obstacles: readonly Obstacle[]
+    book: DuelistMemory,
+    colliders: readonly Collider[]
   ): DuelistState => {
     book.queued = false;
     book.chargeTicks = 0;
@@ -3229,7 +3232,7 @@ export const createDuel = (config: DuelConfig): Duel => {
         ? collide(
             { x: self.position.x + pushed.x, z: self.position.z + pushed.z },
             bodyRadius,
-            obstacles,
+            colliders,
             arena
           )
         : self.position,
@@ -3243,7 +3246,7 @@ export const createDuel = (config: DuelConfig): Duel => {
    */
   const backfire = (
     self: DuelistState,
-    book: Bookkeeping,
+    book: DuelistMemory,
     events: DuelEvent[],
     backfires: Map<DuelistId, number>
   ): DuelistState => {
@@ -3274,7 +3277,7 @@ export const createDuel = (config: DuelConfig): Duel => {
    */
   const spellsOf = (
     self: DuelistState,
-    book: Bookkeeping,
+    book: DuelistMemory,
     {
       guard,
       heavyPressed,
@@ -3326,7 +3329,7 @@ export const createDuel = (config: DuelConfig): Duel => {
   };
 
   /** The Special Spells' Cooldowns as the snapshot shows them, in seconds. */
-  const cooldownsOf = (book: Bookkeeping) => ({
+  const cooldownsOf = (book: DuelistMemory) => ({
     depulso: book.cooldownTicks.depulso * tickSeconds,
     expelliarmus: book.cooldownTicks.expelliarmus * tickSeconds,
     incendio: book.cooldownTicks.incendio * tickSeconds,
@@ -3346,7 +3349,7 @@ export const createDuel = (config: DuelConfig): Duel => {
    */
   const canCastSpecial = (
     self: DuelistState,
-    book: Bookkeeping,
+    book: DuelistMemory,
     guard: Guard,
     kind: SpecialSpellKind
   ) =>
@@ -3368,7 +3371,7 @@ export const createDuel = (config: DuelConfig): Duel => {
    */
   const specialOf = (
     self: DuelistState,
-    book: Bookkeeping,
+    book: DuelistMemory,
     guard: Guard,
     pressed: SpellSlot | null
   ): SpecialCast | undefined => {
@@ -3390,7 +3393,7 @@ export const createDuel = (config: DuelConfig): Duel => {
   /** Whether a standing Duelist is free to act: not Staggered, Petrified, knocked back or rooted in a Clash. */
   const free = (
     self: DuelistState,
-    book: Bookkeeping,
+    book: DuelistMemory,
     clash: ClashState | null
   ) =>
     onFeet(self) &&
@@ -3402,7 +3405,7 @@ export const createDuel = (config: DuelConfig): Duel => {
   /** Whether a standing Duelist is only sliding back behind their Shield from a Depulso, mid-fight: they can keep it up. */
   const guardedSlide = (
     self: DuelistState,
-    book: Bookkeeping,
+    book: DuelistMemory,
     phase: RoundPhase
   ) =>
     phase === "fighting" &&
@@ -3412,7 +3415,7 @@ export const createDuel = (config: DuelConfig): Duel => {
     book.knockback?.guarded === true;
 
   /** One tick off every per-Duelist timer: recovery, Stagger, Petrified and the Cooldowns. */
-  const countDown = (book: Bookkeeping) => {
+  const countDown = (book: DuelistMemory) => {
     book.recoveryTicks = Math.max(book.recoveryTicks - 1, 0);
     book.staggerTicks = Math.max(book.staggerTicks - 1, 0);
     book.petrifiedTicks = Math.max(book.petrifiedTicks - 1, 0);
@@ -3468,7 +3471,7 @@ export const createDuel = (config: DuelConfig): Duel => {
    */
   const drinkOf = (
     self: DuelistState,
-    book: Bookkeeping,
+    book: DuelistMemory,
     guard: Guard,
     pressed: PotionSlot | null
   ): PotionKind | undefined => {
@@ -3495,7 +3498,7 @@ export const createDuel = (config: DuelConfig): Duel => {
    */
   const takeEffect = (
     self: DuelistState,
-    book: Bookkeeping,
+    book: DuelistMemory,
     kind: PotionKind,
     draft: Draft
   ): Pick<DuelistState, "focus" | "health"> => {
@@ -3531,7 +3534,7 @@ export const createDuel = (config: DuelConfig): Duel => {
   };
 
   /** The walking stride's multiplier under a Swiftness Potion: faster while it lasts. */
-  const swiftScale = (book: Bookkeeping) =>
+  const swiftScale = (book: DuelistMemory) =>
     book.effectTicks.swiftness > 0 ? tuning.potions.swiftness.speedScale : 1;
 
   /** What `drinkTick` needs of the Duelist acting this tick. */
@@ -3542,7 +3545,7 @@ export const createDuel = (config: DuelConfig): Duel => {
     readonly defended: DuelistState;
     readonly guard: Guard;
     readonly intent: Intent;
-    readonly obstacles: readonly Obstacle[];
+    readonly colliders: readonly Collider[];
     readonly target: DuelistState | undefined;
   }
 
@@ -3554,8 +3557,8 @@ export const createDuel = (config: DuelConfig): Duel => {
    * they are not drinking.
    */
   const drinkTick = (
-    { defended, guard, intent, obstacles, self, target }: Actor,
-    book: Bookkeeping,
+    { colliders, defended, guard, intent, self, target }: Actor,
+    book: DuelistMemory,
     draft: Draft
   ): DuelistState | undefined => {
     const started = drinkOf(self, book, guard, intent.potionSlots.press);
@@ -3624,7 +3627,7 @@ export const createDuel = (config: DuelConfig): Duel => {
       focus,
       health,
       knockbackSeconds: 0,
-      position: collide(wanted, bodyRadius, obstacles, arena),
+      position: collide(wanted, bodyRadius, colliders, arena),
       potions: started
         ? { ...self.potions, [started]: self.potions[started] - 1 }
         : self.potions,
@@ -3639,7 +3642,7 @@ export const createDuel = (config: DuelConfig): Duel => {
    */
   const faceAfterActing = (
     self: DuelistState,
-    book: Bookkeeping,
+    book: DuelistMemory,
     guard: Guard,
     release: Release | undefined,
     move: Vec2
@@ -3735,18 +3738,18 @@ export const createDuel = (config: DuelConfig): Duel => {
         .filter((other) => other.id !== self.id)
         .map((other) => ({ center: other.position, radius: bodyRadius }));
 
-      const obstacles = [...arena.cover, ...arena.obstructions, ...others];
+      const colliders = [...arena.cover, ...arena.obstructions, ...others];
 
       if (!canAct) {
         // Losing control loses the Potion too.
         interruptDrink(draft, self.id, phase === "fighting");
 
-        return status(sidelined(defended, book, obstacles));
+        return status(sidelined(defended, book, colliders));
       }
 
       // Drinking a Potion (or starting one) takes the whole tick.
       const drinking = drinkTick(
-        { defended, guard, intent, obstacles, self, target },
+        { colliders, defended, guard, intent, self, target },
         book,
         draft
       );
@@ -3814,7 +3817,7 @@ export const createDuel = (config: DuelConfig): Duel => {
         facing: faceAfterActing(self, book, guard, release, move),
         focus: self.focus - (special?.cost ?? 0),
         knockbackSeconds: 0,
-        position: collide(wanted, bodyRadius, obstacles, arena),
+        position: collide(wanted, bodyRadius, colliders, arena),
         staggerSeconds: book.staggerTicks * tickSeconds,
         stamina: guard.purse.stamina,
       });

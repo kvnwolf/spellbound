@@ -83,8 +83,8 @@ type Defence =
   | { readonly action: "dodge"; readonly at: number; readonly side: -1 | 1 }
   | { readonly action: "jump"; readonly at: number };
 
-/** The attack in progress: a burst of Stupefies, or a Confringo being Charged. */
-type Attack =
+/** The casting in progress: a burst of Stupefies, or a Confringo being Charged. */
+type Casting =
   | { readonly kind: "light"; readonly left: number; readonly nextAt: number }
   | {
       readonly kind: "heavy";
@@ -129,8 +129,8 @@ interface Memory {
   stuckTicks: number;
   /** Defences planned against Spells on their way, in the order they were planned. */
   defences: Defence[];
-  attack: Attack | undefined;
-  nextAttackAt: number;
+  casting: Casting | undefined;
+  nextCastingAt: number;
   punishAt: number | undefined;
   /** The opening the opponent gave last tick, if any. */
   opponentOpening: Opening | undefined;
@@ -169,15 +169,15 @@ interface Memory {
 
 const freshMemory = (): Memory => ({
   askedStride: 0,
-  attack: undefined,
   bait: undefined,
   castAt: Number.NEGATIVE_INFINITY,
+  casting: undefined,
   cover: undefined,
   defences: [],
   detour: undefined,
   hidToDrink: false,
   lockReadyAt: 0,
-  nextAttackAt: 0,
+  nextCastingAt: 0,
   opponentOpening: undefined,
   opponentWasThreatening: false,
   potionLookAt: 0,
@@ -252,7 +252,7 @@ export const createAiController = ({
   /** Back to a clean slate at the start of every Round. */
   const resetFor = (round: number, now: number) => {
     Object.assign(memory, freshMemory(), {
-      nextAttackAt: now + reaction(),
+      nextCastingAt: now + reaction(),
       round,
       specialLookAt: now + reaction(),
     });
@@ -574,7 +574,7 @@ export const createAiController = ({
   const punish = (self: DuelistState, opponent: DuelistState, now: number) => {
     memory.punishAt = undefined;
 
-    if (memory.attack?.kind === "heavy") {
+    if (memory.casting?.kind === "heavy") {
       return;
     }
 
@@ -585,7 +585,7 @@ export const createAiController = ({
     const heavy =
       opening >= hold && self.stamina >= tuning.confringo.staminaCost;
 
-    memory.attack = heavy
+    memory.casting = heavy
       ? { kind: "heavy", releaseAt: now + hold, startedAt: now }
       : {
           kind: "light",
@@ -594,8 +594,8 @@ export const createAiController = ({
         };
   };
 
-  /** Starts the next attack once its pause is over, unless the Target is crossing the line of fire. */
-  const startAttack = (
+  /** Starts the next casting once its pause is over, unless the Target is crossing the line of fire. */
+  const startCasting = (
     self: DuelistState,
     opponent: DuelistState,
     now: number
@@ -612,7 +612,7 @@ export const createAiController = ({
       const crossing = Math.abs(moved.x * across.x + moved.z * across.z);
 
       if (crossing > ai.crossingSpeed && random() < profile.discipline) {
-        memory.nextAttackAt = now + ai.waitSeconds;
+        memory.nextCastingAt = now + ai.waitSeconds;
 
         return;
       }
@@ -626,7 +626,7 @@ export const createAiController = ({
       random() < profile.heavyShare &&
       spare >= tuning.confringo.staminaCost
     ) {
-      memory.attack = {
+      memory.casting = {
         kind: "heavy",
         releaseAt: now + chargeHold(),
         startedAt: now,
@@ -643,60 +643,60 @@ export const createAiController = ({
     );
 
     if (left <= 0) {
-      memory.nextAttackAt = now + ai.waitSeconds;
+      memory.nextCastingAt = now + ai.waitSeconds;
 
       return;
     }
 
-    memory.attack = { kind: "light", left, nextAt: now };
+    memory.casting = { kind: "light", left, nextAt: now };
   };
 
-  /** The buttons of the attack in progress this tick, moving it along. */
-  const attackButtons = (
+  /** The buttons of the casting in progress this tick, moving it along. */
+  const castingButtons = (
     self: DuelistState,
     now: number
   ): Pick<Intent, "heavySpell" | "lightSpell"> => {
-    const { attack } = memory;
+    const { casting } = memory;
     const none = { heavySpell: false, lightSpell: false };
 
-    if (!attack) {
+    if (!casting) {
       return none;
     }
 
-    if (attack.kind === "heavy") {
+    if (casting.kind === "heavy") {
       // The Charge was lost (a hit, a Dodge): give up on it.
       const lost =
-        now > attack.startedAt + 2 * tickSeconds && self.chargeSeconds === 0;
+        now > casting.startedAt + 2 * tickSeconds && self.chargeSeconds === 0;
 
-      if (now < attack.releaseAt && !lost) {
+      if (now < casting.releaseAt && !lost) {
         return { ...none, heavySpell: true };
       }
 
-      memory.attack = undefined;
-      memory.nextAttackAt = now + between(random, profile.attackPause);
+      memory.casting = undefined;
+      memory.nextCastingAt = now + between(random, profile.castingPause);
       memory.castAt = now;
 
       return none;
     }
 
-    if (now < attack.nextAt || memory.pressed.light) {
+    if (now < casting.nextAt || memory.pressed.light) {
       return none;
     }
 
     // Out of Stamina for the next Stupefy: the burst is over.
     if (self.stamina < tuning.stupefy.staminaCost) {
-      memory.attack = undefined;
-      memory.nextAttackAt = now + between(random, profile.attackPause);
+      memory.casting = undefined;
+      memory.nextCastingAt = now + between(random, profile.castingPause);
 
       return none;
     }
 
-    const left = attack.left - 1;
+    const left = casting.left - 1;
 
-    memory.attack =
+    memory.casting =
       left > 0
         ? {
-            ...attack,
+            ...casting,
             left,
             nextAt:
               now + tuning.stupefy.castInterval + between(random, ai.burstGap),
@@ -704,7 +704,7 @@ export const createAiController = ({
         : undefined;
 
     if (left === 0) {
-      memory.nextAttackAt = now + between(random, profile.attackPause);
+      memory.nextCastingAt = now + between(random, profile.castingPause);
     }
 
     memory.castAt = now;
@@ -809,7 +809,7 @@ export const createAiController = ({
         spot,
         until: now + between(random, ai.cover.seconds),
       };
-      memory.attack = undefined;
+      memory.casting = undefined;
     }
   };
 
@@ -1035,11 +1035,11 @@ export const createAiController = ({
     };
   };
 
-  /** The Spell Slot of the Special Spell `kind`, cast now: the attack under way is dropped and the next waits its pause. */
+  /** The Spell Slot of the Special Spell `kind`, cast now: the casting under way is dropped and the next waits its pause. */
   const castSpecial = (kind: SpecialSpellKind, now: number) => {
-    memory.attack = undefined;
+    memory.casting = undefined;
     memory.bait = undefined;
-    memory.nextAttackAt = now + between(random, profile.attackPause);
+    memory.nextCastingAt = now + between(random, profile.castingPause);
 
     return slotOf(kind, tuning);
   };
@@ -1057,7 +1057,7 @@ export const createAiController = ({
   ): SpellSlot | undefined => {
     const { bait } = memory;
 
-    if (!bait || memory.attack) {
+    if (!bait || memory.casting) {
       return undefined;
     }
 
@@ -1108,7 +1108,7 @@ export const createAiController = ({
   ): SpellSlot | undefined => {
     // Not while Charging, nor on the heels of the last cast: hands take a moment.
     if (
-      memory.attack?.kind === "heavy" ||
+      memory.casting?.kind === "heavy" ||
       now < memory.castAt + ai.specials.afterCastSeconds
     ) {
       return undefined;
@@ -1151,7 +1151,7 @@ export const createAiController = ({
 
     if (kind === "expelliarmus" && random() < profile.specials.bait) {
       // A single Stupefy to draw the Shield out first.
-      memory.attack = { kind: "light", left: 1, nextAt: now };
+      memory.casting = { kind: "light", left: 1, nextAt: now };
       memory.bait = {
         sawShield: false,
         until: now + ai.specials.baitSeconds,
@@ -1164,12 +1164,12 @@ export const createAiController = ({
   };
 
   /**
-   * The attack buttons this tick: a punish once its reaction is over, else
-   * the next attack once its pause is, carried on until done. Defending
-   * drops the attack under way; the next one can follow as soon as the
+   * The casting buttons this tick: a punish once its reaction is over, else
+   * the next casting once its pause is, carried on until done. Defending
+   * drops the casting under way; the next one can follow as soon as the
    * defence is over, a counter.
    */
-  const attackFor = (
+  const castingFor = (
     self: DuelistState,
     opponent: DuelistState,
     { busy, incoming }: { readonly busy: boolean; readonly incoming: boolean },
@@ -1178,15 +1178,15 @@ export const createAiController = ({
     const none = { ...idleSpells, heavySpell: false, lightSpell: false };
 
     if (busy) {
-      memory.attack = undefined;
+      memory.casting = undefined;
     }
 
     // Waiting on a defence: hold fire (a Spell cast now would only meet the
     // incoming one in the air), though a Charge already building carries on.
     const waiting =
-      memory.defences.length > 0 && memory.attack?.kind !== "heavy";
+      memory.defences.length > 0 && memory.casting?.kind !== "heavy";
 
-    const canAttack =
+    const canCast =
       !busy &&
       !waiting &&
       memory.cover === undefined &&
@@ -1195,7 +1195,7 @@ export const createAiController = ({
       self.looseWand === null &&
       self.drinking === null;
 
-    if (!canAttack) {
+    if (!canCast) {
       return none;
     }
 
@@ -1208,16 +1208,16 @@ export const createAiController = ({
     if (memory.punishAt !== undefined && now >= memory.punishAt) {
       punish(self, opponent, now);
     } else if (
-      !memory.attack &&
+      !memory.casting &&
       !memory.bait &&
-      now >= memory.nextAttackAt &&
-      // Answering spam: the Parries are the attack; Stamina goes on the Shield.
+      now >= memory.nextCastingAt &&
+      // Answering spam: the Parries are the answer; Stamina goes on the Shield.
       now >= memory.spamUntil
     ) {
-      startAttack(self, opponent, now);
+      startCasting(self, opponent, now);
     }
 
-    return { ...attackButtons(self, now), ...idleSpells };
+    return { ...castingButtons(self, now), ...idleSpells };
   };
 
   /**
@@ -1242,7 +1242,7 @@ export const createAiController = ({
 
     if (spot) {
       memory.cover = { spot, until: now + between(random, ai.cover.seconds) };
-      memory.attack = undefined;
+      memory.casting = undefined;
     }
   };
 
@@ -1272,7 +1272,7 @@ export const createAiController = ({
     if (
       busy ||
       !handsFree(self) ||
-      memory.attack?.kind === "heavy" ||
+      memory.casting?.kind === "heavy" ||
       now < memory.potionLookAt
     ) {
       return undefined;
@@ -1314,7 +1314,7 @@ export const createAiController = ({
       return undefined;
     }
 
-    memory.attack = undefined;
+    memory.casting = undefined;
     memory.bait = undefined;
 
     return potionSlotOf(choice, tuning);
@@ -1373,7 +1373,7 @@ export const createAiController = ({
       : {
           ...idleIntent,
           ...walking,
-          ...attackFor(self, opponent, { busy, incoming }, now),
+          ...castingFor(self, opponent, { busy, incoming }, now),
           ...defending,
         };
 
@@ -1392,7 +1392,7 @@ export const createAiController = ({
    * doing before the Clash is dropped.
    */
   const pumpFor = (now: number): boolean => {
-    memory.attack = undefined;
+    memory.casting = undefined;
     memory.defences = [];
 
     if (memory.pumpAt === undefined) {
@@ -1455,7 +1455,7 @@ export const createAiController = ({
     if (sidelined) {
       // Sidelined: whatever was under way is lost; start afresh once free,
       // noticing every Spell still flying at it then.
-      memory.attack = undefined;
+      memory.casting = undefined;
       memory.defences = [];
       memory.seen.clear();
 

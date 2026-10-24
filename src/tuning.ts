@@ -62,9 +62,9 @@ export const tuning = {
     potions: { chaseDistance: 5, lookSeconds: 0.3, safeDistance: 8 },
     profiles: {
       duelista: {
-        attackPause: { max: 1.9, min: 0.8 },
         band: { max: 12, min: 7 },
         burst: { max: 3, min: 1 },
+        castingPause: { max: 1.9, min: 0.8 },
         chargeHold: { mean: 0.5, spread: 0.035 },
         clashPumpRate: { max: 5.5, min: 4 },
         coverChance: 0.2,
@@ -88,9 +88,9 @@ export const tuning = {
       },
       /** Quick, defends almost everything (often with a Parry), times the Charge, punishes. */
       maestro: {
-        attackPause: { max: 1.3, min: 0.5 },
         band: { max: 12, min: 7 },
         burst: { max: 3, min: 2 },
+        castingPause: { max: 1.3, min: 0.5 },
         chargeHold: { mean: 0.51, spread: 0.015 },
         clashPumpRate: { max: 9.5, min: 7.5 },
         coverChance: 0.3,
@@ -114,12 +114,12 @@ export const tuning = {
       },
       /** Slow to react, rarely defends, mistimes the Charge, presses little. */
       novato: {
-        /** Seconds between one attack and the next. */
-        attackPause: { max: 2.8, min: 1.3 },
         /** The distance it keeps from its Target, metres. */
         band: { max: 11, min: 6 },
         /** Stupefies in a burst (whole numbers): three in a row make the strong cast that Staggers. */
         burst: { max: 2, min: 1 },
+        /** Seconds between one burst of Stupefies or Charged Confringo and the next. */
+        castingPause: { max: 2.8, min: 1.3 },
         /** How long it holds a Charge before releasing (seconds since the press): a normal spread around `mean`. */
         chargeHold: { mean: 0.47, spread: 0.07 },
         /** Presses per second it pumps in a Clash, picked afresh for every press: a person mashing △ manages about 6 to 9. */
@@ -132,7 +132,7 @@ export const tuning = {
         defendChance: 0.3,
         /** Chance to hold a cast while the Target crosses the line of fire. */
         discipline: 0,
-        /** Share of attacks that are a Charged Confringo; the rest are Stupefy bursts. */
+        /** Share of castings that are a Charged Confringo; the rest are Stupefy bursts. */
         heavyShare: 0.3,
         /**
          * Potions: it drinks Wiggenweld at or below `wiggenweldBelow` of full
@@ -178,7 +178,7 @@ export const tuning = {
      * mean no more than `maxGap`, is a predictable rhythm. A Shield against
      * a Spell so read goes up `parryLead` seconds before it lands: inside
      * `defence.shield.parryWindow`, a Parry. For `maxGap` seconds after
-     * each Spell so read, the AI starts no attack but a punish (the Parries
+     * each Spell so read, the AI starts no casting but a punish (the Parries
      * are its answer, and its Stamina goes on the Shield) and drinks nothing.
      */
     spamRead: {

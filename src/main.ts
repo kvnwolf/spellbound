@@ -271,13 +271,13 @@ const start = async () => {
    * Practice (same courtyard, Practice rules) against a Training Dummy or
    * the AI, which a Training lesson is too, set up as the lesson needs.
    */
-  type Match = Pick<DuelScreen, "difficulty" | "practice" | "training">;
+  type DuelSetup = Pick<DuelScreen, "difficulty" | "practice" | "training">;
 
   // Behind the menus sits a fresh Duel (run 0), frozen at its start.
-  const waiting: Match = { difficulty: "duelista", practice: null };
+  const waiting: DuelSetup = { difficulty: "duelista", practice: null };
 
-  /** The Practice rules `match` is played under: a Training lesson's own, or none for a Duel. */
-  const rulesFor = ({ practice, training }: Match) => {
+  /** The Practice rules `setup` is played under: a Training lesson's own, or none for a Duel. */
+  const rulesFor = ({ practice, training }: DuelSetup) => {
     if (training) {
       return lessonRules(training.lesson, localId, tuning);
     }
@@ -285,19 +285,19 @@ const start = async () => {
     return practice === null ? undefined : practiceRulesFor(practice, localId);
   };
 
-  const createDuelFor = (match: Match) =>
+  const createDuelFor = (setup: DuelSetup) =>
     createDuel({
       arena: courtyard,
-      difficulty: match.difficulty,
+      difficulty: setup.difficulty,
       duelists: [
         { id: localId, spawn: courtyardSpawns.near, team: "near" },
         { id: opponentId, spawn: courtyardSpawns.far, team: "far" },
       ],
-      practice: rulesFor(match),
+      practice: rulesFor(setup),
       tuning,
     });
 
-  const createControllers = ({ difficulty, practice }: Match) => {
+  const createControllers = ({ difficulty, practice }: DuelSetup) => {
     const rival: PracticeRival = practice ?? "ai";
 
     return new Map<DuelistId, Controller>([
@@ -471,8 +471,8 @@ const start = async () => {
 
   rivalDummy.object.visible = false;
 
-  /** Puts the rival `match` calls for in the courtyard: a Training Dummy, or the wizard. */
-  const dressRival = ({ practice }: Match) => {
+  /** Puts the rival `setup` calls for in the courtyard: a Training Dummy, or the wizard. */
+  const dressRival = ({ practice }: DuelSetup) => {
     const dummy = practice !== null && practice !== "ai";
     rivalDummy.object.visible = dummy;
     rivalWizard.object.visible = !dummy;
@@ -738,17 +738,17 @@ const start = async () => {
   let lastFrame: number | undefined;
 
   /** Swaps in a brand-new Duel, as the first or a restarted one. */
-  const startRun = (run: number, match: Match) => {
+  const startRun = (run: number, setup: DuelSetup) => {
     // Hide any Spell still flying from the old Duel before its ids repeat.
     vfx.update(current.spells, [], 0, 0);
-    duel = createDuelFor(match);
-    controllers = createControllers(match);
-    dressRival(match);
+    duel = createDuelFor(setup);
+    controllers = createControllers(setup);
+    dressRival(setup);
     clock = createFixedStepClock(tuning.tickRate);
     previous = duel.snapshot();
     current = previous;
     activeRun = run;
-    lesson = match.training && startLesson(match.training.lesson);
+    lesson = setup.training && startLesson(setup.training.lesson);
     demo = undefined;
   };
 

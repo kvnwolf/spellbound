@@ -131,7 +131,7 @@ const exitAlong = (from: number, delta: number, half: number) => {
 };
 
 /** The first solid thing a lone Spell runs into this tick, if any. */
-const firstObstacle = (
+const firstContact = (
   spell: SpellState,
   bodies: FlightBodies,
   seconds: number
@@ -293,10 +293,10 @@ export const fly = (
   const contacts: Contact[] = [];
 
   for (const [index, spell] of spells.entries()) {
-    const obstacle = firstObstacle(spell, bodies, seconds);
+    const contact = firstContact(spell, bodies, seconds);
 
-    if (obstacle) {
-      contacts.push(obstacle);
+    if (contact) {
+      contacts.push(contact);
     }
 
     for (const other of spells.slice(index + 1)) {
