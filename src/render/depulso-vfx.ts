@@ -25,6 +25,7 @@
 import { Color, Vector3 } from "three/webgpu";
 import type { Object3D } from "three/webgpu";
 
+import { between } from "../controllers/random";
 import type { DuelEvent } from "../duel/duel";
 import type { GroundPoint, Point3 } from "../duel/geometry";
 import type { Tuning } from "../tuning";
@@ -54,9 +55,6 @@ type Look = Tuning["depulsoLook"];
 
 /** How many blasts can tear dust up at once: one per Duelist is plenty. */
 const poolSize = 3;
-
-const between = (random: () => number, range: { min: number; max: number }) =>
-  range.min + (range.max - range.min) * random();
 
 /** The air's two pools, one draw each, sharing the baked field. */
 const createCloud = (parent: Object3D, look: Look) => {

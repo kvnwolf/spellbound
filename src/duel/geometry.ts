@@ -21,6 +21,10 @@ export const defaultForward: GroundPoint = { x: 0, z: -1 };
 export const clamp = (value: number, min: number, max: number) =>
   Math.min(Math.max(value, min), max);
 
+/** The number `share` of the way from `from` to `to` (0 is `from`, 1 is `to`). */
+export const lerp = (from: number, to: number, share: number) =>
+  from + (to - from) * share;
+
 export const distanceBetween = (a: GroundPoint, b: GroundPoint) =>
   Math.hypot(b.x - a.x, b.z - a.z);
 

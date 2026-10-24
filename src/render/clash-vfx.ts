@@ -55,7 +55,9 @@ import {
   Vector3,
 } from "three/webgpu";
 
+import { between } from "../controllers/random";
 import type { ClashState, DuelEvent, DuelistId } from "../duel/duel";
+import { lerp } from "../duel/geometry";
 import type { Point3 } from "../duel/geometry";
 import type { Tuning } from "../tuning";
 import { arcPoint, createClashArcs, growOf } from "./clash-arcs";
@@ -95,18 +97,12 @@ export interface ClashVfxSettings {
 
 type Look = Tuning["clashLook"];
 
-const lerp = (from: number, to: number, share: number) =>
-  from + (to - from) * share;
-
 const squared = (value: Node<"float">) => value.mul(value);
 
 /** Writes a colour into a vec3 uniform's value. */
 const paint = (target: Vector3, color: Color) => {
   target.set(color.r, color.g, color.b);
 };
-
-const between = (random: () => number, range: { min: number; max: number }) =>
-  range.min + (range.max - range.min) * random();
 
 /**
  * The knot where the jets meet: a white-hot heart in a churning corona,

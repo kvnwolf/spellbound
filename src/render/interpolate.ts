@@ -12,7 +12,7 @@ import type {
   LastingPotion,
   SpellState,
 } from "../duel/duel";
-import { wrapAngle } from "../duel/geometry";
+import { lerp, wrapAngle } from "../duel/geometry";
 import type { Aim, GroundPoint, Point3 } from "../duel/geometry";
 
 /** Where a Duelist should be drawn this frame. */
@@ -59,9 +59,6 @@ export interface DuelistSample {
   /** Seconds left of each lasting Potion's effect, for its aura. */
   readonly potionEffects: Readonly<Record<LastingPotion, number>>;
 }
-
-const lerp = (from: number, to: number, alpha: number) =>
-  from + (to - from) * alpha;
 
 /** Blends two angles the short way round. */
 const lerpAngle = (from: number, to: number, alpha: number) =>

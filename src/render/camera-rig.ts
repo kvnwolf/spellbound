@@ -37,6 +37,7 @@ import {
   direction,
   directionOf,
   distanceBetween,
+  lerp,
   rightOf,
   unit3,
   wrapAngle,
@@ -112,9 +113,6 @@ const turnRight = (vector: GroundPoint, angle: number): GroundPoint => ({
   x: vector.x * Math.cos(angle) - vector.z * Math.sin(angle),
   z: vector.x * Math.sin(angle) + vector.z * Math.cos(angle),
 });
-
-const lerp = (from: number, to: number, alpha: number) =>
-  from + (to - from) * alpha;
 
 /** The unit direction `share` of the way from `from` to `to`, turning the short way in yaw. */
 const lookBetween = (from: Point3, to: Point3, share: number): Point3 => {

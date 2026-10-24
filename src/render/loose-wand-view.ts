@@ -27,6 +27,7 @@ import type {
   DuelSnapshot,
   LooseWand,
 } from "../duel/duel";
+import { lerp } from "../duel/geometry";
 import type { Point3 } from "../duel/geometry";
 import type { Tuning } from "../tuning";
 
@@ -55,9 +56,6 @@ interface Homecoming {
   readonly from: Point3;
   age: number;
 }
-
-const lerp = (from: number, to: number, alpha: number) =>
-  from + (to - from) * alpha;
 
 /** Eases in and out. */
 const smooth = (progress: number) => progress * progress * (3 - 2 * progress);

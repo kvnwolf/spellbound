@@ -22,7 +22,7 @@ import { BoxGeometry, Color, Group, Mesh } from "three/webgpu";
 import type { MeshStandardNodeMaterial } from "three/webgpu";
 
 import { fountainRadius } from "../../arena/courtyard";
-import { createRandom } from "../../controllers/random";
+import { between, createRandom } from "../../controllers/random";
 import type { ArenaLayout, DuelEvent, StructureState } from "../../duel/duel";
 import { distanceBetween } from "../../duel/geometry";
 import type { GroundPoint, Point3 } from "../../duel/geometry";
@@ -207,9 +207,6 @@ export const createRuinsView = (
   const dustColor = new Color(look.dust.color);
   const gritColor = new Color(look.chips.light);
 
-  const between = (range: { readonly min: number; readonly max: number }) =>
-    range.min + (range.max - range.min) * random();
-
   const pieceOf = (id: number) =>
     pieces.find((each) => each.structure.id === id);
 
@@ -273,8 +270,8 @@ export const createRuinsView = (
       throwChip(
         at,
         face,
-        between(chipLook.size),
-        between(chipLook.speed),
+        between(random, chipLook.size),
+        between(random, chipLook.speed),
         0.2 + random() * 0.7
       );
     }
@@ -286,9 +283,9 @@ export const createRuinsView = (
         gravity: grit.gravity,
         heading: { x: face.x, y: grit.lift, z: face.z },
         intensity: grit.intensity,
-        life: between(grit.life),
+        life: between(random, grit.life),
         size: grit.size,
-        speed: between(grit.speed),
+        speed: between(random, grit.speed),
         spread: grit.spread,
         streak: grit.streak,
       });
@@ -326,7 +323,7 @@ export const createRuinsView = (
       throwChip(
         onSurface(piece, along, piece.height * (0.3 + random() * 0.65)),
         along,
-        between({ max: look.chips.size.big, min: look.chips.size.max }),
+        between(random, { max: look.chips.size.big, min: look.chips.size.max }),
         0.6 + random(),
         0.3
       );
@@ -370,7 +367,7 @@ export const createRuinsView = (
         aspect: ring.aspect,
         delay: random() * 0.12,
         drag: ring.drag,
-        life: between(burst.life),
+        life: between(random, burst.life),
         origin: onSurface(piece, along, 0.35),
         rise: ring.rise,
         size: [burst.size.from, burst.size.to * (0.8 + random() * 0.4)],
@@ -393,7 +390,7 @@ export const createRuinsView = (
       dust.emit({
         delay: random() * 0.25,
         drag: column.drag,
-        life: between(burst.life),
+        life: between(random, burst.life),
         origin: { x: center.x, y, z: center.z },
         rise: column.rise,
         size: [burst.size.from, burst.size.to * (0.7 + random() * 0.5)],
@@ -422,8 +419,8 @@ export const createRuinsView = (
       throwChip(
         onSurface(piece, along, piece.height * random()),
         { x: pushed.x / length, z: pushed.z / length },
-        between({ max: look.chips.size.big, min: look.chips.size.min }),
-        between(look.chips.speed),
+        between(random, { max: look.chips.size.big, min: look.chips.size.min }),
+        between(random, look.chips.speed),
         0.3 + random() * 0.8
       );
     }
