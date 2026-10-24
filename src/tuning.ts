@@ -2035,7 +2035,37 @@ export const tuning = {
       stupefy: {
         core: { intensity: 6, radius: 0.08 },
         glow: { flicker: 0.08, intensity: 2.1, size: 0.7 },
-        light: { distance: 7, intensity: 6 },
+        /**
+         * The jet of light from the Wand to the head, up to `length` long
+         * and `width` across, turned to the camera: a white-hot `core` and a
+         * `halo` (shares of the half-width) that churns by `churn` with noise
+         * at `noiseScale` per metre flowing at `flowSpeed`, pulses
+         * (`pulse` deep, `pulseRate` per metre, `pulseSpeed`) running down
+         * it, and two filaments `filamentAmplitude` off the axis twisting at
+         * `filamentSpeed`; soft over the tail's `tailSoft` and the head's
+         * `headSoft` shares.
+         */
+        jet: {
+          churn: 0.6,
+          core: 0.05,
+          coreIntensity: 3.5,
+          filamentAmplitude: 0.32,
+          filamentIntensity: 2.2,
+          filamentSpeed: 30,
+          filamentWidth: 0.035,
+          flowSpeed: 14,
+          halo: 0.24,
+          haloIntensity: 0.9,
+          headSoft: 0.04,
+          length: 4.5,
+          noiseScale: 1.6,
+          pulse: 0.35,
+          pulseRate: 2.2,
+          pulseSpeed: 40,
+          tailSoft: 0.45,
+          width: 0.6,
+        },
+        light: { distance: 10, intensity: 16 },
         trail: { intensity: 2.8, length: 2.4, width: 0.075 },
         wake: {
           gravity: 0.8,

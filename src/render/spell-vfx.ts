@@ -39,26 +39,32 @@
  */
 import {
   abs,
+  exp,
   float,
   length,
   mix,
+  mx_noise_float,
   normalView,
   positionGeometry,
   positionViewDirection,
+  sin,
   smoothstep,
   uniform,
   uv,
   vec3,
   vec4,
 } from "three/tsl";
+import type { Object3D, Node } from "three/webgpu";
 import {
   AdditiveBlending,
   Color,
   CylinderGeometry,
   DoubleSide,
   Group,
+  Matrix4,
   Mesh,
   MeshBasicNodeMaterial,
+  PlaneGeometry,
   PointLight,
   Quaternion,
   RingGeometry,
@@ -105,6 +111,8 @@ export interface SpellVfx {
   readonly object: Group;
   /** The spark ring every effect sprays into (the Clash's too). */
   readonly sparks: SparkRing;
+  /** The camera jets of light turn to face. */
+  readonly watchFrom: (camera: Object3D) => void;
   /** Starts bursts and flashes for this frame's simulation events. */
   readonly handle: (events: readonly DuelEvent[]) => void;
   /**
@@ -136,6 +144,8 @@ const paletteFrom = (hex: { readonly hot: string; readonly main: string }) => ({
 type SpellLook = Tuning["spellLook"];
 
 type BoltLook = SpellLook["bolts"][ProjectileKind];
+
+type JetLook = SpellLook["bolts"]["stupefy"]["jet"];
 
 type BurstStyle = SpellLook["bursts"]["hit"];
 
@@ -195,8 +205,88 @@ const createBoltMaterials = (palette: Palette, look: BoltLook) => {
 
 type BoltMaterials = ReturnType<typeof createBoltMaterials>;
 
+const squared = (value: Node<"float">) => value.mul(value);
+
+/**
+ * A jet of light, as the films draw a Spell: a ribbon from the Wand to the
+ * Spell's head, turned to the camera, with a white-hot core, a halo in the
+ * Spell's hue that churns with noise flowing toward the head, pulses running
+ * down it and two filaments twisting round it. Its own uniforms: how long
+ * it is (metres), the effects clock and a seed, so jets in flight differ.
+ */
+const createJet = (palette: Palette, look: JetLook) => {
+  const metresLong = uniform(1);
+  const time = uniform(0);
+  const seed = uniform(0);
+  const hot = vec3(palette.hot.r, palette.hot.g, palette.hot.b);
+  const main = vec3(palette.main.r, palette.main.g, palette.main.b);
+
+  // Along the jet from the tail (0) to the head (1); across it from -1 to 1.
+  const along = uv().x;
+  const across = uv().y.mul(2).sub(1);
+  const metres = along.mul(metresLong);
+  const flow = metres.mul(look.noiseScale).sub(time.mul(look.flowSpeed));
+  const churn = mx_noise_float(vec3(flow, across.mul(1.5), seed));
+  const core = exp(squared(across.div(look.core)).negate());
+
+  const halo = exp(
+    squared(across.div(churn.mul(look.churn).add(1).mul(look.halo))).negate()
+  );
+
+  const pulses = sin(metres.mul(look.pulseRate).sub(time.mul(look.pulseSpeed)))
+    .mul(0.5)
+    .add(0.5)
+    .mul(look.pulse)
+    .add(1 - look.pulse);
+
+  const filament = (phase: number, rate: number) => {
+    const sway = mx_noise_float(vec3(flow.mul(0.5), seed, phase))
+      .mul(0.5)
+      .add(0.5);
+
+    const wiggle = sin(
+      metres.mul(rate).sub(time.mul(look.filamentSpeed)).add(seed.add(phase))
+    )
+      .mul(look.filamentAmplitude)
+      .mul(sway);
+
+    return exp(squared(across.sub(wiggle).div(look.filamentWidth)).negate());
+  };
+
+  const filaments = filament(0, 7).add(filament(2.1, 11));
+
+  const ends = smoothstep(0, look.tailSoft, along).mul(
+    smoothstep(1, 1 - look.headSoft, along)
+  );
+
+  const material = new MeshBasicNodeMaterial({
+    blending: AdditiveBlending,
+    depthWrite: false,
+    forceSinglePass: true,
+    side: DoubleSide,
+    transparent: true,
+  });
+
+  material.colorNode = hot
+    .mul(core.mul(look.coreIntensity))
+    .add(main.mul(halo.mul(pulses).mul(look.haloIntensity)))
+    .add(mix(main, hot, 0.4).mul(filaments.mul(look.filamentIntensity)))
+    .mul(ends);
+
+  const mesh = new Mesh(new PlaneGeometry(1, 1, 64, 1), material);
+  mesh.frustumCulled = false;
+
+  return { mesh, metresLong, seed, time };
+};
+
+type Jet = ReturnType<typeof createJet>;
+
 /** A Spell in flight: core, glow and trail, reused across Spells of one kind. */
-const createBolt = (materials: BoltMaterials, look: BoltLook) => {
+const createBolt = (
+  materials: BoltMaterials,
+  look: BoltLook,
+  palette: Palette
+) => {
   const group = new Group();
 
   const core = new Mesh(
@@ -213,9 +303,17 @@ const createBolt = (materials: BoltMaterials, look: BoltLook) => {
   trailGeometry.translate(0, 0.5, 0);
   const trail = new Mesh(trailGeometry, materials.trail);
 
+  const jet: Jet | undefined =
+    "jet" in look ? createJet(palette, look.jet) : undefined;
+
   group.add(core, glow, trail);
 
-  return { core, glow, group, trail };
+  if (jet) {
+    trail.visible = false;
+    group.add(jet.mesh);
+  }
+
+  return { core, glow, group, jet, trail };
 };
 
 type Bolt = ReturnType<typeof createBolt>;
@@ -242,7 +340,7 @@ const createBoltPool = (look: BoltLook, palette: Palette, parent: Group) => {
   const materials = createBoltMaterials(palette, look);
   // One bolt exists (hidden) from the start, so the load-time prewarm
   // compiles this kind's shaders before its first cast.
-  const first = createBolt(materials, look);
+  const first = createBolt(materials, look, palette);
   first.group.visible = false;
   parent.add(first.group);
   const bolts: Bolt[] = [first];
@@ -265,7 +363,7 @@ const createBoltPool = (look: BoltLook, palette: Palette, parent: Group) => {
       let bolt = bolts[used];
 
       if (!bolt) {
-        bolt = createBolt(materials, look);
+        bolt = createBolt(materials, look, palette);
         bolts.push(bolt);
         parent.add(bolt.group);
       }
@@ -493,6 +591,46 @@ export const createSpellVfx = (settings: SpellVfxSettings): SpellVfx => {
   const up = new Vector3(0, 1, 0);
   const backward = new Vector3();
   const turn = new Quaternion();
+  let viewer: Object3D | undefined;
+  const eye = new Vector3();
+  const jetTail = new Vector3();
+  const jetAxis = new Vector3();
+  const jetSide = new Vector3();
+  const jetNormal = new Vector3();
+  const jetBasis = new Matrix4();
+
+  /** Lays a jet from its tail to the Spell's head, turned to face the camera. */
+  const layJet = (
+    jet: Jet,
+    head: Vector3,
+    jetLook: JetLook,
+    flown: number,
+    spell: SpellState,
+    scale: number
+  ) => {
+    const reach = Math.max(Math.min(jetLook.length * scale, flown), 1e-3);
+
+    jetAxis
+      .set(spell.velocity.x, spell.velocity.y, spell.velocity.z)
+      .normalize();
+    jetTail.copy(head).addScaledVector(jetAxis, -reach);
+    jet.mesh.position.copy(jetTail).add(head).multiplyScalar(0.5);
+    viewer?.getWorldPosition(eye);
+    jetSide.copy(jetAxis).cross(eye.sub(jet.mesh.position));
+
+    if (jetSide.lengthSq() < 1e-8) {
+      jetSide.set(0, 1, 0).cross(jetAxis);
+    }
+
+    jetSide.normalize();
+    jetNormal.copy(jetAxis).cross(jetSide);
+    jetBasis.makeBasis(jetAxis, jetSide, jetNormal);
+    jet.mesh.quaternion.setFromRotationMatrix(jetBasis);
+    jet.mesh.scale.set(reach, jetLook.width * scale, 1);
+    jet.metresLong.value = reach;
+    jet.time.value = clock;
+    jet.seed.value = spell.id * 0.37;
+  };
 
   /** How big a Spell is drawn: strong Stupefies and Charged Confringos are bigger. */
   const sizeOf = (spell: SpellState) => {
@@ -1022,6 +1160,62 @@ export const createSpellVfx = (settings: SpellVfxSettings): SpellVfx => {
     }
   };
 
+  /** Draws a Spell in flight between two snapshots; returns the light it carries. */
+  const drawFlying = (
+    spell: SpellState,
+    kind: ProjectileKind,
+    was: SpellState | undefined,
+    alpha: number
+  ): Glow => {
+    const pool = pools[kind];
+    const { look: bolt, palette } = pool;
+    const drawn = pool.take();
+    const head = sampleSpell(was, spell, alpha);
+    const from = castPoints.get(spell.id) ?? spell.position;
+    const scale = sizeOf(spell);
+
+    // Each Spell flickers on its own beat.
+    const flicker =
+      1 +
+      bolt.glow.flicker *
+        (0.6 * Math.sin(clock * 37 + spell.id * 1.7) +
+          0.4 * Math.sin(clock * 61 + spell.id));
+
+    drawn.core.position.set(head.x, head.y, head.z);
+    drawn.core.scale.setScalar(scale);
+    drawn.glow.position.copy(drawn.core.position);
+    drawn.glow.scale.setScalar(bolt.glow.size * scale * flicker);
+
+    // The trail reaches back toward the Wand, never past it.
+    const flown = Math.hypot(head.x - from.x, head.y - from.y, head.z - from.z);
+
+    const trailLength = Math.min(bolt.trail.length * scale, flown);
+    backward
+      .set(-spell.velocity.x, -spell.velocity.y, -spell.velocity.z)
+      .normalize();
+    turn.setFromUnitVectors(up, backward);
+    drawn.trail.position.copy(drawn.core.position);
+    drawn.trail.quaternion.copy(turn);
+    drawn.trail.scale.set(
+      bolt.trail.width * scale,
+      Math.max(trailLength, 1e-3),
+      bolt.trail.width * scale
+    );
+
+    if (drawn.jet && "jet" in bolt) {
+      layJet(drawn.jet, drawn.core.position, bolt.jet, flown, spell, scale);
+    }
+
+    shed(spell, head, from, bolt.wake, palette, scale);
+
+    return {
+      color: palette.main,
+      distance: bolt.light.distance,
+      intensity: bolt.light.intensity * scale * flicker,
+      position: drawn.core.position,
+    };
+  };
+
   const update = (
     previous: readonly SpellState[],
     current: readonly SpellState[],
@@ -1050,57 +1244,9 @@ export const createSpellVfx = (settings: SpellVfxSettings): SpellVfx => {
 
     for (const spell of current) {
       // Depulso never flies, so it is never in the air to draw.
-      if (spell.kind === "depulso") {
-        continue;
+      if (spell.kind !== "depulso") {
+        glows.push(drawFlying(spell, spell.kind, before.get(spell.id), alpha));
       }
-
-      const pool = pools[spell.kind];
-      const { look: bolt, palette } = pool;
-      const drawn = pool.take();
-      const head = sampleSpell(before.get(spell.id), spell, alpha);
-      const from = castPoints.get(spell.id) ?? spell.position;
-      const scale = sizeOf(spell);
-
-      // Each Spell flickers on its own beat.
-      const flicker =
-        1 +
-        bolt.glow.flicker *
-          (0.6 * Math.sin(clock * 37 + spell.id * 1.7) +
-            0.4 * Math.sin(clock * 61 + spell.id));
-
-      drawn.core.position.set(head.x, head.y, head.z);
-      drawn.core.scale.setScalar(scale);
-      drawn.glow.position.copy(drawn.core.position);
-      drawn.glow.scale.setScalar(bolt.glow.size * scale * flicker);
-
-      // The trail reaches back toward the Wand, never past it.
-      const flown = Math.hypot(
-        head.x - from.x,
-        head.y - from.y,
-        head.z - from.z
-      );
-
-      const trailLength = Math.min(bolt.trail.length * scale, flown);
-      backward
-        .set(-spell.velocity.x, -spell.velocity.y, -spell.velocity.z)
-        .normalize();
-      turn.setFromUnitVectors(up, backward);
-      drawn.trail.position.copy(drawn.core.position);
-      drawn.trail.quaternion.copy(turn);
-      drawn.trail.scale.set(
-        bolt.trail.width * scale,
-        Math.max(trailLength, 1e-3),
-        bolt.trail.width * scale
-      );
-
-      shed(spell, head, from, bolt.wake, palette, scale);
-
-      glows.push({
-        color: palette.main,
-        distance: bolt.light.distance,
-        intensity: bolt.light.intensity * scale * flicker,
-        position: drawn.core.position,
-      });
     }
 
     for (const pool of Object.values(pools)) {
@@ -1149,7 +1295,11 @@ export const createSpellVfx = (settings: SpellVfxSettings): SpellVfx => {
     light(glows);
   };
 
-  return { handle, object, sparks, update };
+  const watchFrom = (camera: Object3D) => {
+    viewer = camera;
+  };
+
+  return { handle, object, sparks, update, watchFrom };
 };
 
 /** The settings `main.ts` builds the Spell VFX with. */

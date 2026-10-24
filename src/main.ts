@@ -423,6 +423,8 @@ const start = async () => {
     shake
   );
 
+  vfx.watchFrom(rig.camera);
+
   const frame = createFramePipeline(renderer, scene, rig.camera, tuning.render);
 
   // Sampled sound and music, heard from the camera; silent until the first click or keypress.
