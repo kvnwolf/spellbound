@@ -94,7 +94,9 @@ export type Sound =
   /** A Potion down and taking effect: Wiggenweld's heal, Strength's surge, Swiftness's rush. */
   | { readonly kind: "potion-effect"; readonly potion: PotionKind }
   /** A Potion lost to a hit: the vial shattering. */
-  | { readonly kind: "potion-interrupted" };
+  | { readonly kind: "potion-interrupted" }
+  /** A column or the fountain cracking under Spells, or breaking (`broken`). */
+  | { readonly kind: "structure-break"; readonly broken: boolean };
 
 /** How a Round ended for the local Duelist. */
 export type RoundOutcome = "draw" | "lost" | "won";
@@ -370,6 +372,16 @@ const eventSounds: EventSounds = {
     place.world(event.position, { kind: "spells-cancelled" }),
   ],
   "stamina-short": ownControl,
+  // Only a piece cracking or breaking is heard: a chip is the Spell's own sound.
+  "structure-hit": (event, _frame, place) =>
+    event.stage === event.before
+      ? []
+      : [
+          place.world(event.position, {
+            broken: event.stage === "destroyed",
+            kind: "structure-break",
+          }),
+        ],
   "wand-landed": (event, _frame, place) => [
     place.world(
       { x: event.position.x, y: 0, z: event.position.z },

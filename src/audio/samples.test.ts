@@ -94,6 +94,10 @@ const everySound: EverySound = {
   "shield-raise": [{ kind: "shield-raise" }],
   "spells-cancelled": [{ kind: "spells-cancelled" }],
   "stamina-short": [{ kind: "stamina-short" }],
+  "structure-break": [
+    { broken: false, kind: "structure-break" },
+    { broken: true, kind: "structure-break" },
+  ],
   "stupefy-cast": [
     { kind: "stupefy-cast", strong: false },
     { kind: "stupefy-cast", strong: true },

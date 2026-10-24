@@ -30,6 +30,7 @@ import { createMenuInput } from "./dualsense/menu-input";
 import { chargeStage } from "./duel/charge";
 import { clashOpponentOf, createDuel } from "./duel/duel";
 import type {
+  ArenaLayout,
   DuelEvent,
   DuelistId,
   DuelistState,
@@ -72,6 +73,7 @@ import { createLooseWandView } from "./render/loose-wand-view";
 import { createFramePipeline, createPreviewPipeline } from "./render/pipeline";
 import { createWebGPURenderer } from "./render/renderer";
 import { createReticle } from "./render/reticle";
+import { createRuinsView } from "./render/ruins/ruins-view";
 import { createSpellVfx, spellVfxSettings } from "./render/spell-vfx";
 import { loadWizardAssets } from "./render/wizard-assets";
 import { createWorldHud } from "./render/world-hud";
@@ -152,6 +154,16 @@ const volumesOf = (options: PlayerOptions) => ({
   effects: gainOf(options.effects),
   music: gainOf(options.music),
 });
+
+/**
+ * What the camera keeps clear of: the walls, the Cover still standing and
+ * the torch stands. Its Cover is replaced as pieces of the Arena break.
+ */
+interface CameraObstacles {
+  readonly bounds: ArenaLayout["bounds"];
+  cover: ArenaLayout["cover"];
+  obstructions: ArenaLayout["obstructions"];
+}
 
 const start = async () => {
   // The player's Options, remembered or a first visit's in the browser's
@@ -355,6 +367,11 @@ const start = async () => {
         shake.add(tuning.cameraShake.explosion);
       }
 
+      // A column or the fountain coming down.
+      if (event.type === "structure-hit" && event.stage === "destroyed") {
+        shake.add(tuning.cameraShake.structureBreak);
+      }
+
       // An Incendio blast jolts the camera, hardest for the one caught in it.
       if (event.type === "explosion") {
         shake.add(
@@ -474,6 +491,16 @@ const start = async () => {
 
   scene.add(vfx.object);
 
+  // The columns and the fountain: whole, cracking, and broken into rubble.
+  const ruins = createRuinsView(courtyard, {
+    courtyard: tuning.courtyard,
+    look: tuning.structureLook,
+    sparks: vfx.sparks,
+    structures: tuning.structures,
+  });
+
+  scene.add(ruins.object);
+
   // The force of Depulso bursting off every Duelist it catches.
   const depulsoHits = createDepulsoHits(vfx.object, {
     cone: tuning.depulso,
@@ -495,16 +522,26 @@ const start = async () => {
   scene.add(clashVfx.object);
 
   // The camera must also stay clear of the torch stands on the parapet, which
-  // are scenery rather than Cover, so Spells ignore them.
-  const cameraObstacles = {
+  // are scenery rather than Cover, so Spells ignore them. It keeps clear of
+  // the columns still standing: broken ones are low rubble it looks over.
+  const torchStands = torchSpots(courtyard.bounds).map((spot) => ({
+    center: { x: spot.x, z: spot.z },
+    radius: tuning.camera.clearance.torchRadius,
+  }));
+
+  const cameraObstacles: CameraObstacles = {
     ...courtyard,
-    cover: [
-      ...courtyard.cover,
-      ...torchSpots(courtyard.bounds).map((spot) => ({
-        center: { x: spot.x, z: spot.z },
-        radius: tuning.camera.clearance.torchRadius,
-      })),
-    ],
+    cover: [...courtyard.cover, ...torchStands],
+  };
+
+  /** Follows the Arena as it stands in `snapshot`, when a piece has broken. */
+  const followArena = (snapshot: DuelSnapshot) => {
+    const wanted = snapshot.arena.cover.length + torchStands.length;
+
+    if (cameraObstacles.cover.length !== wanted) {
+      cameraObstacles.cover = [...snapshot.arena.cover, ...torchStands];
+      cameraObstacles.obstructions = snapshot.arena.obstructions;
+    }
   };
 
   const rig = createCameraRig(
@@ -1186,6 +1223,9 @@ const start = async () => {
     clashVfx.watchFrom(viewer);
     shakeOnHits(played);
     vfx.handle(events);
+    ruins.handle(events);
+    ruins.show(current.structures, simSeconds);
+    followArena(current);
     depulsoHits.handle(events);
     depulsoHits.advance(simSeconds);
     defenceVfx.handle(events);

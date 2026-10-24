@@ -55,7 +55,11 @@ import { between, gaussian, pick } from "./random";
 import type { Random } from "./random";
 
 export interface AiSetup {
-  /** The Arena the Duel is fought in: for sight lines, Cover and the aim pivot. */
+  /**
+   * The Arena the Duel is fought in: for sight lines, Cover and the aim
+   * pivot. Each tick the AI reads it as it stands in the snapshot, so it
+   * never hides behind Cover that Spells have broken.
+   */
   readonly arena: ArenaLayout;
   readonly difficulty: Difficulty;
   readonly random: Random;
@@ -230,7 +234,7 @@ const nearestOpponent = (
 };
 
 export const createAiController = ({
-  arena,
+  arena: built,
   difficulty,
   random,
   tuning,
@@ -240,6 +244,8 @@ export const createAiController = ({
   const tickSeconds = 1 / tuning.tickRate;
   const { bodyRadius } = tuning.duelist;
   const memory = freshMemory();
+  /** The Arena as it stands this tick (see `AiSetup.arena`). */
+  let arena = built;
 
   const reaction = () => between(random, profile.reactionSeconds);
 
@@ -771,6 +777,14 @@ export const createAiController = ({
     return best;
   };
 
+  /** Whether a column of Cover still stands beside `spot`, as when the AI chose it. */
+  const besideCover = (spot: GroundPoint) =>
+    arena.cover.some(
+      (column) =>
+        distanceBetween(column.center, spot) <=
+        column.radius + bodyRadius + ai.cover.standOff + 1e-6
+    );
+
   /** Hit since last tick: maybe run for Cover. */
   const watchHealth = (
     self: DuelistState,
@@ -904,7 +918,11 @@ export const createAiController = ({
       return toWand(self, self.looseWand, opponent, ahead, now);
     }
 
-    if (memory.cover && now >= memory.cover.until) {
+    // Hiding ends in time, or at once when the column it hid behind breaks.
+    if (
+      memory.cover &&
+      (now >= memory.cover.until || !besideCover(memory.cover.spot))
+    ) {
       memory.cover = undefined;
     }
 
@@ -1449,6 +1467,7 @@ export const createAiController = ({
 
   return {
     intent: ({ self, snapshot }) => {
+      ({ arena } = snapshot);
       const intent = decide(snapshot, self);
 
       memory.previous = snapshot;

@@ -212,12 +212,16 @@ The bounded space a Duel takes place in.
 _Avoid_: Map, level, stage
 
 **Cover**:
-Arena geometry that stops both Duelists and Spells.
+Arena geometry that stops both Duelists and Spells: the courtyard's columns. Spells wear it down until it breaks; broken Cover lies as Rubble for the rest of the Duel. The castle walls are the Arena's edge, not Cover, and never break.
 _Avoid_: Obstacle, wall
 
 **Obstruction**:
-Low Arena geometry that stops Duelists but that Spells fly over, such as the fountain basin.
+Low Arena geometry that stops Duelists but that Spells fly over, such as the fountain basin. The fountain breaks under Spells too, and stays an Obstruction as rubble.
 _Avoid_: Obstacle, blocker
+
+**Rubble**:
+What broken Cover leaves: a low Obstruction where the column stood, which no longer stops Spells or hides a Duelist. The Arena is rebuilt for the next Duel.
+_Avoid_: Debris, ruins
 
 ### The player
 

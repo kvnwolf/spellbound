@@ -139,15 +139,37 @@ export const createFlagstoneMaterial = (
   return material;
 };
 
-/** Ashlar: squared blocks in running bond, for walls on either axis. */
-export const createAshlarMaterial = (
+/** A stone's PBR slots, for a material of its own or one that builds on it. */
+export interface StoneSlots {
+  readonly color: Node<"vec3">;
+  readonly roughness: Node<"float">;
+  readonly normal: Node<"vec3">;
+}
+
+const stoneMaterial = (slots: StoneSlots): MeshStandardNodeMaterial => {
+  const material = new MeshStandardNodeMaterial();
+
+  material.colorNode = slots.color;
+  material.roughnessNode = slots.roughness;
+  material.normalNode = slots.normal;
+
+  return material;
+};
+
+/**
+ * Ashlar stone: squared blocks in running bond, for walls on either axis,
+ * read at `world`: the world position, or for stone that breaks and flies
+ * apart (see `render/ruins`) where it stood.
+ */
+export const ashlarStone = (
   tint = "#5f5b57",
-  blockSize: readonly [number, number] = [0.95, 0.45]
-): MeshStandardNodeMaterial => {
+  blockSize: readonly [number, number] = [0.95, 0.45],
+  world: Node<"vec3"> = positionWorld
+): StoneSlots => {
   // x + z runs along any axis-aligned wall face, y climbs it.
-  const face = vec2(positionWorld.x.add(positionWorld.z), positionWorld.y);
+  const face = vec2(world.x.add(world.z), world.y);
   const block = blocks(face, vec2(blockSize[0], blockSize[1]), 0.018, 0.4);
-  const grain = mx_fractal_noise_float(positionWorld.mul(1.9), 4);
+  const grain = mx_fractal_noise_float(world.mul(1.9), 4);
   // Damp streaks running down from the top of the wall.
   const streak = mx_noise_float(vec2(face.x.mul(1.4), face.y.mul(0.12)));
 
@@ -156,55 +178,67 @@ export const createAshlarMaterial = (
     .mul(grain.mul(0.2).add(1))
     .mul(streak.mul(0.14).add(0.95));
 
-  const material = new MeshStandardNodeMaterial();
-
-  material.colorNode = mix(color("#1f1d1c"), base, block.stone);
-  material.roughnessNode = mix(
-    float(0.97),
-    grain.mul(0.06).add(0.86),
-    block.stone
-  );
-  material.normalNode = bumpNormal(
-    smoothstep(0, 0.05, block.inside).add(grain.mul(0.2)),
-    0.014
-  );
-
-  return material;
+  return {
+    color: mix(color("#1f1d1c"), base, block.stone),
+    normal: bumpNormal(
+      smoothstep(0, 0.05, block.inside).add(grain.mul(0.2)),
+      0.014
+    ),
+    roughness: mix(float(0.97), grain.mul(0.06).add(0.86), block.stone),
+  };
 };
+
+/** Ashlar: squared blocks in running bond, for walls on either axis. */
+export const createAshlarMaterial = (
+  tint = "#5f5b57",
+  blockSize: readonly [number, number] = [0.95, 0.45]
+): MeshStandardNodeMaterial => stoneMaterial(ashlarStone(tint, blockSize));
 
 /**
  * Column stone: pale limestone drums with vertical fluting, read in the
- * column's own space so every column flutes the same way.
+ * column's own space so every column flutes the same way. `local` and
+ * `world` are where the pattern is read (for stone that breaks and flies
+ * apart, where it stood); `fluted` 0 leaves a face unfluted (the abacus).
  */
-export const createColumnMaterial = (): MeshStandardNodeMaterial => {
-  const angle = atan(positionLocal.z, positionLocal.x);
-  const height = positionLocal.y;
+export const columnStone = ({
+  fluted = float(1),
+  local = positionLocal,
+  world = positionWorld,
+}: {
+  readonly fluted?: Node<"float">;
+  readonly local?: Node<"vec3">;
+  readonly world?: Node<"vec3">;
+} = {}): StoneSlots => {
+  const angle = atan(local.z, local.x);
+  const height = local.y;
   const fluteCount = 20;
-  const flute = angle.mul(fluteCount).cos().mul(0.5).add(0.5);
+  const flute = angle.mul(fluteCount).cos().mul(0.5).add(0.5).mul(fluted);
   // Drum joints every 0.8 m up the shaft.
   const drum = height.div(0.8).fract();
   const joint = min(drum, drum.oneMinus()).mul(0.8);
   const jointMask = smoothstep(0.006, fwidth(joint).add(0.012), joint);
   const drumId = cellHash(vec3(height.div(0.8).floor(), 9.1, 2.3));
-  const grain = mx_fractal_noise_float(positionWorld.mul(2.3), 4);
+  const grain = mx_fractal_noise_float(world.mul(2.3), 4);
 
   const base = color("#7b766c")
     .mul(drumId.mul(0.18).add(0.85))
     .mul(grain.mul(0.18).add(1));
 
-  const material = new MeshStandardNodeMaterial();
-
-  material.colorNode = mix(color("#2c2a27"), base, jointMask).mul(
-    flute.mul(0.22).add(0.78)
-  );
-  material.roughnessNode = grain.mul(0.06).add(0.8);
-  material.normalNode = bumpNormal(
-    flute.mul(0.6).add(jointMask).add(grain.mul(0.15)),
-    0.025
-  );
-
-  return material;
+  return {
+    color: mix(color("#2c2a27"), base, jointMask).mul(
+      flute.mul(0.22).add(0.78)
+    ),
+    normal: bumpNormal(
+      flute.mul(0.6).add(jointMask).add(grain.mul(0.15)),
+      0.025
+    ),
+    roughness: grain.mul(0.06).add(0.8),
+  };
 };
+
+/** Column stone, as a material of its own. */
+export const createColumnMaterial = (): MeshStandardNodeMaterial =>
+  stoneMaterial(columnStone());
 
 /** Slate roof tiles: dark, slightly glossy overlapping rows. */
 export const createSlateMaterial = (): MeshStandardNodeMaterial => {

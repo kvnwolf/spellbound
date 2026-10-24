@@ -258,7 +258,8 @@ const longestHidden = (settings: Tuning) =>
       const hidden = sightBlocked(
         find(each, "ai").position,
         find(each, "player").position,
-        withColumns.cover
+        // The columns still standing: the player's Spells may break one.
+        each.arena.cover
       );
 
       stretch = hidden ? stretch + 1 : 0;

@@ -5,6 +5,11 @@
  * It is deliberately low (Spells fly over it at chest height), so the Arena
  * layout makes it an Obstruction, not Cover: Duelists cannot walk through it
  * and Spells are not stopped. Its radius comes from the layout.
+ *
+ * Its stone breaks under Spells: the basin's rim and the spout are drawn by
+ * the ruins (`render/ruins`), pre-fractured. Here is what never breaks: the
+ * plinth and the basin's floor, the water, and the veil (which the ruins
+ * hide once the spout is gone).
  */
 import {
   color,
@@ -36,7 +41,10 @@ import { skyRadiance } from "./sky";
 import { bumpNormal } from "./surface";
 
 const waterLevel = 0.32;
-const innerRadius = 1.38;
+
+/** The basin's inner wall, metres from the centre: the rim runs from here out to `fountainRadius`. */
+export const fountainInnerRadius = 1.38;
+const innerRadius = fountainInnerRadius;
 const bowlRadius = 0.56;
 
 /** Kept low so the spout hides as little of a Duelist behind the fountain as possible. */
@@ -106,47 +114,28 @@ const createVeilMaterial = (): MeshStandardNodeMaterial => {
   return material;
 };
 
+/** The fountain's unbreakable parts, and its veil (to hide once the spout breaks). */
+export interface FountainBasin {
+  readonly object: Group;
+  readonly veil: Mesh;
+}
+
 export const createFountain = (
   stone: MeshStandardNodeMaterial,
   settings: Tuning["courtyard"]
-): Group => {
+): FountainBasin => {
   const group = new Group();
 
-  // Basin: plinth, outer wall, rounded rim, inner wall, floor.
+  // The plinth and the basin's floor; the rim stands on them.
   const basin = new Mesh(
     lathe([
       [0, 0.02],
       [fountainRadius + 0.08, 0.02],
       [fountainRadius + 0.08, 0.1],
       [fountainRadius, 0.12],
-      [fountainRadius - 0.03, 0.4],
-      [fountainRadius + 0.02, 0.44],
-      [fountainRadius - 0.02, 0.5],
-      [innerRadius + 0.02, 0.5],
-      [innerRadius - 0.02, 0.46],
+      [innerRadius, 0.12],
       [innerRadius, 0.14],
       [0, 0.14],
-    ]),
-    stone
-  );
-
-  // Spout: a slender baluster carrying a shallow bowl and a finial.
-  const spout = new Mesh(
-    lathe([
-      [0.34, 0.14],
-      [0.3, 0.2],
-      [0.2, 0.27],
-      [0.14, 0.42],
-      [0.12, 0.54],
-      [0.2, bowlHeight - 0.1],
-      [bowlRadius - 0.06, bowlHeight - 0.04],
-      [bowlRadius, bowlHeight],
-      [bowlRadius - 0.04, bowlHeight + 0.03],
-      [0.1, bowlHeight - 0.02],
-      [0.07, bowlHeight + 0.08],
-      [0.1, bowlHeight + 0.13],
-      [0.04, bowlHeight + 0.24],
-      [0, bowlHeight + 0.27],
     ]),
     stone
   );
@@ -172,13 +161,10 @@ export const createFountain = (
   water.position.y = waterLevel;
   water.receiveShadow = true;
   veil.position.y = (bowlHeight + waterLevel) / 2;
+  basin.castShadow = true;
+  basin.receiveShadow = true;
 
-  for (const mesh of [basin, spout]) {
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-  }
+  group.add(basin, water, veil);
 
-  group.add(basin, spout, water, veil);
-
-  return group;
+  return { object: group, veil };
 };

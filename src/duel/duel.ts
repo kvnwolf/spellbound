@@ -45,8 +45,19 @@ import {
   specialSpellKinds,
 } from "./spell-slots";
 import type { SpecialSpellKind, SpellSlot } from "./spell-slots";
+import {
+  nearestPointOf,
+  raiseStructures,
+  reachTo,
+  standingArena,
+  struckAt,
+  wearDown,
+} from "./structures";
+import type { StructureStage, StructureState } from "./structures";
 
 export type { SpecialSpellKind, SpellSlot } from "./spell-slots";
+
+export type { StructureStage, StructureState } from "./structures";
 
 export type { LastingPotion, PotionKind, PotionSlot } from "./potions";
 
@@ -316,6 +327,14 @@ export interface DuelSnapshot {
   readonly score: Readonly<Record<TeamId, number>>;
   /** The Team that won the Duel, once one has won enough Rounds. */
   readonly winner: TeamId | null;
+  /**
+   * The Arena as it stands: Cover broken by Spells has left `cover` (it no
+   * longer stops Spells or sight) and lies as rubble among `obstructions`.
+   * Destruction lasts the whole Duel, through every Round.
+   */
+  readonly arena: ArenaLayout;
+  /** Every breakable piece of the Arena (its Cover, then its Obstructions) and how worn it is. */
+  readonly structures: readonly StructureState[];
 }
 
 /**
@@ -487,6 +506,22 @@ export type DuelEvent =
       readonly type: "stamina-short";
       readonly duelistId: DuelistId;
       readonly action: StaminaAction;
+    }
+  /**
+   * A Spell (or a Clash blowing up) struck a piece of the Arena at
+   * `position`, taking `damage` structure points off it and pushing along
+   * `heading` (a unit vector on the floor); `before` and `stage` tell a
+   * piece that just cracked or broke.
+   */
+  | {
+      readonly type: "structure-hit";
+      readonly structureId: number;
+      readonly cause: SpellKind | "clash";
+      readonly damage: number;
+      readonly position: Point3;
+      readonly heading: GroundPoint;
+      readonly before: StructureStage;
+      readonly stage: StructureStage;
     }
   /** Two fully Charged Confringos met head-on and locked into a Clash. */
   | { readonly type: "clash-start"; readonly clash: ClashState }
@@ -945,7 +980,11 @@ const dodgeHeading = (
 };
 
 export const createDuel = (config: DuelConfig): Duel => {
-  const { arena, tuning } = config;
+  const { tuning } = config;
+  // The Arena breaks as the Duel goes on: `arena` is always what still
+  // stands, and everything below collides, aims and looks against it.
+  let structures = raiseStructures(config.arena, tuning.structures);
+  let arena = standingArena(config.arena, structures);
   const { bodyRadius } = tuning.duelist;
 
   const {
@@ -1685,6 +1724,7 @@ export const createDuel = (config: DuelConfig): Duel => {
   let phaseTicks = ticksOf(introSeconds);
 
   let current: DuelSnapshot = {
+    arena,
     clash: null,
     // A Training lesson sets the learner's Focus and Health up as it needs.
     duelists: lineUp().map((self) =>
@@ -1704,6 +1744,7 @@ export const createDuel = (config: DuelConfig): Duel => {
     },
     score: Object.fromEntries(config.duelists.map(({ team }) => [team, 0])),
     spells: [],
+    structures,
     tick: 0,
     winner: null,
   };
@@ -2266,6 +2307,129 @@ export const createDuel = (config: DuelConfig): Duel => {
     return { x: knockback.direction.x * step, z: knockback.direction.z * step };
   };
 
+  /** What a Duelist's Spell damage is multiplied by: more under a Strength Potion. */
+  const strengthOf = (id: DuelistId) =>
+    books(id).effectTicks.strength > 0
+      ? tuning.potions.strength.damageScale
+      : 1;
+
+  /**
+   * Takes `amount` structure points off the piece `struck` (as it stands
+   * now), reported with where it struck and which way it pushed. A broken
+   * piece takes nothing more; the moment one breaks, the Arena standing is
+   * rebuilt without it.
+   */
+  const hitStructure = (
+    draft: Draft,
+    struck: StructureState,
+    hit: {
+      readonly amount: number;
+      readonly cause: SpellKind | "clash";
+      readonly heading: GroundPoint;
+      readonly position: Point3;
+    }
+  ) => {
+    const before = structures.find((each) => each.id === struck.id);
+
+    if (!before || before.stage === "destroyed" || hit.amount <= 0) {
+      return;
+    }
+
+    const after = wearDown(before, hit.amount, tuning.structures);
+    structures = structures.map((each) =>
+      each.id === after.id ? after : each
+    );
+
+    if (after.stage === "destroyed") {
+      arena = standingArena(config.arena, structures);
+    }
+
+    draft.events.push({
+      before: before.stage,
+      cause: hit.cause,
+      damage: before.health - after.health,
+      heading: hit.heading,
+      position: hit.position,
+      stage: after.stage,
+      structureId: after.id,
+      type: "structure-hit",
+    });
+  };
+
+  /**
+   * What a Spell striking a piece of the Arena takes off it, before a
+   * Strength Potion. Incendio's comes from its explosion and Depulso's from
+   * its cone, never from a strike.
+   */
+  const structureDamageOf = (spell: SpellState) => {
+    const { damage } = tuning.structures;
+
+    if (spell.kind === "stupefy") {
+      return spell.strong ? damage.stupefyStrong : damage.stupefy;
+    }
+
+    if (spell.kind === "confringo") {
+      const { full, min } = damage.confringo;
+      const empower = spell.empowered ? confringo.perfectScale : 1;
+
+      return (min + (full - min) * spell.charge) * empower;
+    }
+
+    if (spell.kind === "expelliarmus" || spell.kind === "petrificus") {
+      return damage[spell.kind];
+    }
+
+    return 0;
+  };
+
+  /**
+   * A Spell stopped by Cover, or come down into an Obstruction (into the
+   * fountain), strikes that piece.
+   */
+  const strikeStructure = (
+    draft: Draft,
+    spell: SpellState,
+    by: "bounds" | "cover" | "floor",
+    position: Point3
+  ) => {
+    const struck =
+      by === "bounds"
+        ? undefined
+        : struckAt(structures, position, by, spellRadius(spell) + 0.01);
+
+    if (struck) {
+      hitStructure(draft, struck, {
+        amount: structureDamageOf(spell) * strengthOf(spell.casterId),
+        cause: spell.kind,
+        heading: direction(
+          { x: 0, z: 0 },
+          { x: spell.velocity.x, z: spell.velocity.z }
+        ),
+        position,
+      });
+    }
+  };
+
+  /** A blast centred at `centre` wears down every piece whose edge is within `radius` of it. */
+  const blastStructures = (
+    draft: Draft,
+    centre: Point3,
+    radius: number,
+    amount: number,
+    cause: SpellKind | "clash"
+  ) => {
+    for (const each of structures) {
+      if (reachTo(each, centre) <= radius) {
+        hitStructure(draft, each, {
+          amount,
+          cause,
+          heading: direction(centre, each.center),
+          position: nearestPointOf(each, centre),
+        });
+      }
+    }
+  };
+
   /**
    * Whether a Duelist's body (a cylinder, lifted while they jump) reaches
    * within the blast's radius of `centre`: a jump can clear a blast on the floor.
@@ -2311,6 +2475,14 @@ export const createDuel = (config: DuelConfig): Duel => {
       spell,
       type: "explosion",
     });
+
+    blastStructures(
+      draft,
+      position,
+      incendio.blastRadius,
+      tuning.structures.damage.incendio * strengthOf(spell.casterId),
+      "incendio"
+    );
   };
 
   /**
@@ -2461,12 +2633,6 @@ export const createDuel = (config: DuelConfig): Duel => {
       };
     });
   };
-
-  /** What a Duelist's Spell damage is multiplied by: more under a Strength Potion. */
-  const strengthOf = (id: DuelistId) =>
-    books(id).effectTicks.strength > 0
-      ? tuning.potions.strength.damageScale
-      : 1;
 
   /**
    * A Spell landing on a Duelist at `position`: its damage (added to
@@ -2719,6 +2885,9 @@ export const createDuel = (config: DuelConfig): Duel => {
     }
 
     endClash(draft, clash, "exploded", null, clash.point);
+
+    const { damage, radius } = tuning.structures.clash;
+    blastStructures(draft, clash.point, radius, damage, "clash");
   };
 
   /**
@@ -2870,6 +3039,7 @@ export const createDuel = (config: DuelConfig): Duel => {
         );
       } else if (outcome.kind === "stopped") {
         draft.events.push({ ...outcome, type: "spell-stopped" });
+        strikeStructure(draft, outcome.spell, outcome.by, outcome.position);
       } else if (outcome.kind === "cancelled") {
         cancel(draft, outcome.spells, outcome.position);
       } else if (outcome.kind === "clashed") {
@@ -3772,6 +3942,25 @@ export const createDuel = (config: DuelConfig): Duel => {
           }
         : each
     );
+    // The cone wears down every piece of the Arena it reaches.
+    const tip = wandTip(caster, tuning);
+
+    for (const each of structures) {
+      const away = direction(caster.position, each.center);
+
+      const off = Math.acos(
+        clamp(away.x * caster.facing.x + away.z * caster.facing.z, -1, 1)
+      );
+
+      if (reachTo(each, caster.position) <= range && off <= halfAngle) {
+        hitStructure(draft, each, {
+          amount: tuning.structures.damage.depulso * strengthOf(caster.id),
+          cause: "depulso",
+          heading: away,
+          position: nearestPointOf(each, tip),
+        });
+      }
+    }
   };
 
   const cast = (draft: Draft, releases: Map<DuelistId, Release>) => {
@@ -3982,11 +4171,13 @@ export const createDuel = (config: DuelConfig): Duel => {
     const { clash } = draft;
 
     current = {
+      arena,
       clash: clash && placeClash(clash.sides, clash.along, draft.duelists),
       duelists: draft.duelists,
       round: { ...draft.round, phaseSecondsLeft: phaseTicks * tickSeconds },
       score: draft.score,
       spells: draft.spells,
+      structures,
       tick: current.tick + 1,
       winner: draft.winner,
     };

@@ -148,6 +148,15 @@ const sampleOfSound: SampleTable = {
   "shield-raise": just("shield-raise"),
   "spells-cancelled": just("spells-cancel"),
   "stamina-short": just("stamina-short"),
+  // A piece of the Arena cracking crumbles like Petrified stone; breaking,
+  // the same crumble, heavier.
+  "structure-break": {
+    pick: ({ broken }, settings) => ({
+      sample: "petrify-break",
+      ...heavy(broken, settings),
+    }),
+    samples: ["petrify-break"],
+  },
   "stupefy-cast": {
     pick: ({ strong }, settings) => ({
       sample: "stupefy-cast",

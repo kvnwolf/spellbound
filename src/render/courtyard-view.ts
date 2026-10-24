@@ -1,7 +1,8 @@
 /**
  * The castle courtyard at night. The Arena itself is a flagstone floor ringed
- * by a low parapet on its bounds, with a fluted stone column for every piece
- * of Cover, built from the same Arena layout the simulation collides with.
+ * by a low parapet on its bounds, built from the same Arena layout the
+ * simulation collides with; its breakable pieces (a fluted stone column for
+ * every piece of Cover, and the fountain) are the ruins' (`render/ruins`).
  * Around it rise tall castle walls and corner towers with lit windows, kept
  * well back so the camera never ends up inside them.
  *
@@ -17,22 +18,18 @@ import {
   DirectionalLight,
   HemisphereLight,
   InstancedMesh,
-  LatheGeometry,
   Mesh,
   Object3D,
   PlaneGeometry,
   Scene,
-  Vector2,
   Vector3,
 } from "three/webgpu";
 import type { MeshStandardNodeMaterial } from "three/webgpu";
 
 import type { ArenaLayout } from "../duel/duel";
 import { tuning } from "../tuning";
-import { createFountain } from "./courtyard/fountain";
 import {
   createAshlarMaterial,
-  createColumnMaterial,
   createFlagstoneMaterial,
   createSlateMaterial,
   createWindowMaterial,
@@ -107,48 +104,6 @@ const createParapet = (
 
     return [wall, cap];
   });
-};
-
-/** A fluted column on a square plinth, with a moulded base and capital. */
-const createColumn = (
-  radius: number,
-  material: MeshStandardNodeMaterial,
-  plinth: MeshStandardNodeMaterial
-): Object3D => {
-  const column = new Object3D();
-  // The shaft is the Cover circle Spells stop on; the mouldings and plinth
-  // barely overhang it, so Duelists brushing the column don't sink into stone.
-  const shaft = radius;
-
-  const profile = [
-    [radius * 1.12, 0.3],
-    [radius * 1.12, 0.38],
-    [radius * 1.05, 0.46],
-    [shaft, 0.55],
-    // A slight swelling (entasis) a third of the way up.
-    [shaft * 1.03, 1.6],
-    [shaft * 0.92, 3.5],
-    [shaft * 1.05, 3.62],
-    [radius * 1.3, 3.85],
-    [radius * 1.3, 3.92],
-    [0, 3.92],
-  ].map(([x = 0, y = 0]) => new Vector2(x, y));
-
-  const body = shadowed(new Mesh(new LatheGeometry(profile, 40), material));
-
-  const base = shadowed(
-    new Mesh(new BoxGeometry(radius * 2.3, 0.3, radius * 2.3), plinth)
-  );
-
-  const abacus = shadowed(
-    new Mesh(new BoxGeometry(radius * 2.8, 0.2, radius * 2.8), plinth)
-  );
-
-  base.position.y = 0.15;
-  abacus.position.y = 4.02;
-  column.add(body, base, abacus);
-
-  return column;
 };
 
 /**
@@ -353,22 +308,13 @@ export const createCourtyardScene = (
   floor.rotation.x = -Math.PI / 2;
 
   const parapetStone = createAshlarMaterial();
-  const columnStone = createColumnMaterial();
 
   scene.add(
     floor,
     ...createParapet(bounds, parapetStone),
     createCastle(bounds, settings),
-    createFountain(parapetStone, settings),
     createTorches(torchSpots(bounds), parapetStone, settings.torch)
   );
-
-  for (const cover of layout.cover) {
-    const column = createColumn(cover.radius, columnStone, parapetStone);
-
-    column.position.set(cover.center.x, 0, cover.center.z);
-    scene.add(column);
-  }
 
   return scene;
 };

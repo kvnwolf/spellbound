@@ -595,6 +595,8 @@ export const tuning = {
     maxRoll: 0.035,
     /** Extra trauma when the hit was a strong one (the third Stupefy). */
     strongBonus: 0.25,
+    /** Trauma added when a column or the fountain breaks. */
+    structureBreak: 0.35,
   },
 
   /**
@@ -3236,6 +3238,233 @@ export const tuning = {
     cross: "depulso",
     square: "petrificus",
     triangle: "incendio",
+  },
+
+  /**
+   * How the Arena's pieces look breaking (see `render/ruins`). Sizes and
+   * distances in metres, times in seconds, speeds in metres (or radians)
+   * per second, colours hex, opacities 0 to 1.
+   */
+  structureLook: {
+    /**
+     * Stone chips knocked off where a Spell strikes: `perHit` for a chip
+     * plus `perDamage` more per structure point it took (Stupefy's are a
+     * few, Confringo's a spray), thrown at `speed` within `spread` of the
+     * struck face, `size` in radius; a crack throws `crack` chunks and a
+     * break `burst`, bigger. They lie `life` seconds, crumbling away over
+     * the last `crumble`. `slots` chips are kept; `gravity` m/s².
+     */
+    chips: {
+      burst: 46,
+      crack: 12,
+      crumble: 0.8,
+      dark: "#4f4b45",
+      gravity: 11,
+      life: 7,
+      light: "#a59d8f",
+      perDamage: 0.35,
+      perHit: 3,
+      size: { big: 0.13, max: 0.06, min: 0.02 },
+      slots: 256,
+      speed: { max: 5, min: 1.5 },
+      spread: 0.8,
+    },
+    /**
+     * A column's cuts: a stump `stump` metres tall (± `stumpJitter`) stays
+     * on its plinth; `drums` drums between it and the capital (cut at
+     * `capital`), each cut tilted by up to `tilt` (a slope).
+     */
+    column: {
+      capital: 3.3,
+      drums: 4,
+      stump: 0.8,
+      stumpJitter: 0.18,
+      tilt: 0.14,
+    },
+    /**
+     * Cracks open as a piece wears down, from `from` of the way to broken:
+     * along the cuts it will break on (`width` from `min` to `max` as it
+     * weakens, wobbling `wobble` metres on noise of `wobbleScale` per
+     * metre, in patches of `patchScale` per metre that spread with the
+     * damage) and as hairline veins (noise of `veinScale` per metre,
+     * `veinWidth` wide); `color`, sunk `depth` into the relief.
+     */
+    cracks: {
+      color: "#0e0d0c",
+      depth: 0.03,
+      from: 0.15,
+      patchScale: 1.1,
+      veinScale: 2.6,
+      veinWidth: 0.05,
+      width: { max: 0.02, min: 0.004 },
+      wobble: 0.012,
+      wobbleScale: 9,
+    },
+    /**
+     * Dust, in the Depulso cloud's puffs (same shading, its own pool of
+     * `slots`): `hit` a small puff off the struck face per strike (`count`
+     * plus `perDamage` per structure point) at `speed`; `crack` puffs
+     * rolling down the piece as it cracks (`drift` out, `fall` down);
+     * `burst` the big cloud of a break: `ring` puffs rolling out along the
+     * floor from its foot at `speed` (`aspect` times wider than tall) and
+     * `column` puffs billowing up its height, `opacity` of the burst's.
+     * Each grows over `size` across `life`, stalls over `drag`, rises at
+     * `rise` and wanders `wander` on the curl noise; tinted `color`.
+     */
+    dust: {
+      burst: {
+        column: { count: 18, drag: 0.8, opacity: 0.85, rise: 0.35, wander: 1 },
+        life: { max: 4.2, min: 2.8 },
+        opacity: 0.6,
+        ring: {
+          aspect: 1.6,
+          count: 26,
+          drag: 0.45,
+          rise: 0.25,
+          speed: 6,
+          wander: 0.8,
+        },
+        size: { from: 1.1, to: 4.2 },
+      },
+      cloud: {
+        bend: { flow: 0.35, scale: 0.4 },
+        billowScale: 0.55,
+        curl: { evolve: 0.5, scale: 0.45 },
+        erosion: { from: 0.16, soft: 0.28, to: 0.6 },
+        fadeIn: 0.12,
+        fadeOut: 1.3,
+        fieldSize: 128,
+        floorFade: 0.3,
+        light: {
+          fill: "#8c8478",
+          fillStrength: 0.34,
+          from: { x: -0.2, y: 1, z: -0.5 },
+          key: "#c4cdf4",
+          keyStrength: 0.72,
+        },
+        roundness: 0.2,
+        selfShadow: 0.45,
+        slots: { bend: 0, dust: 192 },
+        spin: 0.35,
+        streak: 0,
+        swirl: { growth: 0.25, scale: 0.3, warp: 0.12 },
+        wispScale: 1.5,
+      },
+      color: "#a39684",
+      crack: {
+        count: 6,
+        drag: 0.6,
+        drift: 0.6,
+        fall: 0.5,
+        life: 1.8,
+        opacity: 0.4,
+        rise: -0.15,
+        size: { from: 0.4, to: 1.3 },
+        wander: 0.4,
+      },
+      hit: {
+        count: 2,
+        drag: 0.3,
+        life: 1.2,
+        opacity: 0.32,
+        perDamage: 0.12,
+        rise: 0.15,
+        size: { from: 0.25, to: 0.9 },
+        speed: 2.2,
+        wander: 0.3,
+      },
+    },
+    /**
+     * How a fragment flies once its piece breaks: thrown `out` from the
+     * axis and `up`, plus the blow's push (`motion.push`, scaled by a
+     * share between `push.min` and `push.max`, more for higher pieces),
+     * tumbling at `spin`, each up to `delay` late.
+     */
+    fling: {
+      delay: 0.06,
+      out: { max: 3.2, min: 1.2 },
+      push: { max: 1.1, min: 0.5 },
+      spin: { max: 6, min: 1.5 },
+      up: { max: 3.4, min: 0.6 },
+    },
+    /** Fresh broken stone on the fracture faces: from `dark` to `light` on noise of `gritScale` per metre. */
+    fracture: { dark: "#6d665c", gritScale: 14, light: "#a39a8b" },
+    /**
+     * Grit sprayed off the struck face in the shared spark ring: `extra`
+     * specks more than its chips, `lift` up off the face, as `size`,
+     * `speed`, `life`, `spread`, `streak`, `gravity` and `intensity` say
+     * (see `SparkStyle`).
+     */
+    grit: {
+      extra: 2,
+      gravity: 1,
+      intensity: 0.7,
+      life: { max: 0.45, min: 0.25 },
+      lift: 0.3,
+      size: 0.02,
+      speed: { max: 6, min: 3 },
+      spread: 0.9,
+      streak: 0.03,
+    },
+    /**
+     * Fragments fall at `gravity` m/s² to their resting height, then slide
+     * on for `slideShare` of their speed over `slideSeconds`, rolling
+     * `rollShare` as far; the blow pushes them at up to `push` m/s along
+     * its heading.
+     */
+    motion: {
+      gravity: 12,
+      push: 3,
+      rollShare: 0.4,
+      slideSeconds: 0.18,
+      slideShare: 0.6,
+    },
+    /** How far from its axis a fragment can end up: its bounding sphere. */
+    reach: 6,
+    /** The fountain's rim breaks into `arcs`; `fallShare` of them topple out, thrown `throw` as hard. */
+    rim: { arcs: 9, fallShare: 0.55, throw: 0.45 },
+    /** How jagged fracture faces are: their inner points jittered up to this. */
+    roughness: 0.07,
+  },
+
+  /**
+   * The destructible Arena: every column of Cover and the fountain (an
+   * Obstruction) has structural health that Spells wear down, in structure
+   * points (a column's 100 is not a Duelist's Health). At or below
+   * `crackedShare` of it a piece shows cracked; at zero it breaks. Broken
+   * Cover stops blocking Spells and sight, and lies as low rubble (an
+   * Obstruction of the column's footprint). Destruction lasts the whole Duel.
+   */
+  structures: {
+    /**
+     * A Clash blowing up breaks what is around it: `damage` to every piece
+     * whose edge is within `radius` metres of the meeting point.
+     */
+    clash: { damage: 200, radius: 4 },
+    /**
+     * A column: two full Confringos, or a full Confringo and an Incendio,
+     * break it; about ten Stupefys crack it.
+     */
+    cover: { health: 100 },
+    crackedShare: 0.6,
+    /**
+     * What each Spell takes off a piece it strikes. Confringo scales with its
+     * Charge like its damage to a Duelist (a Perfect Release multiplies it by
+     * `confringo.perfectScale`). Incendio's is its explosion's, dealt to
+     * every piece whose edge is within `incendio.blastRadius`; Depulso's to
+     * every piece its cone reaches. A Strength Potion scales them all.
+     */
+    damage: {
+      confringo: { full: 50, min: 15 },
+      depulso: 30,
+      expelliarmus: 2,
+      incendio: 55,
+      petrificus: 5,
+      stupefy: 3,
+      stupefyStrong: 6,
+    },
+    /** The fountain: sturdier, and Spells fly over it, so mostly blasts wear it down. */
+    obstruction: { health: 140 },
   },
 
   /** Stupefy, the Light Spell. Damage is in Health points. */
