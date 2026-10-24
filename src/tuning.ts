@@ -593,43 +593,161 @@ export const tuning = {
   },
 
   /**
-   * How the Clash looks: each Duelist's half of the beam is a white-hot core
-   * inside a sheath of fire whose bands flow toward the meeting point and
-   * whose filaments twist round it, inside a faint haze; the meeting point is
-   * a pulsing white-hot ball in a glow and a corona, swelling on every pump
-   * and spraying streaking sparks out sideways. Radii and sizes in metres,
-   * radiances scene-linear HDR, the light in candela.
+   * How the Clash looks: each Duelist's half of the beam is a jet of light
+   * in their Spell's colours pushing against the other's, the meeting point
+   * a blinding knot of energy spraying branching streams of light in every
+   * direction. Sizes and distances in metres, times in seconds, speeds in
+   * metres (or radians) per second, radiances scene-linear HDR, the light
+   * in candela. Outside the thin white-hot cores radiances stay modest, so
+   * bloom haloes the Clash without washing the courtyard white.
    */
   clashLook: {
+    /**
+     * The streams of energy shooting out of the meeting point: `rate`
+     * a second (from calm to full fury), `length` long (`furyLength` longer
+     * at full fury), living `life`, shooting out over `grow` seconds for the
+     * longest (every head flies at the same speed) and letting go of their
+     * root at `letGo` of their life. Each wiggles `jag` of its length
+     * sideways, writhes `writhe` at its tip, bends `curve` and droops
+     * `droop` (per metre, by its tip), fades with power `fade`, dims
+     * `dim` toward its tip and cools from white to its colour by `coolBy`
+     * of its length (`hotShare` of them stay white-hot). A ribbon `width`
+     * wide at the root tapering `taper`, a white `thread` (`threadIntensity`)
+     * inside a coloured `glow`, both as shares of the half-width; soft
+     * `headSoft` at both ends; `segments` along. `offBeam` of each heading
+     * along the beam is taken out, so they spray off it. They flicker
+     * (`flicker`: `rate` radians per second, never below `low`, `bias` up).
+     * `branch`: the chance one forks (`second` for a second fork), how
+     * far it turns (radians) and how long it is (share of the parent).
+     * `fury` rises with the swing of the struggle (shares of the beam per
+     * second), each pump (`kick`) and the Clash nearing its blast
+     * (`tension`), capped at `max`, settling at `settle` per second. A
+     * volley of arcs bursts at the start, with every pump's surge reaching
+     * the meeting point and at the end. `slots` arcs are kept.
+     */
+    arcs: {
+      branch: {
+        angle: 0.7,
+        chance: 0.55,
+        length: { max: 0.6, min: 0.3 },
+        second: 0.35,
+      },
+      coolBy: 0.2,
+      curve: 0.45,
+      dim: 0.6,
+      droop: 0.25,
+      endVolley: 26,
+      fade: 1.4,
+      flicker: { bias: 0.5, low: 0.25, rate: 55 },
+      fury: {
+        base: 0.15,
+        kick: 0.45,
+        max: 1.4,
+        settle: 6,
+        swing: 2.5,
+        tension: 0.5,
+      },
+      furyLength: 0.7,
+      glow: 0.55,
+      grow: 0.1,
+      headSoft: 0.12,
+      hot: "#fff6ea",
+      hotShare: 0.15,
+      intensity: 2,
+      jag: 0.12,
+      length: { max: 1.9, min: 0.5 },
+      letGo: 0.45,
+      life: { max: 0.3, min: 0.12 },
+      offBeam: 0.6,
+      pumpVolley: 7,
+      rate: { max: 110, min: 30 },
+      segments: 20,
+      slots: 160,
+      startVolley: 18,
+      taper: 0.75,
+      thread: 0.2,
+      threadIntensity: 0.7,
+      width: 0.14,
+      writhe: 0.08,
+      writheSpeed: 30,
+    },
+    /**
+     * Each half of the beam, a ribbon `width` wide turned to the camera
+     * (`segments` along): a white-hot `core` and a coloured `halo` (shares
+     * of the half-width), the halo churning by `churn` with noise flowing
+     * toward the meeting point (`noiseScale` per metre, `flowSpeed`),
+     * pulses (`pulse` deep, `pulseRate` per metre, `pulseSpeed`) and three
+     * filaments twisting round it (`filamentAmplitude`, `filamentWidth`,
+     * `filamentSpeed`). It swells `swell.amount` over the last `swell.reach`
+     * of its length, sways `sway.amount` (of its half-width, `sway.waves`
+     * along it, at `sway.speed`), softens over `wandSoft` and `knotSoft` at
+     * its ends and brightens from `rampFrom` at the Wand to full at the
+     * meeting point. A pump's `surge` races down it at `speed`, `width`
+     * long, brightening the core and halo by `core` and `halo`.
+     */
     beam: {
-      /** Bands of fire per metre along the beam, and how fast they flow (radians per second). */
-      bands: 5,
-      core: { radiance: 4, radius: 0.025 },
-      /** Filaments twisting round the sheath, and how fast they turn (radians per second). */
-      filaments: { count: 3, pitch: 2.2, speed: 16 },
-      flow: 38,
-      haze: { radiance: 0.45, radius: 0.3 },
-      sheath: { radiance: 1.6, radius: 0.11 },
+      churn: 0.6,
+      core: 0.06,
+      coreIntensity: 2,
+      filamentAmplitude: 0.3,
+      filamentIntensity: 1.2,
+      filamentSpeed: 34,
+      filamentWidth: 0.04,
+      flowSpeed: 16,
+      halo: 0.28,
+      haloIntensity: 1.1,
+      knotSoft: 0.06,
+      noiseScale: 1.4,
+      pulse: 0.35,
+      pulseRate: 2.4,
+      pulseSpeed: 44,
+      rampFrom: 0.7,
+      segments: 96,
+      surge: { core: 1.2, halo: 1.6, speed: 28, width: 0.35 },
+      sway: { amount: 0.06, speed: 7, waves: 1.5 },
+      swell: { amount: 0.8, reach: 0.35 },
+      wandSoft: 0.06,
+      width: 0.9,
     },
-    point: {
-      /** The ball's radius, and its glow and corona sprites' sizes and radiances. */
-      core: 0.18,
-      corona: { radiance: 0.45, size: 2.4 },
-      glow: { radiance: 1.8, size: 1.3 },
-      /** How much a pump swells the meeting point, fading at `kickFade` per second. */
-      kick: 0.6,
-      kickFade: 7,
-      light: { distance: 11, intensity: 22 },
-      /** How much the ball pulses on its own. */
-      pulse: 0.18,
-      radiance: 10,
+    /**
+     * The knot where the jets meet, a sprite `size` across: a white-hot
+     * heart (`core` of its radius, `coreIntensity`), a corona (`corona`
+     * of its radius, `coronaIntensity`) churning by `churn` round its rim
+     * (`churnScale` round it, `churnSpeed`), split between the two Spells'
+     * colours, and flickering `rays` (`count` round it, `speed`, shown
+     * above `threshold`, falling off by `falloff`). It pulses `pulse` on
+     * its own, swells `kick` on each pump (fading at `kickFade` per
+     * second) and `fury` with the arcs' fury. Its light reaches `distance`.
+     */
+    knot: {
+      churn: 0.5,
+      churnScale: 1.6,
+      churnSpeed: 2.4,
+      core: 0.07,
+      coreIntensity: 3.5,
+      corona: 0.26,
+      coronaIntensity: 2.4,
+      fury: 0.15,
+      hot: "#fff8ee",
+      kick: 0.45,
+      kickFade: 6,
+      light: { distance: 11, intensity: 32 },
+      pulse: 0.1,
+      rays: {
+        count: 4,
+        falloff: 2.2,
+        intensity: 1.4,
+        speed: 6,
+        threshold: 0.55,
+      },
+      size: 2.4,
     },
-    /** Sparks sprayed off the meeting point, per second, mostly sideways off the beam. */
+    /** Sparks sprayed off the meeting point, `rate` a second at calm (doubling at full fury), mostly sideways off the beam. */
     sparks: {
-      intensity: 5,
-      life: 0.45,
-      rate: 110,
-      size: 0.05,
+      intensity: 4,
+      life: 0.4,
+      rate: 60,
+      size: 0.04,
       speed: 7,
       spread: 0.35,
       streak: 0.04,
@@ -838,86 +956,187 @@ export const tuning = {
   },
 
   /**
-   * How Depulso looks: a cone of wind and force blasting out of the Wand
-   * along the caster's facing, as wide as the gameplay cone and `height`
-   * metres tall (half above, half below the Wand) at its far end. A muzzle
-   * flash and shock ring at the Wand; a curved shock front racing out to the
-   * end of the range in `frontSeconds`, bending the air behind it; a faint
-   * sleeve of rushing air filling the cone behind it; wind streaks shooting
-   * through the cone; floor dust swept out along it as the front passes; and
-   * a puff of force bursting off every Duelist it catches. All of it fades
-   * out over `seconds`. Colours are hex; radiances and intensities are
-   * scene-linear HDR multipliers (above the bloom threshold glows).
+   * How Depulso looks: a gust of force out of the Wand along the caster's
+   * facing, as wide as the gameplay cone and `height` metres tall (half
+   * above, half below the Wand) at its far end. Mostly invisible: a
+   * shapeless cloud of air billowing out and coming apart, the air bending
+   * what is behind it, dust and grit torn off the floor, and the force
+   * bursting off every Duelist it catches. The air leaves the Wand at full
+   * speed and stalls in the still air with time constant `drag` seconds, so
+   * the fastest of it reaches the end of the range within a fifth of a
+   * second, as the push lands. Sizes and distances in metres, times in
+   * seconds, colours hex, radiances scene-linear HDR.
    */
   depulsoLook: {
-    color: "#dcefff",
     /**
-     * Puffs of floor dust per metre the front travels, swept out along the
-     * cone (`spread` of randomness round that line): size, life, speed and
-     * rise (negative gravity); with `grit` fast specks per metre skimming the
-     * floor ahead of them.
+     * The cloud of air out of the Wand: `count` puffs, each sent a share of
+     * the range between `reach.min` and `reach.max` (raised to `bias`: below
+     * 1 sends more of it far), within `spread` of the cone and dipping
+     * `droop` radians toward the floor; `size` from birth to the end of a
+     * far puff's life; faint (`opacity`), rising and wandering on the curl
+     * noise.
+     */
+    air: {
+      bias: 0.6,
+      color: "#e4e9ee",
+      count: 40,
+      droop: 0.05,
+      life: { max: 1.15, min: 0.7 },
+      opacity: 0.26,
+      reach: { max: 1.08, min: 0.15 },
+      rise: 0.12,
+      size: { from: 0.3, to: 2.1 },
+      spread: 1,
+      wander: 0.45,
+    },
+    /**
+     * The air bending what is behind it: `count` bend puffs riding out with
+     * the cloud, `size` from birth to the far end, bending the scene seen
+     * through them by up to `strength` (screen metres per metre away) for
+     * `life` seconds.
+     */
+    bend: {
+      count: 10,
+      life: 0.5,
+      reach: { max: 1, min: 0.3 },
+      size: { from: 0.7, to: 2.6 },
+      strength: 0.14,
+      wander: 0.3,
+    },
+    /**
+     * How every puff looks: billows (`billowScale` repeats of the baked
+     * noise across a puff) torn into wisps (`wispScale`), curled by the
+     * swirl (`swirl.warp` at birth, `swirl.growth` more by the end of its
+     * life), rounded off past `roundness` of its radius and eroded from the
+     * thin edges in (the density threshold rises from `erosion.from` to
+     * `erosion.to` over its life, `erosion.soft` wide). It fades in over
+     * `fadeIn` seconds and out with power `fadeOut`, fades out within
+     * `floorFade` metres of the floor, and is lit like a soft ball: `key`
+     * light from `light.from`, `fill` all round. `curl` sets the wander's
+     * noise (`scale` per metre, `evolve` per second); `bend` the bend
+     * puffs' swirl. `slots` puffs are kept in each pool; the baked field is
+     * `fieldSize` texels square.
+     */
+    cloud: {
+      bend: { flow: 0.35, scale: 0.4 },
+      billowScale: 0.55,
+      curl: { evolve: 0.7, scale: 0.55 },
+      erosion: { from: 0.18, soft: 0.25, to: 0.62 },
+      fadeIn: 0.07,
+      fadeOut: 1.1,
+      fieldSize: 128,
+      floorFade: 0.3,
+      light: {
+        fill: "#8c8478",
+        fillStrength: 0.32,
+        from: { x: -0.2, y: 1, z: -0.5 },
+        key: "#c4cdf4",
+        keyStrength: 0.75,
+      },
+      roundness: 0.2,
+      selfShadow: 0.45,
+      slots: { bend: 32, dust: 224 },
+      spin: 0.6,
+      /** Seconds of motion a puff is stretched over on screen while the blast drives it. */
+      streak: 0.03,
+      swirl: { growth: 0.25, scale: 0.3, warp: 0.12 },
+      wispScale: 1.5,
+    },
+    /** Seconds for the blast's air to slow by e: the leading air covers 80% of its way in about 1.6 of these. */
+    drag: 0.12,
+    /**
+     * Floor dust torn up under the leading air, `perMetre` puffs per metre
+     * it travels: swept on at `speed` (stalling over `drag`), thrown up at
+     * `lift`, born `height` off the floor, growing over `life`, `aspect`
+     * times wider than tall as it hugs the floor; with `grit`
+     * specks per metre skimming the floor (sparks: `lift` up, `gravity`
+     * pulling them back down).
      */
     dust: {
-      color: "#9a8f7c",
+      aspect: 1.7,
+      color: "#ab9d86",
+      drag: 0.35,
       grit: {
-        intensity: 2.2,
-        life: 0.35,
-        perMetre: 10,
-        size: 0.025,
-        speed: 9,
-        streak: 0.05,
+        color: "#c9b79a",
+        gravity: 0.6,
+        intensity: 0.9,
+        life: 0.4,
+        lift: 0.12,
+        perMetre: 9,
+        size: 0.022,
+        speed: 8,
+        spread: 0.25,
+        streak: 0.04,
       },
-      intensity: 0.35,
-      life: 1,
-      perMetre: 12,
-      rise: -0.12,
-      size: 0.55,
-      speed: 3.2,
-      spread: 0.5,
+      height: 0.2,
+      life: { max: 1.8, min: 1.2 },
+      lift: 0.8,
+      opacity: 0.4,
+      perMetre: 6,
+      rise: 0.2,
+      size: { from: 0.5, to: 1.9 },
+      speed: 4,
+      wander: 0.5,
     },
-    /**
-     * The shock front: a curved sheet of air at the end of the cone, faint
-     * face-on and brightest where it turns edge-on (`rimPower`); it bends
-     * what is behind it by up to `refraction` of the screen.
-     */
-    front: { radiance: 0.8, refraction: 0.015, rimPower: 2.5 },
-    /** Seconds for the front to reach the end of the range: fast, so it lands as the push does. */
-    frontSeconds: 0.2,
     height: 2.2,
-    /** A puff of force bursting off a Duelist the blast catches, splashing on away from the caster. */
-    impact: {
-      flashLife: 0.1,
-      flashSize: 0.8,
-      life: 0.45,
-      light: 25,
-      lightLife: 0.25,
-      ring: 1.8,
-      ringLife: 0.25,
-      size: 0.05,
-      sparks: 36,
-      speed: 9,
-      splash: 1.4,
-      streak: 0.05,
-    },
-    /** The flash and shock ring at the Wand as the blast leaves it, `life` seconds. */
-    muzzle: { flash: 0.7, intensity: 2.5, life: 0.16, ring: 1 },
-    /** Everything fades out over this many seconds from the cast. */
-    seconds: 0.5,
-    /** The sleeve of rushing air behind the front: its radiance and the wind streaks round it. */
-    sheath: { radiance: 0.4, streaks: 13 },
     /**
-     * Wind streaks shot through the cone: `count` at the cast, at `speed`
-     * (slowed by the sparks' drag) within `spread` of the axis, `size`
-     * wide and stretched over `streak` seconds of motion.
+     * The force bursting off a Duelist it catches, once the leading air
+     * reaches them (at most `maxDelay` seconds after the cast): `puffs` of
+     * air and dust thrown off their body away from the caster within
+     * `spread` radians, at `speed` stalling over `drag`; `bend` puffs
+     * bending the air round them; `grit` specks and `dust` puffs kicked
+     * from their feet. `slots` puffs are kept for it.
+     */
+    hit: {
+      bend: { count: 2, life: 0.4, size: 2.2, strength: 0.12 },
+      drag: 0.25,
+      dust: 8,
+      grit: 16,
+      life: 0.9,
+      maxDelay: 0.15,
+      opacity: 0.4,
+      puffs: 14,
+      size: { from: 0.35, to: 1.3 },
+      slots: { bend: 8, dust: 96 },
+      speed: 5,
+      spread: 0.9,
+    },
+    /**
+     * The Spell VFX's burst on a Duelist it catches (see `spell-vfx.ts`): a
+     * faint soft flash only, no ring and no sparks; the force itself is the
+     * cloud's (`hit`).
+     */
+    impact: {
+      flashLife: 0.08,
+      flashSize: 0.35,
+      life: 0.3,
+      light: 0,
+      lightLife: 0.2,
+      ring: 0,
+      ringLife: 0.2,
+      size: 0.04,
+      sparks: 0,
+      speed: 6,
+      splash: 1.4,
+      streak: 0.04,
+    },
+    /** A soft breath of force at the Wand as the blast leaves it, `life` seconds. */
+    muzzle: { flash: 0.4, intensity: 1.1, life: 0.12 },
+    /** Seconds each blast keeps tearing up dust (the air has stalled by then). */
+    seconds: 0.6,
+    /**
+     * A few faint wind streaks shot through the cone at the cast, at
+     * `speed` within `spread` of their line, `size` wide and stretched
+     * over `streak` seconds of motion.
      */
     streaks: {
-      count: 70,
-      intensity: 2.6,
-      life: 0.34,
-      size: 0.04,
-      speed: 26,
-      spread: 0.5,
-      streak: 0.045,
+      count: 8,
+      intensity: 0.45,
+      life: 0.22,
+      size: 0.02,
+      speed: 24,
+      spread: 0.15,
+      streak: 0.035,
     },
   },
 

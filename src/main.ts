@@ -47,6 +47,7 @@ import { chargingWands } from "./render/charging-wands";
 import { createClashVfx } from "./render/clash-vfx";
 import { createCourtyardScene, torchSpots } from "./render/courtyard-view";
 import { createDefenceVfx } from "./render/defence-vfx";
+import { createDepulsoHits } from "./render/depulso-vfx";
 import { createDuelistView } from "./render/duelist-view";
 import { createFrameProbe, perfRequested } from "./render/frame-probe";
 import { sampleDuelist } from "./render/interpolate";
@@ -384,6 +385,13 @@ const start = async () => {
 
   scene.add(vfx.object);
 
+  // The force of Depulso bursting off every Duelist it catches.
+  const depulsoHits = createDepulsoHits(vfx.object, {
+    cone: tuning.depulso,
+    look: tuning.depulsoLook,
+    sparks: vfx.sparks,
+  });
+
   // Protego domes and Parry flashes.
   const defenceVfx = createDefenceVfx(tuning.protego, [localId, opponentId]);
   scene.add(defenceVfx.object);
@@ -391,7 +399,7 @@ const start = async () => {
   // The Clash's beam between two Wands and its meeting point.
   const clashVfx = createClashVfx({
     look: tuning.clashLook,
-    palette: tuning.spellPalette.confringo,
+    palette: tuning.spellPalette,
     sparks: vfx.sparks,
   });
 
@@ -421,6 +429,7 @@ const start = async () => {
   );
 
   vfx.watchFrom(rig.camera);
+  clashVfx.watchFrom(rig.camera);
 
   const frame = createFramePipeline(renderer, scene, rig.camera, tuning.render);
 
@@ -872,6 +881,8 @@ const start = async () => {
 
     shakeOnHits(events);
     vfx.handle(events);
+    depulsoHits.handle(events);
+    depulsoHits.advance(simSeconds);
     defenceVfx.handle(events);
     vfx.update(previous.spells, current.spells, alpha, simSeconds, {
       burning: feetOf(current, (each) => each.burnSeconds > 0),

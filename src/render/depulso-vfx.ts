@@ -1,285 +1,131 @@
 /**
- * Depulso's blast: a cone of wind and force bursting out of the Wand along
- * the caster's facing, as wide and as long as the gameplay cone. Views only.
+ * Depulso's blast: a gust of force out of the Wand along the caster's
+ * facing, as wide and as long as the gameplay cone. Views only. A blast of
+ * air is mostly invisible; what shows is what it drags and what it bends:
  *
- * - At the Wand, a muzzle flash and a shock ring as the blast leaves it.
- * - A curved shock front, a patch of a sphere round the Wand spanning the
- *   cone, races out to the end of the range in a fifth of a second (so it
- *   lands as the push does), faint face-on and brightest where it turns
- *   edge-on, like a pressure wave, and bends what is seen through it.
- * - Behind it, a faint sleeve of rushing air fills the cone: wind streaks
- *   round it flowing outward, soft where it turns edge-on so it reads as a
- *   volume rather than an outline, and never brightest at its rim, so the
- *   end of the cone is never a disc.
- * - Wind streaks shoot out of the Wand and through the cone, and dust is
- *   swept out along the floor under the front, with grit skimming ahead;
- *   both are sparks in the shared spark ring.
+ * - A shapeless, turbulent cloud of air billows out of the Wand through the
+ *   cone, launched hard and stalling in the still air, swelling and coming
+ *   apart into wisps as it goes (soft puffs in `air-cloud.ts`, shaped by
+ *   noise and curl noise, lit from above).
+ * - The air bends what is behind it: bend puffs ride out with the cloud,
+ *   rippling the scene seen through them.
+ * - Dust and grit are torn off the floor under the blast as it passes: dust
+ *   puffs swept out and up along the cone, grit specks skimming ahead (in
+ *   the shared spark ring).
+ * - A Duelist it catches bursts with force (`createDepulsoHits`): a puff of
+ *   air and dust thrown off their body away from the caster, the air
+ *   bending round them and grit kicked from their feet, timed to the
+ *   moment the cloud reaches them.
  *
- * A few reused waves, each with its own uniforms, so overlapping blasts fade
- * independently in one shader. Colours are scene-linear HDR.
+ * The fastest air reaches the end of the gameplay range (and a little
+ * past, so a Duelist at the very edge is still swallowed) within a fifth of
+ * a second, so it lands as the push does. Every number is in
+ * `tuning.depulsoLook`; the cone comes from `tuning.depulso`.
  */
-import {
-  abs,
-  float,
-  normalView,
-  positionViewDirection,
-  screenUV,
-  sin,
-  smoothstep,
-  uniform,
-  uv,
-  vec3,
-  vec4,
-  viewportSharedTexture,
-} from "three/tsl";
-import {
-  AdditiveBlending,
-  Color,
-  CylinderGeometry,
-  DoubleSide,
-  Group,
-  Mesh,
-  MeshBasicNodeMaterial,
-  SphereGeometry,
-} from "three/webgpu";
+import { Color, Vector3 } from "three/webgpu";
 import type { Object3D } from "three/webgpu";
 
+import type { DuelEvent } from "../duel/duel";
 import type { GroundPoint, Point3 } from "../duel/geometry";
 import type { Tuning } from "../tuning";
+import { coneDirection, createBendPool, createDustPool } from "./air-cloud";
+import { createAirField } from "./air-field";
 import type { SparkRing } from "./spark-ring";
+import { seededRandom } from "./spark-ring";
 
 export interface DepulsoWaves {
   /** Starts a blast at the Wand tip `origin`, along `axis` (a unit vector on the floor). */
   readonly start: (origin: Point3, axis: GroundPoint) => void;
-  /** Ages every blast by `seconds`, sweeping dust along the floor under each front as it passes. */
+  /** Ages every blast by `seconds`, tearing dust off the floor under each as it passes. */
   readonly advance: (seconds: number) => void;
 }
 
 export interface DepulsoWaveSettings {
   readonly cone: Pick<Tuning["depulso"], "coneDegrees" | "range">;
   readonly look: Tuning["depulsoLook"];
-  /** The shared spark ring the streaks, dust and grit are drawn with. */
+  /** The shared spark ring the grit and the faint wind streaks are drawn with. */
   readonly sparks: SparkRing;
   /** Depulso's colours: its wind and its white heart. */
   readonly palette: { readonly main: Color; readonly hot: Color };
   readonly random: () => number;
 }
 
-/** How many blasts can be on screen at once: one per Duelist is plenty. */
+type Look = Tuning["depulsoLook"];
+
+/** How many blasts can tear dust up at once: one per Duelist is plenty. */
 const poolSize = 3;
 
-/** The front's ease: fast out of the Wand, slowing toward the end of the range. */
-const frontOf = (share: number) => 1 - (1 - Math.min(share, 1)) ** 3;
+const between = (random: () => number, range: { min: number; max: number }) =>
+  range.min + (range.max - range.min) * random();
 
-/** Additive, depth tested, never written, one pass for both faces (see prewarm.ts). */
-const glowMaterial = () =>
-  new MeshBasicNodeMaterial({
-    blending: AdditiveBlending,
-    depthWrite: false,
-    forceSinglePass: true,
-    side: DoubleSide,
-    transparent: true,
+/** The air's two pools, one draw each, sharing the baked field. */
+const createCloud = (parent: Object3D, look: Look) => {
+  const field = createAirField(look.cloud.fieldSize);
+  const dust = createDustPool(look.cloud.slots.dust, look.cloud, field);
+  const bend = createBendPool(look.cloud.slots.bend, look.cloud, field);
+  // The bent scene first, the dust over it.
+  bend.sprite.renderOrder = 1;
+  dust.sprite.renderOrder = 2;
+  parent.add(bend.sprite, dust.sprite);
+
+  return { bend, dust };
+};
+
+/**
+ * How far the leading air has gone `seconds` after the cast, as a share of
+ * where it stalls: it leaves the Wand at full speed and drag stalls it.
+ */
+const frontShare = (seconds: number, drag: number) =>
+  1 - Math.exp(-seconds / drag);
+
+/** A grit speck skimming the floor along `line`, `distance` metres out of `origin`. */
+const kickGrit = (
+  sparks: SparkRing,
+  grit: Look["dust"]["grit"],
+  color: Color,
+  at: Point3,
+  line: Point3,
+  random: () => number
+) => {
+  sparks.emit({ x: at.x, y: 0.03 + random() * 0.1, z: at.z }, color, {
+    gravity: grit.gravity,
+    heading: { x: line.x, y: grit.lift, z: line.z },
+    intensity: grit.intensity,
+    life: grit.life * (0.6 + random() * 0.4),
+    size: grit.size,
+    speed: grit.speed * (0.6 + random() * 0.4),
+    spread: grit.spread,
+    streak: grit.streak,
   });
-
-/** A line on the floor `turn` radians off `axis`, as a unit vector. */
-const lineOf = (axis: GroundPoint, turn: number): GroundPoint => {
-  const cosine = Math.cos(turn);
-  const sine = Math.sin(turn);
-
-  return {
-    x: axis.x * cosine - axis.z * sine,
-    z: axis.x * sine + axis.z * cosine,
-  };
 };
 
 export const createDepulsoWaves = (
   parent: Object3D,
   { cone, look, palette, random, sparks }: DepulsoWaveSettings
 ): DepulsoWaves => {
+  const { bend, dust } = createCloud(parent, look);
   const halfWide = (cone.coneDegrees * Math.PI) / 360;
   const halfTall = Math.atan(look.height / 2 / cone.range);
-  const tint = new Color(look.color);
+  const air = new Color(look.air.color);
   const dustColor = new Color(look.dust.color);
-  const air = vec3(tint.r, tint.g, tint.b);
+  const gritColor = new Color(look.dust.grit.color);
+  // Where the leading air stalls: the end of the range, and a little past.
+  const stallAt = cone.range * look.air.reach.max;
 
-  // The sleeve: an open cone with its apex at the origin, opening along +z
-  // to a rim of radius 1 at z = 1; uv.y runs from 0 at the apex to 1 at the rim.
-  const sleeveGeometry = new CylinderGeometry(1, 0, 1, 48, 16, true);
-  sleeveGeometry.translate(0, 0.5, 0);
-  sleeveGeometry.rotateX(Math.PI / 2);
-
-  // The front: the patch of the unit sphere round +z that spans the cone.
-  const frontGeometry = new SphereGeometry(
-    1,
-    40,
-    16,
-    Math.PI / 2 - halfWide,
-    halfWide * 2,
-    Math.PI / 2 - halfTall,
-    halfTall * 2
-  );
-
-  // How directly a surface faces the camera (both faces): 1 face-on, 0 edge-on.
-  const facing = abs(normalView.dot(positionViewDirection));
-
-  const waves = Array.from({ length: poolSize }, () => {
-    // Seconds since the cast as a share of the blast's life, and how far
-    // the front has gone as a share of the range.
-    const progress = uniform(1);
-    const reach = uniform(1);
-    // The front's own strength: up as it leaves, gone soon after it lands.
-    const frontStrength = uniform(0);
-    const fade = float(1).sub(progress).pow(1.5);
-
-    // --- The sleeve of rushing air behind the front.
-    const along = uv().y;
-    const around = uv().x.mul(Math.PI * 2);
-
-    // Wind streaks round the cone, bent and flowing outward.
-    const streaks = sin(
-      around
-        .mul(look.sheath.streaks)
-        .add(
-          sin(along.mul(7).sub(progress.mul(26)).add(around.mul(3))).mul(2.2)
-        )
-    )
-      .mul(0.5)
-      .add(0.5)
-      .pow(2);
-
-    const behindFront = smoothstep(reach.add(0.03), reach.sub(0.05), along);
-    // Densest just behind the front, thinning back toward the Wand.
-    const wake = smoothstep(reach.sub(0.8), reach, along);
-    const ends = smoothstep(0, 0.12, along).mul(smoothstep(1, 0.75, along));
-
-    const sleeve = glowMaterial();
-    sleeve.colorNode = air.mul(look.sheath.radiance);
-    sleeve.opacityNode = behindFront
-      .mul(wake)
-      .mul(streaks.mul(0.75).add(0.25))
-      .mul(facing.pow(0.8))
-      .mul(ends)
-      .mul(fade)
-      .clamp(0, 1);
-
-    // --- The shock front.
-    const across = uv().x;
-    const up = uv().y;
-
-    const patch = smoothstep(0, 0.3, across)
-      .mul(smoothstep(1, 0.7, across))
-      .mul(smoothstep(0, 0.35, up))
-      .mul(smoothstep(1, 0.65, up));
-
-    const rim = float(1).sub(facing).pow(look.front.rimPower);
-
-    const front = glowMaterial();
-    front.colorNode = air.mul(look.front.radiance);
-    front.opacityNode = patch.mul(rim.add(0.12)).mul(frontStrength).clamp(0, 1);
-
-    // The air bent behind the front: the scene seen through it, shifted
-    // along the sheet's normal on screen, strongest where it is edge-on.
-    const bend = normalView.xy
-      .mul(rim.add(0.3))
-      .mul(patch)
-      .mul(frontStrength.mul(look.front.refraction));
-
-    const lens = new MeshBasicNodeMaterial({
-      depthWrite: false,
-      forceSinglePass: true,
-      side: DoubleSide,
-      transparent: true,
-    });
-
-    lens.colorNode = vec4(viewportSharedTexture(screenUV.add(bend)).rgb, 1);
-    lens.opacityNode = patch.mul(frontStrength).clamp(0, 1);
-
-    const group = new Group();
-    group.visible = false;
-
-    const sleeveMesh = new Mesh(sleeveGeometry, sleeve);
-    sleeveMesh.scale.set(
-      cone.range * Math.tan(halfWide),
-      look.height / 2,
-      cone.range
-    );
-
-    const lensMesh = new Mesh(frontGeometry, lens);
-    const frontMesh = new Mesh(frontGeometry, front);
-    // The bent scene first, the glow over it.
-    lensMesh.renderOrder = 1;
-    frontMesh.renderOrder = 2;
-    sleeveMesh.renderOrder = 2;
-
-    for (const mesh of [sleeveMesh, lensMesh, frontMesh]) {
-      mesh.frustumCulled = false;
-      group.add(mesh);
-    }
-
-    parent.add(group);
-
-    return {
-      age: look.seconds,
-      axis: { x: 0, z: -1 },
-      frontStrength,
-      fronts: [lensMesh, frontMesh],
-      group,
-      origin: { x: 0, y: 0, z: 0 },
-      progress,
-      reach,
-    };
-  });
+  const waves = Array.from({ length: poolSize }, () => ({
+    age: Infinity,
+    axis: { x: 0, z: -1 },
+    origin: { x: 0, y: 0, z: 0 },
+    owed: { dust: 0, grit: 0 },
+  }));
 
   let next = 0;
-  // Dust and grit owed to each blast: fractional counts carried frame to frame.
-  const owed = waves.map(() => ({ dust: 0, grit: 0 }));
 
-  /** Sweeps a puff of dust (or a speck of grit) out along a random line in the cone, `distance` metres out. */
-  const sweep = (
-    origin: Point3,
-    axis: GroundPoint,
-    distance: number,
-    grit: boolean
-  ) => {
-    const line = lineOf(axis, (random() * 2 - 1) * halfWide);
-    const { dust } = look;
-
-    const at = {
-      x: origin.x + line.x * distance,
-      y: grit ? 0.04 + random() * 0.08 : dust.size * (0.35 + random() * 0.4),
-      z: origin.z + line.z * distance,
-    };
-
-    if (grit) {
-      sparks.emit(at, dustColor, {
-        gravity: 0,
-        heading: { x: line.x, y: 0.05, z: line.z },
-        intensity: dust.grit.intensity,
-        life: dust.grit.life,
-        size: dust.grit.size,
-        speed: dust.grit.speed,
-        spread: 0.15,
-        streak: dust.grit.streak,
-      });
-
-      return;
-    }
-
-    sparks.emit(at, dustColor, {
-      gravity: dust.rise,
-      heading: { x: line.x, y: 0.2, z: line.z },
-      intensity: dust.intensity,
-      life: dust.life * (0.7 + random() * 0.3),
-      size: dust.size * (0.6 + random() * 0.6),
-      speed: dust.speed,
-      spread: dust.spread,
-    });
-  };
-
-  /** The muzzle flash and ring, and the wind streaks shot through the cone. */
+  /** The cloud of air out of the Wand, the air it bends and a few faint wind streaks. */
   const blastOut = (origin: Point3, axis: GroundPoint) => {
     const { muzzle, streaks } = look;
 
+    // A soft breath of force at the Wand, no ring: air has no edge.
     sparks.emit(origin, palette.hot, {
       intensity: muzzle.intensity,
       life: muzzle.life,
@@ -287,99 +133,161 @@ export const createDepulsoWaves = (
       speed: 0,
     });
 
-    sparks.emit(origin, palette.main, {
-      intensity: muzzle.intensity,
-      life: muzzle.life * 1.6,
-      ring: true,
-      size: muzzle.ring,
-      speed: 0,
-    });
+    for (let puff = 0; puff < look.air.count; puff += 1) {
+      // Spread through the cone; most air goes far, some stalls near.
+      const share = between(random, look.air.reach) ** look.air.bias;
+
+      const heading = coneDirection(
+        axis,
+        (random() * 2 - 1) * halfWide * look.air.spread,
+        ((random() * 2 - 1) * halfTall - look.air.droop) * look.air.spread
+      );
+
+      const metres = share * cone.range;
+      const speed = metres / look.drag;
+
+      dust.emit({
+        drag: look.drag,
+        life: between(random, look.air.life),
+        origin,
+        rise: look.air.rise,
+        size: [
+          look.air.size.from,
+          look.air.size.from +
+            (look.air.size.to - look.air.size.from) * (0.4 + 0.6 * share),
+        ],
+        strength: look.air.opacity * (0.6 + 0.4 * random()),
+        tint: air,
+        velocity: heading.multiplyScalar(speed),
+        wander: look.air.wander,
+      });
+    }
+
+    for (let puff = 0; puff < look.bend.count; puff += 1) {
+      const share = between(random, look.bend.reach);
+
+      const heading = coneDirection(
+        axis,
+        (random() * 2 - 1) * halfWide * 0.7,
+        (random() * 2 - 1) * halfTall * 0.5
+      );
+
+      bend.emit({
+        drag: look.drag,
+        life: look.bend.life * (0.8 + 0.4 * random()),
+        origin,
+        size: [
+          look.bend.size.from,
+          look.bend.size.from +
+            (look.bend.size.to - look.bend.size.from) * share,
+        ],
+        strength: look.bend.strength,
+        velocity: heading.multiplyScalar((share * cone.range) / look.drag),
+        wander: look.bend.wander,
+      });
+    }
 
     for (let streak = 0; streak < streaks.count; streak += 1) {
-      // Some leave the Wand, the rest start a little way down the cone, so
-      // the whole cone fills with rushing lines at once.
-      const start = streak % 3 === 0 ? 0 : random() * 0.35 * cone.range;
-      const line = lineOf(axis, (random() * 2 - 1) * halfWide * 0.8);
-      const lift = (random() * 2 - 1) * Math.tan(halfTall) * 0.8;
-
-      sparks.emit(
-        {
-          x: origin.x + line.x * start,
-          y: origin.y + lift * start,
-          z: origin.z + line.z * start,
-        },
-        streak % 4 === 0 ? palette.hot : tint,
-        {
-          gravity: 0,
-          heading: { x: line.x, y: lift, z: line.z },
-          intensity: streaks.intensity,
-          life: streaks.life * (0.6 + random() * 0.4),
-          size: streaks.size,
-          speed: streaks.speed,
-          spread: streaks.spread * 0.3,
-          streak: streaks.streak,
-        }
+      const heading = coneDirection(
+        axis,
+        (random() * 2 - 1) * halfWide * 0.8,
+        (random() * 2 - 1) * halfTall * 0.6
       );
+
+      sparks.emit(origin, air, {
+        gravity: 0,
+        heading: { x: heading.x, y: heading.y, z: heading.z },
+        intensity: streaks.intensity,
+        life: streaks.life * (0.6 + random() * 0.4),
+        size: streaks.size,
+        speed: streaks.speed,
+        spread: streaks.spread,
+        streak: streaks.streak,
+      });
     }
+  };
+
+  /** Dust torn off the floor at `distance` metres out along a random line through the cone. */
+  const tearDust = (wave: (typeof waves)[number], distance: number) => {
+    const line = coneDirection(
+      wave.axis,
+      (random() * 2 - 1) * halfWide * 0.9,
+      0
+    );
+
+    const at = {
+      x: wave.origin.x + line.x * distance,
+      y: look.dust.height * (0.5 + random()),
+      z: wave.origin.z + line.z * distance,
+    };
+
+    // Swept on along the blast and thrown up off the floor.
+    const speed = look.dust.speed * (0.6 + random() * 0.6);
+
+    dust.emit({
+      aspect: look.dust.aspect,
+      drag: look.dust.drag,
+      life: between(random, look.dust.life),
+      origin: at,
+      rise: look.dust.rise,
+      size: [look.dust.size.from, look.dust.size.to * (0.7 + random() * 0.5)],
+      strength: look.dust.opacity * (0.6 + 0.4 * random()),
+      tint: dustColor,
+      velocity: {
+        x: line.x * speed,
+        y: look.dust.lift * (0.5 + random()),
+        z: line.z * speed,
+      },
+      wander: look.dust.wander,
+    });
   };
 
   return {
     advance: (seconds) => {
-      for (const [index, wave] of waves.entries()) {
+      for (const wave of waves) {
         if (wave.age >= look.seconds) {
-          wave.group.visible = false;
           continue;
         }
 
-        const before = frontOf(wave.age / look.frontSeconds) * cone.range;
+        const before = frontShare(wave.age, look.drag) * stallAt;
         wave.age = Math.min(wave.age + seconds, look.seconds);
-        const share = wave.age / look.frontSeconds;
-        const after = frontOf(share) * cone.range;
-        const reach = frontOf(share);
+        const after = frontShare(wave.age, look.drag) * stallAt;
+        const swept = Math.max(Math.min(after, cone.range) - before, 0);
 
-        wave.progress.value = wave.age / look.seconds;
-        wave.reach.value = reach;
-        wave.group.visible = wave.age < look.seconds;
+        // Dust and grit under the leading air, for every metre it travelled.
+        wave.owed.dust += swept * look.dust.perMetre;
+        wave.owed.grit += swept * look.dust.grit.perMetre;
 
-        // The front swells in as it leaves and fades just after it lands.
-        wave.frontStrength.value =
-          Math.min(share * 6, 1) * Math.max(1 - (share - 0.8) / 0.6, 0);
-
-        const radius = Math.max(reach * cone.range, 1e-3);
-
-        for (const mesh of wave.fronts) {
-          mesh.visible = wave.frontStrength.value > 0.001;
-          mesh.scale.setScalar(radius);
+        for (; wave.owed.dust >= 1; wave.owed.dust -= 1) {
+          tearDust(wave, before + random() * swept);
         }
 
-        const debt = owed[index];
+        for (; wave.owed.grit >= 1; wave.owed.grit -= 1) {
+          const distance = before + random() * swept;
 
-        if (!debt) {
-          continue;
-        }
-
-        // Dust and grit under the front, for every metre it travelled.
-        debt.dust += (after - before) * look.dust.perMetre;
-        debt.grit += (after - before) * look.dust.grit.perMetre;
-
-        for (; debt.dust >= 1; debt.dust -= 1) {
-          sweep(
-            wave.origin,
+          const line = coneDirection(
             wave.axis,
-            before + random() * (after - before),
-            false
+            (random() * 2 - 1) * halfWide,
+            0
           );
-        }
 
-        for (; debt.grit >= 1; debt.grit -= 1) {
-          sweep(
-            wave.origin,
-            wave.axis,
-            before + random() * (after - before),
-            true
+          kickGrit(
+            sparks,
+            look.dust.grit,
+            gritColor,
+            {
+              x: wave.origin.x + line.x * distance,
+              y: 0,
+              z: wave.origin.z + line.z * distance,
+            },
+            line,
+            random
           );
         }
       }
+
+      bend.advance(seconds);
+      dust.advance(seconds);
     },
     start: (origin, axis) => {
       const wave = waves[next];
@@ -392,13 +300,169 @@ export const createDepulsoWaves = (
       wave.age = 0;
       wave.origin = origin;
       wave.axis = axis;
-      wave.progress.value = 0;
-      wave.reach.value = 0;
-      wave.frontStrength.value = 0;
-      wave.group.visible = true;
-      wave.group.position.set(origin.x, origin.y, origin.z);
-      wave.group.rotation.set(0, Math.atan2(axis.x, axis.z), 0);
+      wave.owed = { dust: 0, grit: 0 };
       blastOut(origin, axis);
+    },
+  };
+};
+
+export interface DepulsoHits {
+  /** Reacts to this frame's simulation events: a Duelist caught by Depulso. */
+  readonly handle: (events: readonly DuelEvent[]) => void;
+  /** Ages the bursts by `seconds` of simulation time. */
+  readonly advance: (seconds: number) => void;
+}
+
+export interface DepulsoHitSettings {
+  readonly cone: Pick<Tuning["depulso"], "range">;
+  readonly look: Tuning["depulsoLook"];
+  /** The shared spark ring the grit is drawn with. */
+  readonly sparks: SparkRing;
+}
+
+/**
+ * The force bursting on every Duelist Depulso catches (Shield or not: the
+ * push gets through): air and dust thrown off their body away from the
+ * caster, the air bending round them and grit kicked from their feet. It
+ * waits for the blast's air to reach them, so it lands with the cloud.
+ */
+export const createDepulsoHits = (
+  parent: Object3D,
+  { cone, look, sparks }: DepulsoHitSettings
+): DepulsoHits => {
+  const { bend, dust } = createCloud(parent, {
+    ...look,
+    cloud: { ...look.cloud, slots: look.hit.slots },
+  });
+
+  const random = seededRandom(59);
+  const air = new Color(look.air.color);
+  const dustColor = new Color(look.dust.color);
+  const gritColor = new Color(look.dust.grit.color);
+  const stallAt = cone.range * look.air.reach.max;
+  // Grit waiting for the blast to arrive: seconds left, where, which way.
+  let pending: { wait: number; feet: Point3; away: Point3 }[] = [];
+  const away = new Vector3();
+
+  const burst = (at: Point3, from: Point3) => {
+    const { hit } = look;
+    away.set(at.x - from.x, 0, at.z - from.z);
+    const metres = Math.max(away.length(), 1e-3);
+    away.divideScalar(metres);
+
+    // When the leading air gets here: solving its stall for this distance.
+    const wait = -look.drag * Math.log(1 - Math.min(metres / stallAt, 0.95));
+    const delay = Math.min(wait, hit.maxDelay);
+
+    for (let puff = 0; puff < hit.puffs; puff += 1) {
+      // Mostly on away from the caster, some round the body.
+      const scatter = coneDirection(
+        { x: away.x, z: away.z },
+        (random() * 2 - 1) * hit.spread,
+        (random() * 2 - 1) * hit.spread * 0.6
+      );
+
+      const speed = hit.speed * (0.5 + random() * 0.7);
+
+      dust.emit({
+        delay,
+        drag: hit.drag,
+        life: hit.life * (0.7 + random() * 0.5),
+        origin: {
+          x: at.x + (random() - 0.5) * 0.3,
+          y: at.y * (0.35 + random() * 0.8),
+          z: at.z + (random() - 0.5) * 0.3,
+        },
+        rise: look.dust.rise,
+        size: [hit.size.from, hit.size.to * (0.7 + random() * 0.5)],
+        strength: hit.opacity * (0.6 + 0.4 * random()),
+        tint: puff % 2 === 0 ? air : dustColor,
+        velocity: scatter.multiplyScalar(speed),
+        wander: look.dust.wander,
+      });
+    }
+
+    for (let puff = 0; puff < hit.bend.count; puff += 1) {
+      bend.emit({
+        delay,
+        drag: hit.drag,
+        life: hit.bend.life,
+        origin: { x: at.x, y: at.y * (0.6 + 0.4 * random()), z: at.z },
+        size: [hit.bend.size * 0.5, hit.bend.size],
+        strength: hit.bend.strength,
+        velocity: {
+          x: away.x * hit.speed * 0.5,
+          y: 0,
+          z: away.z * hit.speed * 0.5,
+        },
+      });
+    }
+
+    pending.push({
+      away: { x: away.x, y: 0, z: away.z },
+      feet: { x: at.x, y: 0, z: at.z },
+      wait: delay,
+    });
+  };
+
+  return {
+    advance: (seconds) => {
+      const due = pending.filter((each) => each.wait <= seconds);
+      pending = pending
+        .filter((each) => each.wait > seconds)
+        .map((each) => ({ ...each, wait: each.wait - seconds }));
+
+      for (const { away: line, feet } of due) {
+        for (let speck = 0; speck < look.hit.grit; speck += 1) {
+          const spread = coneDirection(
+            { x: line.x, z: line.z },
+            (random() * 2 - 1) * 1.2,
+            0
+          );
+
+          kickGrit(sparks, look.dust.grit, gritColor, feet, spread, random);
+        }
+
+        // A skirt of dust kicked up round the feet.
+        for (let puff = 0; puff < look.hit.dust; puff += 1) {
+          const angle = random() * Math.PI * 2;
+
+          const out = {
+            x: Math.cos(angle) + line.x * 1.5,
+            z: Math.sin(angle) + line.z * 1.5,
+          };
+
+          dust.emit({
+            aspect: look.dust.aspect,
+            drag: look.dust.drag,
+            life: between(random, look.dust.life),
+            origin: { x: feet.x, y: look.dust.height, z: feet.z },
+            rise: look.dust.rise,
+            size: [look.dust.size.from, look.dust.size.to * 0.8],
+            strength: look.dust.opacity,
+            tint: dustColor,
+            velocity: {
+              x: out.x * look.dust.speed * 0.6,
+              y: look.dust.lift,
+              z: out.z * look.dust.speed * 0.6,
+            },
+            wander: look.dust.wander,
+          });
+        }
+      }
+
+      bend.advance(seconds);
+      dust.advance(seconds);
+    },
+    handle: (events) => {
+      for (const event of events) {
+        if (
+          (event.type === "spell-hit" || event.type === "spell-blocked") &&
+          event.spell.kind === "depulso"
+        ) {
+          burst(event.position, event.spell.position);
+        }
+      }
     },
   };
 };
