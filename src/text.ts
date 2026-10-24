@@ -6,6 +6,13 @@ export const text = {
     effects: "Haz clic en la página para activar los efectos del DualSense",
     sound: "Haz clic en la página para activar el sonido",
   },
+  /** The face buttons' names, for screen readers, where their icons stand in the text. */
+  buttons: {
+    circle: "círculo",
+    cross: "equis",
+    square: "cuadrado",
+    triangle: "triángulo",
+  },
   /** While the local Duelist is locked in a Clash. */
   clash: {
     /** Punched onto the screen as the Clash starts. */

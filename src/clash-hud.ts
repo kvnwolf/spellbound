@@ -7,6 +7,7 @@
  * and only touches the DOM when what it shows changes.
  */
 import "./clash-hud.css";
+import { writeWithIcons } from "./button-icons";
 import { clashOpponentOf } from "./duel/duel";
 import type { DuelEvent, DuelistId, DuelSnapshot } from "./duel/duel";
 import { create } from "./slot-diamond";
@@ -40,8 +41,8 @@ export const createClashHud = (
 
   const prompt = create("div", "clash-prompt", root);
   const trigger = create("div", "clash-trigger", prompt);
-  trigger.textContent = text.clash.trigger;
-  create("div", "clash-pump", prompt).textContent = text.clash.pump;
+  writeWithIcons(trigger, text.clash.trigger);
+  writeWithIcons(create("div", "clash-pump", prompt), text.clash.pump);
   const bar = create("div", "clash-bar", prompt);
   const fill = create("div", "clash-bar-fill", bar);
   const marker = create("div", "clash-bar-marker", bar);

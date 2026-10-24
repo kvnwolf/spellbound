@@ -1,3 +1,4 @@
+import { writeWithIcons } from "./button-icons";
 import type { ScreenView } from "./screens/view";
 import { text } from "./text";
 
@@ -56,6 +57,30 @@ export const createOverlay = (element: HTMLElement) => {
     }
   };
 
+  /**
+   * A new screen's content enters (menu.css): fading up, its entries one
+   * after another; off the title, only once the click line has faded and
+   * the logo is on its way. A step within a screen redraws without it.
+   */
+  const enter = (screen: ScreenView["screen"]) => {
+    const before = element.dataset.screen;
+
+    if (before === screen) {
+      element.classList.remove("entering");
+
+      return;
+    }
+
+    element.style.setProperty(
+      "--enter-delay",
+      before === "title" ? "260ms" : "0ms"
+    );
+    element.classList.remove("entering");
+    // Restarts the entrance even if the last one is still playing.
+    void element.offsetWidth;
+    element.classList.add("entering");
+  };
+
   return {
     hide: () => {
       menu.hidden = true;
@@ -74,24 +99,26 @@ export const createOverlay = (element: HTMLElement) => {
       }
 
       shown = key;
+      enter(view.screen);
       element.dataset.screen = view.screen;
       heading.textContent = view.heading;
       heading.hidden = view.heading === text.title;
-      body.textContent = view.body ?? "";
+      writeWithIcons(body, view.body ?? "");
       body.hidden = view.body === undefined;
-      hint.textContent = view.hint ?? "";
+      writeWithIcons(hint, view.hint ?? "");
       hint.hidden = view.hint === undefined;
       // The veil keeps its words while it fades out.
       veilLine.textContent = view.action ?? veilLine.textContent;
       veil.classList.toggle("shown", view.action !== undefined);
       veil.disabled = view.action === undefined;
       items.replaceChildren(
-        ...(view.items ?? []).map((item) => {
+        ...(view.items ?? []).map((item, index) => {
           const entry = document.createElement("li");
           entry.textContent = item.label;
           entry.className = item.selected ? "selected" : "";
           entry.classList.toggle("disabled", item.disabled === true);
           entry.ariaDisabled = item.disabled ? "true" : null;
+          entry.style.setProperty("--entry", String(index));
 
           return entry;
         })

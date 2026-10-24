@@ -8,15 +8,8 @@
  * tucked under it and its name, for the owner to fill.
  */
 import "./slot-diamond.css";
+import { buttonIcon } from "./button-icons";
 import type { SpellSlot } from "./duel/spell-slots";
-
-/** The face button each slot sits on, as drawn on the DualSense. */
-const faceSymbols: Record<SpellSlot, string> = {
-  circle: "○",
-  cross: "✕",
-  square: "□",
-  triangle: "△",
-};
 
 export interface DiamondSlot {
   readonly item: HTMLElement;
@@ -55,7 +48,7 @@ export const createSlotDiamond = (
   const slot = (which: SpellSlot): DiamondSlot => {
     const item = create("div", `sd-slot sd-slot-${which}`, element);
     const badge = create("div", "sd-badge", item);
-    create("span", "sd-face", item).textContent = faceSymbols[which];
+    create("span", "sd-face", item).append(buttonIcon(which));
     const name = create("span", "sd-name", item);
 
     return { badge, item, name };
