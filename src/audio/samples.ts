@@ -257,6 +257,11 @@ export const musicFor = (screen: Screen): MusicState => {
     return { ambience: false, dimmed: false, theme: null };
   }
 
+  // The Controls keep what played where they opened.
+  if (screen.kind === "controls") {
+    return musicFor(screen.from);
+  }
+
   if (
     screen.kind === "title" ||
     screen.kind === "connect" ||

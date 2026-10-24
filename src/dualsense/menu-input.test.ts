@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import type { MenuInput } from "../screens/screens";
 import type { DualSenseButton, DualSenseSnapshot } from "./input";
 import { createMenuInput } from "./menu-input";
 
@@ -42,8 +43,7 @@ const pad = (
 
 const frame = 1 / 60;
 
-const input = (name: "back" | "confirm" | "down" | "options" | "up") =>
-  ({ input: name, type: "input" }) as const;
+const input = (name: MenuInput) => ({ input: name, type: "input" }) as const;
 
 const press = { type: "press" } as const;
 
@@ -97,8 +97,37 @@ describe("buttons", () => {
     ]);
   });
 
-  it("ignores the D-pad's sideways presses as navigation", () => {
-    expect(settled().read(pad(["left"]), frame)).toStrictEqual([press]);
+  it("maps L1 to left and R1 to right, on the press", () => {
+    const menu = settled();
+
+    expect(menu.read(pad(["l1"]), frame)).toStrictEqual([input("left"), press]);
+    expect(menu.read(pad(["l1"]), frame)).toStrictEqual([]);
+    expect(menu.read(pad(), frame)).toStrictEqual([]);
+    expect(menu.read(pad(["r1"]), frame)).toStrictEqual([
+      input("right"),
+      press,
+    ]);
+  });
+
+  it("maps the D-pad's sideways presses to left and right", () => {
+    const menu = settled();
+
+    expect(menu.read(pad(["left"]), frame)).toStrictEqual([
+      input("left"),
+      press,
+    ]);
+    expect(menu.read(pad(), frame)).toStrictEqual([]);
+    expect(menu.read(pad(["right"]), frame)).toStrictEqual([
+      input("right"),
+      press,
+    ]);
+  });
+
+  it("does not repeat a held sideways press", () => {
+    const menu = settled();
+    menu.read(pad(["right"]), frame);
+
+    expect(menu.read(pad(["right"]), 2)).toStrictEqual([]);
   });
 
   it("treats opposite D-pad presses held together as no direction", () => {

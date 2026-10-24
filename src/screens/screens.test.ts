@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { initialScreenState, reduceScreens } from "./screens";
-import type { ScreenEvent, ScreenState } from "./screens";
+import type { MenuInput, ScreenEvent, ScreenState } from "./screens";
 
 const settings = { resultDelaySeconds: 3 };
 
@@ -15,8 +15,7 @@ const play = (state: ScreenState, ...events: ScreenEvent[]): ScreenState => {
   return next;
 };
 
-const press = (input: "back" | "confirm" | "down" | "options" | "up") =>
-  ({ input, type: "input" }) as const;
+const press = (input: MenuInput) => ({ input, type: "input" }) as const;
 
 const padFound = { pad: "dualsense", type: "pad" } as const;
 const padLost = { pad: "none", type: "pad" } as const;
@@ -33,6 +32,10 @@ const onSelect = () => play(onMain(), press("confirm"));
 
 /** Práctica, from the main menu. */
 const onRivals = () => play(onMain(), press("down"), press("confirm"));
+
+/** Controles, from the main menu. */
+const onControls = () =>
+  play(onMain(), press("down"), press("down"), press("confirm"));
 
 const inDuel = (...moves: ScreenEvent[]) =>
   play(onSelect(), press("confirm"), ...moves);
@@ -54,6 +57,13 @@ const atSelect = (...moves: ScreenEvent[]) => play(onSelect(), ...moves).screen;
 const atRivals = (...moves: ScreenEvent[]) => play(onRivals(), ...moves).screen;
 const paused = () => inDuel(press("options"));
 const disconnected = () => inDuel(padLost);
+
+const atControls = (...moves: ScreenEvent[]) =>
+  play(onControls(), ...moves).screen;
+
+/** The Controls opened from the pause of a Duel: Controles is third. */
+const fromPause = () =>
+  play(paused(), press("down"), press("down"), press("confirm"));
 
 describe("title", () => {
   it("starts on the title, waiting for its start button", () => {
@@ -149,15 +159,26 @@ describe("main menu", () => {
     expect(onMain().screen).toStrictEqual({ kind: "main", selected: "duel" });
   });
 
-  it("moves between Duelo and Práctica, skipping Entrenamiento and Controles until they land", () => {
+  it("moves through Duelo, Práctica and Controles, skipping Entrenamiento until it lands", () => {
     expect(atMain(press("down"))).toMatchObject({ selected: "practice" });
     expect(atMain(press("down"), press("down"))).toMatchObject({
+      selected: "controls",
+    });
+    expect(atMain(press("down"), press("down"), press("down"))).toMatchObject({
+      selected: "controls",
+    });
+    expect(atMain(press("down"), press("down"), press("up"))).toMatchObject({
       selected: "practice",
     });
-    expect(atMain(press("down"), press("up"))).toMatchObject({
-      selected: "duel",
-    });
     expect(atMain(press("up"))).toMatchObject({ selected: "duel" });
+  });
+
+  it("opens the Controls on Controles, on the Controles tab", () => {
+    expect(onControls().screen).toStrictEqual({
+      from: { kind: "main", selected: "controls" },
+      kind: "controls",
+      tab: "controls",
+    });
   });
 
   it("opens the Difficulty select on Duelo", () => {
@@ -190,6 +211,91 @@ describe("main menu", () => {
     expect(play(unplugged, padFound, press("confirm")).screen.kind).toBe(
       "main"
     );
+  });
+});
+
+describe("Controls", () => {
+  it("switches to Mecánicas on R1 or right, and back on L1 or left, stopping at the ends", () => {
+    expect(atControls(press("right"))).toMatchObject({ tab: "mechanics" });
+    expect(atControls(press("right"), press("right"))).toMatchObject({
+      tab: "mechanics",
+    });
+    expect(atControls(press("right"), press("left"))).toMatchObject({
+      tab: "controls",
+    });
+    expect(atControls(press("left"))).toMatchObject({ tab: "controls" });
+  });
+
+  it("ignores ✕, up, down and time", () => {
+    expect(
+      play(onControls(), press("confirm"), press("down"), press("up"), tick(5))
+    ).toStrictEqual(onControls());
+  });
+
+  it("goes back to the main menu on ○ or Options, with Controles highlighted, from either tab", () => {
+    const main = { kind: "main", selected: "controls" };
+
+    expect(atControls(press("back"))).toStrictEqual(main);
+    expect(atControls(press("options"))).toStrictEqual(main);
+    expect(atControls(press("right"), press("back"))).toStrictEqual(main);
+  });
+
+  it("opens from the pause of a Duel, on Controles, and goes back to it", () => {
+    const pause = play(paused(), press("down"), press("down"));
+
+    expect(pause.screen).toMatchObject({ kind: "pause", selected: "controls" });
+    expect(fromPause().screen).toStrictEqual({
+      from: pause.screen,
+      kind: "controls",
+      tab: "controls",
+    });
+    expect(play(fromPause(), press("right"), press("back"))).toStrictEqual(
+      pause
+    );
+  });
+
+  it("leaves the paused Duel as it was: back to it, it is the same run", () => {
+    const duel = inDuel().screen;
+
+    expect(
+      play(
+        fromPause(),
+        press("back"),
+        press("up"),
+        press("up"),
+        press("confirm")
+      ).screen
+    ).toStrictEqual(duel);
+  });
+
+  it("opens from the pause of a Practice, on Controles, and goes back to it", () => {
+    const pause = play(
+      inPractice(1, press("options")),
+      press("down"),
+      press("down")
+    );
+
+    expect(pause.screen).toMatchObject({ kind: "pause", selected: "controls" });
+    expect(play(pause, press("confirm"), press("back"))).toStrictEqual(pause);
+  });
+
+  it("asks for the controller back if it goes away over the pause, then returns to that pause", () => {
+    const pause = play(paused(), press("down"), press("down")).screen;
+    const lost = play(fromPause(), padLost);
+
+    expect(lost.screen).toStrictEqual({
+      kind: "disconnected",
+      reconnected: false,
+      resume: pause,
+    });
+    expect(play(lost, padFound, anyButton).screen).toStrictEqual(pause);
+  });
+
+  it("shows the connect prompt if the controller goes away over the main menu's Controls", () => {
+    expect(atControls(press("right"), padLost)).toStrictEqual({
+      kind: "connect",
+      pad: "none",
+    });
   });
 });
 
@@ -338,13 +444,20 @@ describe("Practice", () => {
     ).toStrictEqual(before);
   });
 
-  it("pauses on Options with Continuar, Cambiar rival and Salir al menú", () => {
+  it("pauses on Options with Continuar, Cambiar rival, Controles and Salir al menú", () => {
     const pause = inPractice(1, press("options"));
 
     expect(pause.screen).toMatchObject({ kind: "pause", selected: "continue" });
     expect(play(pause, press("down")).screen).toMatchObject({
       selected: "changeRival",
     });
+    expect(play(pause, press("down"), press("down")).screen).toMatchObject({
+      selected: "controls",
+    });
+    expect(
+      play(pause, press("down"), press("down"), press("down"), press("down"))
+        .screen
+    ).toMatchObject({ selected: "quit" });
     expect(
       play(pause, press("down"), press("down"), press("down")).screen
     ).toMatchObject({ selected: "quit" });
@@ -378,6 +491,7 @@ describe("Practice", () => {
     expect(
       play(
         inPractice(1, press("options")),
+        press("down"),
         press("down"),
         press("down"),
         press("confirm")
@@ -489,7 +603,13 @@ describe("pause", () => {
 
   it("leaves for the Difficulty select with Salir, keeping the current choice", () => {
     expect(
-      play(paused(), press("down"), press("down"), press("confirm")).screen
+      play(
+        paused(),
+        press("down"),
+        press("down"),
+        press("down"),
+        press("confirm")
+      ).screen
     ).toStrictEqual({
       kind: "difficulty",
       practice: false,
@@ -503,7 +623,8 @@ describe("pause", () => {
     });
 
     expect(
-      play(paused(), press("down"), press("down"), press("down")).screen
+      play(paused(), press("down"), press("down"), press("down"), press("down"))
+        .screen
     ).toMatchObject({ selected: "quit" });
   });
 });
@@ -678,6 +799,7 @@ describe("a whole session", () => {
       press("up"),
       press("confirm"),
       press("options"),
+      press("down"),
       press("down"),
       press("down"),
       press("confirm"),

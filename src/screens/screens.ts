@@ -29,16 +29,21 @@ export type MainMenuOption = (typeof mainMenuOptions)[number];
 /** Main menu entries whose screens have not landed yet: listed, greyed out and never highlighted. */
 export const unavailableMainMenuOptions: ReadonlySet<MainMenuOption> = new Set([
   "training",
-  "controls",
 ]);
 
 /** The pause of a Duel. */
-export const pauseOptions = ["continue", "restart", "quit"] as const;
+export const pauseOptions = [
+  "continue",
+  "restart",
+  "controls",
+  "quit",
+] as const;
 
 /** The pause of a Practice: no restart, but a change of rival; Salir goes to the main menu. */
 export const practicePauseOptions = [
   "continue",
   "changeRival",
+  "controls",
   "quit",
 ] as const;
 
@@ -66,6 +71,16 @@ export interface DuelScreen {
   readonly over: { readonly won: boolean; readonly secondsLeft: number } | null;
 }
 
+export interface MainScreen {
+  readonly kind: "main";
+  readonly selected: MainMenuOption;
+}
+
+/** The Controls' two tabs, switched with L1 and R1 (or the D-pad). */
+export const controlsTabs = ["controls", "mechanics"] as const;
+
+export type ControlsTab = (typeof controlsTabs)[number];
+
 export interface PauseScreen {
   readonly kind: "pause";
   readonly duel: DuelScreen;
@@ -88,7 +103,17 @@ export type Screen =
    */
   | { readonly kind: "connect"; readonly pad: PadKind }
   /** The root: Duelo, Práctica, Entrenamiento and Controles. */
-  | { readonly kind: "main"; readonly selected: MainMenuOption }
+  | MainScreen
+  /**
+   * The Controls: what every button does, and what the less obvious
+   * mechanics mean, on two tabs. `from` is where ○ goes back to: the main
+   * menu, or the pause of a Duel, a Practice or a Training.
+   */
+  | {
+      readonly kind: "controls";
+      readonly tab: ControlsTab;
+      readonly from: MainScreen | PauseScreen;
+    }
   /** The Difficulty select, for a Duel or for a Practice against Rival real. */
   | {
       readonly kind: "difficulty";
@@ -119,14 +144,21 @@ export interface ScreenState {
   readonly runs: number;
 }
 
-export type MenuInput = "back" | "confirm" | "down" | "options" | "up";
+export type MenuInput =
+  | "back"
+  | "confirm"
+  | "down"
+  | "left"
+  | "options"
+  | "right"
+  | "up";
 
 export type ScreenEvent =
   /** The title's start button was clicked. */
   | { readonly type: "start" }
   /** What is plugged in changed. */
   | { readonly type: "pad"; readonly pad: PadKind }
-  /** A menu input: a D-pad or left stick step, ✕, ○ or Options. */
+  /** A menu input: a D-pad or left stick step, L1 or R1 (left, right), ✕, ○ or Options. */
   | { readonly type: "input"; readonly input: MenuInput }
   /** Some button went down, whichever it is. */
   | { readonly type: "press" }
@@ -152,19 +184,20 @@ export const pauseOptionsFor = (duel: DuelScreen): readonly PauseOption[] =>
 
 /**
  * Moves a highlight one step through `options`, over any `unavailable` ones,
- * stopping at both ends.
+ * stopping at both ends: up and down, or along `axis` (back, then forward).
  */
 const step = <T>(
   options: readonly T[],
   selected: T,
   input: MenuInput,
-  unavailable: ReadonlySet<T> = new Set()
+  unavailable: ReadonlySet<T> = new Set(),
+  axis: readonly [MenuInput, MenuInput] = ["up", "down"]
 ): T => {
-  if (input !== "down" && input !== "up") {
+  if (!axis.includes(input)) {
     return selected;
   }
 
-  const by = input === "down" ? 1 : -1;
+  const by = input === axis[1] ? 1 : -1;
 
   for (
     let index = options.indexOf(selected) + by;
@@ -184,6 +217,15 @@ const step = <T>(
 const toMain = (state: ScreenState, selected: MainMenuOption): ScreenState => ({
   ...state,
   screen: { kind: "main", selected },
+});
+
+/** The Controls on their first tab, going back to `from`. */
+const toControls = (
+  state: ScreenState,
+  from: MainScreen | PauseScreen
+): ScreenState => ({
+  ...state,
+  screen: { from, kind: "controls", tab: controlsTabs[0] },
 });
 
 /** The Difficulty select highlighting `selected`, for a Duel or a Practice. */
@@ -252,6 +294,12 @@ const onPad = (state: ScreenState, pad: PadKind): ScreenState => {
     return { ...state, screen: { ...screen, reconnected: connected } };
   }
 
+  // The Controls over a pause: the Duel waits behind them, so wait for the
+  // pad as that pause would, then return to it.
+  if (screen.kind === "controls" && screen.from.kind === "pause") {
+    return connected ? state : onPad({ ...state, screen: screen.from }, pad);
+  }
+
   if (screen.kind === "unsupported") {
     return state;
   }
@@ -271,6 +319,10 @@ const onMainInput = (
 
   if (input === "confirm" && screen.selected === "practice") {
     return toRivals(state, practiceRivals[0]);
+  }
+
+  if (input === "confirm" && screen.selected === "controls") {
+    return toControls(state, screen);
   }
 
   const selected = step(
@@ -347,6 +399,10 @@ const onPauseInput = (
     return toRivals(state, duel.practice ?? "ai");
   }
 
+  if (screen.selected === "controls") {
+    return toControls(state, screen);
+  }
+
   if (screen.selected === "quit") {
     // A Practice leaves for the main menu; a Duel for the Difficulty select.
     return duel.practice === null
@@ -355,6 +411,24 @@ const onPauseInput = (
   }
 
   return { ...state, screen: duel };
+};
+
+/** L1 and R1 (or left and right) switch tabs; ○ or Options goes back to where they opened. */
+const onControlsInput = (
+  state: ScreenState,
+  screen: Extract<Screen, { kind: "controls" }>,
+  input: MenuInput
+): ScreenState => {
+  if (input === "back" || input === "options") {
+    return { ...state, screen: screen.from };
+  }
+
+  const tab = step(controlsTabs, screen.tab, input, new Set(), [
+    "left",
+    "right",
+  ]);
+
+  return { ...state, screen: { ...screen, tab } };
 };
 
 const onResultInput = (
@@ -396,6 +470,10 @@ const onInput = (state: ScreenState, input: MenuInput): ScreenState => {
 
   if (screen.kind === "rivals") {
     return onRivalsInput(state, screen, input);
+  }
+
+  if (screen.kind === "controls") {
+    return onControlsInput(state, screen, input);
   }
 
   if (screen.kind === "duel") {

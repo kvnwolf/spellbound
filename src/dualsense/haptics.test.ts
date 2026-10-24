@@ -718,7 +718,7 @@ const press = (screen: Screen, input: MenuInput) => {
   return direct()([], 0, { live: false, menu: sound ? [sound] : [] });
 };
 
-const main = (selected: "duel" | "practice"): Screen => ({
+const main = (selected: "controls" | "duel" | "practice"): Screen => ({
   kind: "main",
   selected,
 });
@@ -743,8 +743,7 @@ describe("the menus", () => {
 
   it("does not tick when the highlight is already at the end of the list", () => {
     expect(press(main("duel"), "up").rumble).toStrictEqual(silence);
-    // Below Práctica are only entries not available yet: the end, too.
-    expect(press(main("practice"), "down").rumble).toStrictEqual(silence);
+    expect(press(main("controls"), "down").rumble).toStrictEqual(silence);
   });
 
   it("pulses firmer on a choice taken, softer on a step back", () => {

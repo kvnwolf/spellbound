@@ -4,16 +4,25 @@
  * greyed out). The overlay draws it; the Duel
  * screen itself shows nothing here, since the Duel and its HUD are the picture.
  */
+import { humanBindings } from "../controllers/human-controller";
+import type { HumanAction } from "../controllers/human-controller";
+import type { DualSenseButton } from "../dualsense/input";
+import { pauseButton } from "../dualsense/menu-input";
 import { difficulties } from "../duel/difficulty";
+import { potionIn } from "../duel/potions";
 import { practiceRivals } from "../duel/practice";
+import { boundTo, spellSlots } from "../duel/spell-slots";
+import type { SpellSlot } from "../duel/spell-slots";
 import { text } from "../text";
+import { tuning } from "../tuning";
 import {
+  controlsTabs,
   mainMenuOptions,
   pauseOptionsFor,
   resultOptions,
   unavailableMainMenuOptions,
 } from "./screens";
-import type { Screen } from "./screens";
+import type { ControlsTab, Screen } from "./screens";
 
 export interface ScreenView {
   readonly screen: Screen["kind"];
@@ -27,7 +36,51 @@ export interface ScreenView {
   }[];
   /** A click anywhere does this (the title's start), said over a veil. */
   readonly action?: string;
+  /** Tabs over the content, switched with L1 and R1; the open one marked. */
+  readonly tabs?: readonly {
+    readonly label: string;
+    readonly selected: boolean;
+  }[];
+  /** The Controls screen's content: its open tab's. */
+  readonly help?: ControlsHelp;
 }
+
+/** A part of the DualSense the Controls draw: a button, or a stick. */
+export type PadControl = DualSenseButton | "leftStick" | "rightStick";
+
+export interface ControlLabel {
+  readonly control: PadControl;
+  readonly label: string;
+  /** A second, smaller line. */
+  readonly detail?: string;
+}
+
+/** A trigger's four face-button slots, laid out like the HUD's diamond. */
+export interface SlotsLabel {
+  readonly trigger: "l2" | "r2";
+  readonly heading: string;
+  /** △ □ ○ ✕, each with what it holds; null for an empty slot. */
+  readonly slots: readonly {
+    readonly button: SpellSlot;
+    readonly label: string | null;
+  }[];
+}
+
+export type ControlsHelp =
+  | {
+      readonly tab: "controls";
+      /** What each control of the drawn DualSense does. */
+      readonly controls: readonly ControlLabel[];
+      /** The Potion Slots under L2, then the Spell Slots under R2. */
+      readonly slots: readonly SlotsLabel[];
+    }
+  | {
+      readonly tab: "mechanics";
+      readonly cards: readonly {
+        readonly title: string;
+        readonly body: string;
+      }[];
+    };
 
 type MenuItem = NonNullable<ScreenView["items"]>[number];
 
@@ -42,6 +95,67 @@ const menu = <T extends string>(
 
     return unavailable.has(option) ? { ...item, disabled: true } : item;
   });
+
+/** The order the Controls label the human Controller's actions in, the pause last. */
+const labelledActions: readonly HumanAction[] = [
+  "move",
+  "look",
+  "lockOn",
+  "lightSpell",
+  "heavySpell",
+  "dodge",
+  "jump",
+  "shield",
+  "sprint",
+  "spellSlots",
+  "potionSlots",
+];
+
+const details: Partial<Record<HumanAction, string>> = text.controls.details;
+
+const controlLabels = (): ControlLabel[] => [
+  ...labelledActions.map((action): ControlLabel => {
+    const label = {
+      control: humanBindings[action],
+      label: text.controls.actions[action],
+    };
+
+    const detail = details[action];
+
+    return detail === undefined ? label : { ...label, detail };
+  }),
+  { control: pauseButton, label: text.controls.actions.pause },
+];
+
+const slotsLabels = (): SlotsLabel[] => [
+  {
+    heading: text.controls.hold(
+      text.controls.triggers[humanBindings.potionSlots]
+    ),
+    slots: spellSlots.map((button) => {
+      const potion = potionIn(button, tuning);
+
+      return { button, label: potion ? text.potions[potion] : null };
+    }),
+    trigger: humanBindings.potionSlots,
+  },
+  {
+    heading: text.controls.hold(
+      text.controls.triggers[humanBindings.spellSlots]
+    ),
+    slots: spellSlots.map((button) => {
+      const special = boundTo(button, tuning);
+
+      return { button, label: special ? text.specials[special] : null };
+    }),
+    trigger: humanBindings.spellSlots,
+  },
+];
+
+const helpFor = (tab: ControlsTab): ControlsHelp =>
+  tab === "controls"
+    ? { controls: controlLabels(), slots: slotsLabels(), tab }
+    : { cards: text.controls.mechanics, tab };
 
 const padBodies = {
   dualsense: text.connectDualSense,
@@ -80,6 +194,18 @@ export const viewOf = (screen: Screen): ScreenView | undefined => {
         unavailableMainMenuOptions
       ),
       screen: screen.kind,
+    };
+  }
+
+  if (screen.kind === "controls") {
+    return {
+      heading: text.controls.heading,
+      help: helpFor(screen.tab),
+      screen: screen.kind,
+      tabs: controlsTabs.map((tab) => ({
+        label: text.controls.tabs[tab],
+        selected: tab === screen.tab,
+      })),
     };
   }
 

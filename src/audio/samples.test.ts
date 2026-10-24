@@ -179,6 +179,23 @@ describe("the music the screens call for", () => {
     ).toMatchObject({ dimmed: true, theme: "duel-theme" });
   });
 
+  it("keeps what plays where the Controls opened: the menu theme, or the dimmed Duel behind its pause", () => {
+    expect(
+      musicFor({
+        from: { kind: "main", selected: "controls" },
+        kind: "controls",
+        tab: "mechanics",
+      })
+    ).toStrictEqual(musicFor({ kind: "main", selected: "duel" }));
+    expect(
+      musicFor({
+        from: { duel, kind: "pause", selected: "controls" },
+        kind: "controls",
+        tab: "controls",
+      })
+    ).toStrictEqual(musicFor(paused));
+  });
+
   it("lets the duel theme go once the Duel is decided, for its fanfare", () => {
     expect(musicFor(decided)).toStrictEqual({
       ambience: true,

@@ -65,6 +65,28 @@ const createFlickDetector = (
   };
 };
 
+/**
+ * Which part of the DualSense each action is on: the one table the human
+ * Controller reads its pad through and the Controls screen labels its drawn
+ * DualSense from, so the two never disagree. The face buttons' Spell Slots
+ * and Potion Slots are bound in the tuning.
+ */
+export const humanBindings = {
+  dodge: "circle",
+  heavySpell: "triangle",
+  jump: "cross",
+  lightSpell: "square",
+  lockOn: "r3",
+  look: "rightStick",
+  move: "leftStick",
+  potionSlots: "l2",
+  shield: "l1",
+  spellSlots: "r2",
+  sprint: "r1",
+} as const;
+
+export type HumanAction = keyof typeof humanBindings;
+
 /** Whether a trigger modifier is held: past `hold`, or still above `release` once it was. */
 const holds = (
   travel: number,
@@ -98,8 +120,16 @@ const createSlotReader = (
 
   return {
     read: (pad: DualSenseSnapshot) => {
-      spellHeld = holds(pad.triggers.r2, spellHeld, settings.spellSlots);
-      potionHeld = holds(pad.triggers.l2, potionHeld, settings.potionSlots);
+      spellHeld = holds(
+        pad.triggers[humanBindings.spellSlots],
+        spellHeld,
+        settings.spellSlots
+      );
+      potionHeld = holds(
+        pad.triggers[humanBindings.potionSlots],
+        potionHeld,
+        settings.potionSlots
+      );
       let press: SpellSlot | null = null;
 
       for (const slot of spellSlots) {
@@ -261,8 +291,8 @@ export const createHumanController = (
 
       const pad = startGuard.filter(raw);
 
-      const lockOn = pad.buttons.r3 && !r3WasDown;
-      r3WasDown = pad.buttons.r3;
+      const lockOn = pad.buttons[humanBindings.lockOn] && !r3WasDown;
+      r3WasDown = pad.buttons[humanBindings.lockOn];
 
       if (lockOn) {
         settleTicks = Math.round(lockOnSettleSeconds / tickSeconds);
@@ -275,43 +305,43 @@ export const createHumanController = (
         flicks.disarm();
       }
 
-      const stick = settling ? { x: 0, y: 0 } : pad.rightStick;
+      const stick = settling ? { x: 0, y: 0 } : pad[humanBindings.look];
       const turn = aimResponse.step(stick, tickSeconds);
       const { face, potionSlots, spellSlots: castSlots } = slots.read(pad);
 
       if (clashOpponentOf(snapshot.clash, self) !== undefined) {
         triangleSpoken = true;
-      } else if (!pad.buttons.triangle) {
+      } else if (!pad.buttons[humanBindings.heavySpell]) {
         triangleSpoken = false;
       }
 
       // A △ spoken for by the Clash presses no slot either.
       const spokenFor = (read: SlotsIntent): SlotsIntent =>
-        triangleSpoken && read.press === "triangle"
+        triangleSpoken && read.press === humanBindings.heavySpell
           ? { ...read, press: null }
           : read;
 
       return {
         // △ is also the Clash pump; the simulation counts the presses, and
         // only during a Clash, so a △ held into one is no press.
-        clashPump: pad.buttons.triangle,
+        clashPump: pad.buttons[humanBindings.heavySpell],
         // Buttons are passed on as held; the simulation finds the presses
         // (and reads △'s hold over time to Charge Confringo). A face button
         // pressed while R2 is held went to its Spell Slot instead.
-        dodge: face.circle,
-        heavySpell: face.triangle && !triangleSpoken,
-        jump: face.cross,
-        lightSpell: face.square,
+        dodge: face[humanBindings.dodge],
+        heavySpell: face[humanBindings.heavySpell] && !triangleSpoken,
+        jump: face[humanBindings.jump],
+        lightSpell: face[humanBindings.lightSpell],
         lockOn,
         look: {
           pitch: turn.y * look.maxPitchSpeed,
           yaw: turn.x * look.maxYawSpeed,
         },
-        move: curvedWalk(pad.leftStick, moveCurveExponent),
+        move: curvedWalk(pad[humanBindings.move], moveCurveExponent),
         potionSlots: spokenFor(potionSlots),
-        shield: pad.buttons.l1,
+        shield: pad.buttons[humanBindings.shield],
         spellSlots: spokenFor(castSlots),
-        sprint: pad.buttons.r1,
+        sprint: pad.buttons[humanBindings.sprint],
         switchTarget: settling ? 0 : flicks.read(stick),
       };
     },

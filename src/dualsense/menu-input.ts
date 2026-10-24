@@ -1,6 +1,7 @@
 /**
  * Turns DualSense snapshots into menu events: one step per D-pad press or
- * left stick tilt (repeating while held), and edge-detected ✕ confirm, ○ back
+ * left stick tilt (repeating while held), and edge-detected ✕ confirm, ○ back,
+ * L1 or D-pad left and R1 or D-pad right (for tabs)
  * and Options. Pure and stateful across frames; the caller feeds it one
  * snapshot per frame.
  */
@@ -35,10 +36,18 @@ export interface MenuInputReader {
 
 type Direction = "down" | "up";
 
+/** The button that pauses a Duel (and opens nothing else): labelled on the Controls' drawn DualSense. */
+export const pauseButton = "options" satisfies DualSenseButton;
+
 const buttonInputs: readonly (readonly [DualSenseButton, MenuInput])[] = [
   ["cross", "confirm"],
   ["circle", "back"],
-  ["options", "options"],
+  [pauseButton, "options"],
+  // Sideways, for tabs: one step per press, no repeat.
+  ["l1", "left"],
+  ["left", "left"],
+  ["r1", "right"],
+  ["right", "right"],
 ];
 
 const allButtons: readonly DualSenseButton[] = [

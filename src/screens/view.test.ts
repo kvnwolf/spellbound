@@ -49,7 +49,7 @@ describe("what each screen shows", () => {
     );
   });
 
-  it("names the game over the main menu and lists Duelo, Práctica, Entrenamiento and Controles, the last two greyed out", () => {
+  it("names the game over the main menu and lists Duelo, Práctica, Entrenamiento and Controles, Entrenamiento greyed out", () => {
     const view = viewOf({ kind: "main", selected: "practice" });
 
     expect(view?.heading).toBe(text.title);
@@ -57,7 +57,7 @@ describe("what each screen shows", () => {
       { label: "Duelo", selected: false },
       { label: "Práctica", selected: true },
       { disabled: true, label: "Entrenamiento", selected: false },
-      { disabled: true, label: "Controles", selected: false },
+      { label: "Controles", selected: false },
     ]);
   });
 
@@ -113,16 +113,21 @@ describe("what each screen shows", () => {
     ]);
   });
 
-  it("offers Continuar, Reiniciar and Salir when a Duel is paused", () => {
+  it("offers Continuar, Reiniciar, Controles and Salir when a Duel is paused", () => {
     expect(labels({ duel, kind: "pause", selected: "continue" })).toStrictEqual(
-      ["Continuar", "Reiniciar", "Salir"]
+      ["Continuar", "Reiniciar", "Controles", "Salir"]
     );
   });
 
-  it("offers Continuar, Cambiar rival and Salir al menú when a Practice is paused", () => {
+  it("offers Continuar, Cambiar rival, Controles and Salir al menú when a Practice is paused", () => {
     expect(
       labels({ duel: practice, kind: "pause", selected: "continue" })
-    ).toStrictEqual(["Continuar", "Cambiar rival", "Salir al menú"]);
+    ).toStrictEqual([
+      "Continuar",
+      "Cambiar rival",
+      "Controles",
+      "Salir al menú",
+    ]);
   });
 
   it("asks to reconnect, then for a button press", () => {
@@ -141,5 +146,121 @@ describe("what each screen shows", () => {
     expect(lost?.heading).toBe("Reconecta tu mando");
     expect(lost?.body).toBe(text.disconnected.waiting);
     expect(back?.body).toBe(text.disconnected.reconnected);
+  });
+});
+
+describe("what the Controls show", () => {
+  const fromMain = { kind: "main", selected: "controls" } as const;
+
+  const controls = (tab: "controls" | "mechanics"): Screen => ({
+    from: fromMain,
+    kind: "controls",
+    tab,
+  });
+
+  it("heads the Controls with Controles and offers the Controles and Mecánicas tabs, the open one marked", () => {
+    expect(viewOf(controls("mechanics"))).toMatchObject({
+      heading: "Controles",
+      screen: "controls",
+      tabs: [
+        { label: "Controles", selected: false },
+        { label: "Mecánicas", selected: true },
+      ],
+    });
+  });
+
+  it("labels every control of the drawn DualSense in Spanish, from the human Controller's bindings", () => {
+    const help = viewOf(controls("controls"))?.help;
+
+    expect(help?.tab === "controls" && help.controls).toStrictEqual([
+      { control: "leftStick", label: "Moverse" },
+      {
+        control: "rightStick",
+        detail: "Muévelo rápido a un lado: cambiar de objetivo",
+        label: "Cámara",
+      },
+      { control: "r3", label: "Fijar objetivo" },
+      { control: "square", label: "Hechizo ligero" },
+      {
+        control: "triangle",
+        detail: "Mantén para cargar · Pulsa en un Clash",
+        label: "Hechizo pesado",
+      },
+      { control: "circle", label: "Esquivar" },
+      { control: "cross", label: "Saltar" },
+      {
+        control: "l1",
+        detail: "Justo antes del impacto: Parry",
+        label: "Escudo",
+      },
+      { control: "r1", label: "Correr" },
+      {
+        control: "r2",
+        detail: "Mantén y pulsa △ □ ○ ✕",
+        label: "Hechizos especiales",
+      },
+      { control: "l2", detail: "Mantén y pulsa △ □ ○ ✕", label: "Pociones" },
+      { control: "options", label: "Pausa" },
+    ]);
+  });
+
+  it("lists the Potions under L2 and the Special Spells under R2 by their face buttons, an empty slot without a name", () => {
+    const help = viewOf(controls("controls"))?.help;
+
+    expect(help?.tab === "controls" && help.slots).toStrictEqual([
+      {
+        heading: "Mantén L2",
+        slots: [
+          { button: "triangle", label: "Fuerza" },
+          { button: "square", label: "Wiggenweld" },
+          { button: "circle", label: "Celeridad" },
+          { button: "cross", label: null },
+        ],
+        trigger: "l2",
+      },
+      {
+        heading: "Mantén R2",
+        slots: [
+          { button: "triangle", label: "Incendio" },
+          { button: "square", label: "Petrificus Totalus" },
+          { button: "circle", label: "Expelliarmus" },
+          { button: "cross", label: "Depulso" },
+        ],
+        trigger: "r2",
+      },
+    ]);
+  });
+
+  it("shows a short card for each less obvious mechanic on Mecánicas", () => {
+    const help = viewOf(controls("mechanics"))?.help;
+    const cards = help?.tab === "mechanics" ? help.cards : [];
+
+    expect(cards.map((card) => card.title)).toStrictEqual([
+      "Fijar objetivo",
+      "Carga y Lanzamiento perfecto",
+      "Sobrecarga y Fallo",
+      "Escudo y Parry",
+      "Esquiva perfecta",
+      "Clash",
+      "Concentración",
+      "Quemadura",
+      "Petrificado",
+      "Desarme y varita",
+      "Pociones",
+    ]);
+
+    for (const card of cards) {
+      expect(card.body.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("shows the same Controls over a pause as over the main menu", () => {
+    const overPause = viewOf({
+      from: { duel, kind: "pause", selected: "controls" },
+      kind: "controls",
+      tab: "controls",
+    });
+
+    expect(overPause).toStrictEqual(viewOf(controls("controls")));
   });
 });

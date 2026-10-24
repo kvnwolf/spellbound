@@ -602,6 +602,13 @@ describe(cuesFor, () => {
   });
 });
 
+/** The Controls over the main menu, on `open`. */
+const tab = (open: "controls" | "mechanics"): Screen => ({
+  from: { kind: "main", selected: "controls" },
+  kind: "controls",
+  tab: open,
+});
+
 describe(menuSoundFor, () => {
   const duel: DuelScreen = {
     difficulty: "duelista",
@@ -620,6 +627,15 @@ describe(menuSoundFor, () => {
     expect(
       menuSoundFor(select("novato"), select("novato"), input("up"))
     ).toBeNull();
+  });
+
+  it("ticks a tab that switches, as a highlight that moves", () => {
+    expect(
+      menuSoundFor(tab("controls"), tab("mechanics"), input("right"))
+    ).toStrictEqual({ kind: "menu-move" });
+    expect(
+      menuSoundFor(tab("mechanics"), tab("controls"), input("left"))
+    ).toStrictEqual({ kind: "menu-move" });
   });
 
   it("confirms what opens or starts something, and steps back out of it", () => {

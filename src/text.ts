@@ -23,6 +23,88 @@ export const text = {
     trigger: "△",
   },
   connectDualSense: "Conecta tu DualSense y pulsa ✕",
+  /**
+   * The Controls: what every button does, on a DualSense drawn by us, and
+   * what the less obvious mechanics mean, on two tabs.
+   */
+  controls: {
+    /** What each control does, as labelled on the drawn DualSense. */
+    actions: {
+      dodge: "Esquivar",
+      heavySpell: "Hechizo pesado",
+      jump: "Saltar",
+      lightSpell: "Hechizo ligero",
+      lockOn: "Fijar objetivo",
+      look: "Cámara",
+      move: "Moverse",
+      pause: "Pausa",
+      potionSlots: "Pociones",
+      shield: "Escudo",
+      spellSlots: "Hechizos especiales",
+      sprint: "Correr",
+    },
+    /** A second line under some labels. */
+    details: {
+      heavySpell: "Mantén para cargar · Pulsa en un Clash",
+      look: "Muévelo rápido a un lado: cambiar de objetivo",
+      potionSlots: "Mantén y pulsa △ □ ○ ✕",
+      shield: "Justo antes del impacto: Parry",
+      spellSlots: "Mantén y pulsa △ □ ○ ✕",
+    },
+    heading: "Controles",
+    /** Over each trigger's slot diamond. */
+    hold: (trigger: string) => `Mantén ${trigger}`,
+    /** The cards on Mecánicas, one or two sentences each. */
+    mechanics: [
+      {
+        body: "Fija la cámara y la puntería en tu rival. Se suelta si cae o si pasa demasiado tiempo oculto tras una cobertura.",
+        title: "Fijar objetivo",
+      },
+      {
+        body: "Mantén el Hechizo pesado para cargarlo. Suéltalo justo cuando la carga se llena y saldrá más potente.",
+        title: "Carga y Lanzamiento perfecto",
+      },
+      {
+        body: "Si sigues manteniendo la carga llena, se sobrecarga: el hechizo te estalla en la mano y te deja aturdido.",
+        title: "Sobrecarga y Fallo",
+      },
+      {
+        body: "El Escudo para los hechizos que llegan de frente y gasta resistencia. Levántalo justo antes del impacto y devolverás el hechizo a quien lo lanzó.",
+        title: "Escudo y Parry",
+      },
+      {
+        body: "Esquiva justo antes de que un hechizo te alcance: no te toca y ganas Concentración.",
+        title: "Esquiva perfecta",
+      },
+      {
+        body: "Dos Hechizos pesados cargados del todo que chocan de frente se traban en un rayo. Pulsa △ más rápido que tu rival para empujárselo encima.",
+        title: "Clash",
+      },
+      {
+        body: "Tres segmentos que llenas acertando Hechizos ligeros, con Parrys, Esquivas perfectas y Clashes ganados. Pagan los Hechizos especiales y empiezan vacíos cada ronda.",
+        title: "Concentración",
+      },
+      {
+        body: "La explosión de Incendio deja ardiendo a quien alcanza, que sigue perdiendo salud unos segundos.",
+        title: "Quemadura",
+      },
+      {
+        body: "Petrificus Totalus deja a quien alcanza congelado en el sitio un momento, sin poder moverse ni actuar.",
+        title: "Petrificado",
+      },
+      {
+        body: "Expelliarmus hace saltar la varita: sin ella no puedes lanzar hechizos ni usar el Escudo. Pasa por encima para recogerla, o vuelve sola en unos segundos.",
+        title: "Desarme y varita",
+      },
+      {
+        body: "Mientras bebes eres vulnerable, y un golpe te hace perder la poción. Sus dosis se recargan cada ronda.",
+        title: "Pociones",
+      },
+    ],
+    tabs: { controls: "Controles", mechanics: "Mecánicas" },
+    /** The buttons printed on the drawn DualSense, by their own names. */
+    triggers: { l1: "L1", l2: "L2", r1: "R1", r2: "R2", r3: "R3" },
+  },
   difficulty: {
     duelista: "Duelista",
     heading: "Elige tu dificultad",
@@ -68,6 +150,7 @@ export const text = {
     /** In a Practice: back to the rival picker. */
     changeRival: "Cambiar rival",
     continue: "Continuar",
+    controls: "Controles",
     heading: "Pausa",
     quit: "Salir",
     /** In a Practice, Salir names where it goes. */

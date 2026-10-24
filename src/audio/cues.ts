@@ -482,7 +482,10 @@ export const menuSoundFor = (
 
   if (
     event.type === "input" &&
-    (event.input === "up" || event.input === "down")
+    (event.input === "up" ||
+      event.input === "down" ||
+      event.input === "left" ||
+      event.input === "right")
   ) {
     return { kind: "menu-move" };
   }
