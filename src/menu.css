@@ -6,13 +6,6 @@
  * logo, so no screen's content can move it. A new menu screen only fills
  * `#overlay`. Linked from index.html so the loading screen's first paint has it.
  */
-/* Registered so the logo glides, not jumps, between the title and the menus. */
-@property --logo-top {
-  syntax: "<length>";
-  inherits: true;
-  initial-value: 0px;
-}
-
 #menu {
   /*
    * Where the logo sits: the same on every menu screen. Short screens shrink
@@ -21,24 +14,24 @@
   --logo-width: min(40rem, 86vw, 72vh);
   --logo-height: calc(var(--logo-width) / 4);
   /*
-   * The logo and the screen's content under it centred together: overlay.ts
-   * measures the content. Loading has none yet: it holds the title veil's
-   * one line (its size below), so the logo stays put when the title comes.
+   * Loading and the title: the logo and the title's one click line (its
+   * size below) centred together, the same on both so the logo never moves.
+   * Past the title the logo is gone and each screen's content centres on
+   * its own height, which overlay.ts measures.
    */
   --veil-size: clamp(1.1rem, 2.4vw, 1.5rem);
   --veil-line: calc(var(--veil-size) * 1.4);
-  --content-height: var(--veil-line);
   --logo-top: max(
     clamp(1rem, 4vh, 3rem),
-    calc(50vh - (var(--logo-height) + 1.25rem + var(--content-height)) / 2)
+    calc(50vh - (var(--logo-height) + 1.25rem + var(--veil-line)) / 2)
   );
+  --content-height: 0px;
   /* The Clash point, the flare's centre (118 of the logo's 160 units down). */
   --clash-y: calc(var(--logo-top) + var(--logo-height) * 0.7375);
   /* The beams' last stretch of growth (logo.css) before they meet. */
   --clash-delay: 160ms;
 
   position: fixed;
-  transition: --logo-top 600ms ease-in-out;
   inset: 0;
   z-index: 10;
   overflow: hidden;
@@ -227,12 +220,25 @@
   z-index: 1;
   width: var(--logo-width);
   margin: 0 auto;
+  transition:
+    opacity 220ms ease-out,
+    visibility 0s 220ms;
+}
+
+/*
+ * The logo is the title's alone: past it (every menu, the pause, the
+ * result) it fades away and the screen's content centres on its own.
+ */
+#menu:has(#overlay[data-screen]:not([data-screen="title"])) .menu-logo {
+  visibility: hidden;
+  opacity: 0;
 }
 
 /* The screen's content: from just under the logo, never over the disclaimer. */
 #overlay {
   position: absolute;
-  inset: calc(var(--logo-top) + var(--logo-height) + 1.25rem) 0 6rem;
+  inset: max(clamp(1rem, 4vh, 3rem), calc(50vh - var(--content-height) / 2)) 0
+    6rem;
   z-index: 1;
   display: flex;
   flex-direction: column;
@@ -400,7 +406,7 @@
   animation-delay: calc(var(--enter-delay, 0ms) + 70ms + var(--entry) * 60ms);
 }
 
-#overlay.entering > .overlay-hint {
+#overlay.entering > p.overlay-hint {
   animation-delay: calc(var(--enter-delay, 0ms) + 360ms);
 }
 

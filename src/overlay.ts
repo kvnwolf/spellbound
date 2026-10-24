@@ -29,11 +29,10 @@ export const createOverlay = (element: HTMLElement) => {
   let shown: string | undefined;
 
   /**
-   * Hands menu.css the height of what this screen lays out under the logo,
-   * so it can centre the logo and that together on the screen. The title
-   * lays out only the veil's line, which menu.css already holds room for
-   * (as loading does, so the logo never moves between them). The click hint
-   * comes and goes on its own: it hangs below, uncounted.
+   * Hands menu.css the height of what this screen lays out, so it can centre
+   * it on the screen. The title lays out only its click line, which sits
+   * under the logo instead. The click hint comes and goes on its own: it
+   * hangs below, uncounted.
    */
   const measure = () => {
     const laidOut = [...element.children].filter(
