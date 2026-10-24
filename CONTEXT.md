@@ -19,7 +19,7 @@ A Duelist reaching zero Health, which ends their participation in the current Ro
 _Avoid_: Death, kill
 
 **Practice**:
-A Duel with nothing at stake, for learning: no Knockout and no Round end, the practising Duelist's Health, Stamina and Focus are refilled, and the rival's Health comes back a moment after reaching zero; Cooldowns and Spell costs still apply.
+A Duel with nothing at stake, for learning: no Knockout and no Round end, the practising Duelist's Health, Stamina and Focus are refilled, and the rival's Health comes back a moment after reaching zero, the rival down meanwhile (unable to act or be hit) until it has got back up; Cooldowns and Spell costs still apply.
 _Avoid_: Sandbox, free play
 
 **Training**:

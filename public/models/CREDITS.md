@@ -10,4 +10,6 @@
 - [Universal Animation Library](https://quaternius.itch.io/universal-animation-library): idle, walk, jog, sprint, roll, jump, one-handed spell, hits, death, pickup, push and crouch clips.
 - [Universal Animation Library 2](https://quaternius.itch.io/universal-animation-library-2): consume, knockback, shield, shield break, overhand throw and lay-to-idle clips.
 
+The Training Dummies wear the same `wizard.glb`, re-dressed in code (wood, robe and an empty hood); they add no assets.
+
 Thanks to Quaternius. Attribution is not required by CC0; it is given anyway.

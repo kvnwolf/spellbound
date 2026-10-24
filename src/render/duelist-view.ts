@@ -31,6 +31,11 @@
  * It keeps every cue of the procedural wizard it replaces: the Lock-on rim
  * glow, the full-Focus Wand aura, the empty hand while Disarmed, the vial
  * raised while drinking and the auras of Potions at work.
+ *
+ * A Practice rival down at zero Health falls and lies as at a Knockout,
+ * and gets up as after one the moment its Health is back. A Training
+ * Dummy (the same rig, re-dressed) also shows it in the light under its
+ * hood: out as it falls, flaring back up as it gets up.
  */
 import {
   AnimationMixer,
@@ -50,6 +55,7 @@ import type {
 import { springStep } from "../duel/geometry";
 import type { Point3 } from "../duel/geometry";
 import type { Tuning } from "../tuning";
+import type { DummyLook } from "./dummy-look";
 import type { DuelistSample } from "./interpolate";
 import { locomotionClips } from "./wizard-assets";
 import type { WizardAssets } from "./wizard-assets";
@@ -95,6 +101,8 @@ export interface DuelistViewSettings {
   readonly dodgeSeconds: number;
   /** Full Stamina, against which the Duelist's breathing is measured. */
   readonly staminaMax: number;
+  /** How long a Practice rival takes to get up once its Health is back (`DuelistSample.downSeconds`). */
+  readonly getUpSeconds: number;
 }
 
 type Triple = readonly [number, number, number];
@@ -196,18 +204,28 @@ const turnAbout = (joint: Object3D, axis: Vector3, angle: number) => {
   joint.quaternion.premultiply(scratchQuaternion);
 };
 
+/** A Duelist's view in `team`'s colours; given `dummy`, as a Training Dummy in that look. */
 export const createDuelistView = (
   id: DuelistId,
   team: TeamLook,
   settings: DuelistViewSettings,
-  assets: WizardAssets
+  assets: WizardAssets,
+  dummy?: DummyLook
 ): DuelistView => {
-  const { aura, dodgeSeconds, duelist, glow, potion, staminaMax, stone } =
-    settings;
+  const {
+    aura,
+    dodgeSeconds,
+    duelist,
+    getUpSeconds,
+    glow,
+    potion,
+    staminaMax,
+    stone,
+  } = settings;
 
   const { motion, wand } = duelist;
   const { gait, shots } = motion;
-  const rig = createWizardRig(assets, team, settings);
+  const rig = createWizardRig(assets, team, settings, dummy);
   const { joints, uniforms } = rig;
 
   // The Duelist's frame (position and facing), and inside it the body,
@@ -1755,6 +1773,31 @@ export const createDuelistView = (
     riseAge += seconds;
   };
 
+  /** How lit a Training Dummy's enchantment is: 1 on its feet, 0 down. */
+  let life = 1;
+
+  /** A Training Dummy's light under its hood: out while down, flaring up as it gets up. */
+  const kindle = (sample: DuelistSample, seconds: number) => {
+    if (!dummy) {
+      return;
+    }
+
+    life = approach(
+      life,
+      sample.knockedOut ? 0 : 1,
+      dummy.lifeSharpness,
+      seconds
+    );
+
+    const surge =
+      riseAge < dummy.surgeSeconds
+        ? Math.sin((Math.PI * riseAge) / dummy.surgeSeconds)
+        : 0;
+
+    uniforms.hollow.value =
+      life * dummy.hollowRadiance + surge * dummy.surgeRadiance;
+  };
+
   /** Raises the vial while drinking, in the free hand. */
   const showVial = (sample: DuelistSample) => {
     rig.vial.visible = sample.drinking !== null && !sample.knockedOut;
@@ -1846,7 +1889,13 @@ export const createDuelistView = (
       }
     },
     object,
-    show: (sample, seconds, wantedGlow) => {
+    show: (shown, seconds, wantedGlow) => {
+      // Down in a Practice: fallen as at a Knockout until it gets up.
+      const sample =
+        shown.downSeconds > getUpSeconds
+          ? { ...shown, knockedOut: true }
+          : shown;
+
       ({ petrified } = sample);
 
       object.position.set(
@@ -1868,6 +1917,7 @@ export const createDuelistView = (
       showVial(sample);
       breathe(sample, seconds);
       glowPotions(sample, seconds);
+      kindle(sample, seconds);
       uniforms.glowStrength.value = approach(
         uniforms.glowStrength.value,
         wantedGlow,

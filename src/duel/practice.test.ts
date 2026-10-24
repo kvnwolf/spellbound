@@ -104,6 +104,51 @@ const casts = (events: readonly DuelEvent[]) =>
       : []
   );
 
+/**
+ * The learner's first Stupefy empties a fragile rival's Health; then both
+ * press every other tick for as long as the rival should stay down. Its
+ * Health is back on the last of its recovery ticks (as above), and it
+ * then spends `getUpSeconds` getting up.
+ */
+const knockDown = () => {
+  const duel = create("casts", fragile);
+  const recoveryTicks = ticksOf(tuning.practice.recoverySeconds);
+  const getUpTicks = ticksOf(tuning.practice.getUpSeconds);
+
+  const opening = run(duel, ticksOf(1), (tick) => ({
+    learner: tick === 0 ? castLight : idleIntent,
+  }));
+
+  const zeroAt = opening.snapshots.findIndex(
+    (snapshot) =>
+      snapshot.duelists.find((each) => each.id === "rival")?.health === 0
+  );
+
+  if (zeroAt === -1) {
+    throw new Error("The rival never reached zero Health");
+  }
+
+  const downTicks = recoveryTicks - 1 + getUpTicks;
+
+  const down = run(
+    duel,
+    downTicks - (opening.snapshots.length - zeroAt),
+    (tick) => ({
+      ...tapping("learner", castLight)(tick),
+      ...tapping("rival", castLight)(tick),
+    })
+  );
+
+  const rival = [...opening.snapshots.slice(zeroAt), ...down.snapshots]
+    .map((snapshot) => snapshot.duelists.find((each) => each.id === "rival"))
+    .map((each) => ({
+      down: (each?.downSeconds ?? 0) > 0,
+      health: each?.health,
+    }));
+
+  return { down, duel, recoveryTicks, rival };
+};
+
 describe("Practice", () => {
   it("is fought from the first tick, with no Round intro", () => {
     const duel = create("idle");
@@ -159,6 +204,49 @@ describe("Practice", () => {
     const backAt = healths.indexOf(fragile.duelist.health);
 
     expect(backAt).toBe(ticksOf(tuning.practice.recoverySeconds) - 1);
+  });
+
+  it("puts the rival down at zero Health: it neither acts nor is hit until it has got back up", () => {
+    const { down, recoveryTicks, rival } = knockDown();
+
+    expect(rival.every((each) => each.down)).toBeTruthy();
+    // Its Health comes back as before, and it then spends the get-up down.
+    expect(rival[recoveryTicks - 1]).toStrictEqual({
+      down: true,
+      health: fragile.duelist.health,
+    });
+    expect(casts(down.events)).not.toContain("rival:stupefy");
+    expect(down.events).not.toContainEqual(
+      expect.objectContaining({ targetId: "rival", type: "spell-hit" })
+    );
+  });
+
+  it("has the rival back on its feet the tick after it has got up: it casts and is hit again", () => {
+    const { duel } = knockDown();
+
+    const up = run(duel, ticksOf(1), (tick) => ({
+      learner: tick === 1 ? castLight : idleIntent,
+      rival: tick === 1 ? castLight : idleIntent,
+    }));
+
+    expect(
+      up.snapshots[0]?.duelists.find((each) => each.id === "rival")?.downSeconds
+    ).toBe(0);
+    expect(casts(up.events)).toContain("rival:stupefy");
+    expect(up.events).toContainEqual(
+      expect.objectContaining({ targetId: "rival", type: "spell-hit" })
+    );
+  });
+
+  it("never puts anyone down in a Duel", () => {
+    const duel = create(null, fragile);
+    const { snapshots } = run(duel, ticksOf(4), tapping("learner", castLight));
+
+    expect(
+      snapshots.flatMap((snapshot) =>
+        snapshot.duelists.filter((each) => each.downSeconds > 0)
+      )
+    ).toStrictEqual([]);
   });
 
   it("never lets the learner's Health run out: no Knockout, back full at once", () => {

@@ -26,6 +26,8 @@ export interface DuelistSample {
   readonly lockNudge: Aim;
   /** States are not blended: they switch on the tick that changes them. */
   readonly knockedOut: boolean;
+  /** In a Practice, seconds left down after reaching zero Health (see `DuelistState`). */
+  readonly downSeconds: number;
   /** Staggered by a strong Stupefy or a Backfire. */
   readonly staggered: boolean;
   /** Sliding back from a Confringo or Depulso hit. */
@@ -92,6 +94,7 @@ export const sampleDuelist = (
   clashing: clashOpponentOf(clash, current.id) !== undefined,
   disarmed: current.looseWand !== null,
   dodging: current.dodgeSeconds > 0,
+  downSeconds: current.downSeconds,
   drinking: current.drinking,
   elevation: lerp(previous.elevation, current.elevation, alpha),
   facing: blendDirection(previous.facing, current.facing, alpha),

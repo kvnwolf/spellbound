@@ -297,6 +297,7 @@ const start = async () => {
     aura: wandAura,
     dodgeSeconds: tuning.defence.dodge.seconds,
     duelist: tuning.duelist,
+    getUpSeconds: tuning.practice.getUpSeconds,
     glow: tuning.lockOnGlow,
     potion: potionLook,
     staminaMax: tuning.defence.stamina.max,
@@ -313,6 +314,24 @@ const start = async () => {
     }
   );
 
+  // The rival is a wizard, or against a Training Dummy the enchanted
+  // mannequin (same rig re-dressed); both are built and compiled up front
+  // and each run shows the one it needs.
+  const rivalWizard = createDuelistView(
+    opponentId,
+    tuning.duelist.teamLooks.far,
+    viewSettings,
+    wizard
+  );
+
+  const rivalDummy = createDuelistView(
+    opponentId,
+    tuning.duelist.dummyLook,
+    viewSettings,
+    wizard,
+    tuning.duelist.dummyLook
+  );
+
   const views = new Map([
     [
       localId,
@@ -323,20 +342,22 @@ const start = async () => {
         wizard
       ),
     ],
-    [
-      opponentId,
-      createDuelistView(
-        opponentId,
-        tuning.duelist.teamLooks.far,
-        viewSettings,
-        wizard
-      ),
-    ],
+    [opponentId, rivalWizard],
   ]);
 
-  for (const view of views.values()) {
+  for (const view of [...views.values(), rivalDummy]) {
     scene.add(view.object);
   }
+
+  rivalDummy.object.visible = false;
+
+  /** Puts the rival `match` calls for in the courtyard: a Training Dummy, or the wizard. */
+  const dressRival = ({ practice }: Match) => {
+    const dummy = practice !== null && practice !== "ai";
+    rivalDummy.object.visible = dummy;
+    rivalWizard.object.visible = !dummy;
+    views.set(opponentId, dummy ? rivalDummy : rivalWizard);
+  };
 
   // Disarmed Duelists' Wands, flying off, on the floor and flying home.
   const looseWands = createLooseWandView(
@@ -494,6 +515,7 @@ const start = async () => {
     vfx.update(current.spells, [], 0, 0);
     duel = createDuelFor(match);
     controllers = createControllers(match);
+    dressRival(match);
     clock = createFixedStepClock(tuning.tickRate);
     previous = duel.snapshot();
     current = previous;

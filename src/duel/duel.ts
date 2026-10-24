@@ -137,6 +137,12 @@ export interface DuelistState {
   /** Knocked Out this Round: down, and out of the fight until the next Round. */
   readonly knockedOut: boolean;
   /**
+   * In a Practice, seconds left down after the rival reached zero Health:
+   * falling, lying until its Health comes back, then getting back up. Down,
+   * it can neither act nor be hit. 0 when on its feet, and always 0 in a Duel.
+   */
+  readonly downSeconds: number;
+  /**
    * Between 0 and `tuning.defence.stamina.max`; full again every Round. The
    * Shield, the Dodge, the jump and the sprint spend it, and it regenerates
    * a moment after it was last spent.
@@ -867,6 +873,15 @@ export const clashOpponentOf = (
 };
 
 /**
+ * Whether a Duelist is on their feet: not Knocked Out, and not down in a
+ * Practice after reaching zero Health. Only a Duelist on their feet acts,
+ * is hit or is seen.
+ */
+export const onFeet = (
+  self: Pick<DuelistState, "downSeconds" | "knockedOut">
+): boolean => !self.knockedOut && self.downSeconds === 0;
+
+/**
  * Whether a Duelist looks around (turns, Locks On, holds the Spell Slots)
  * this tick: standing, during the intro or the fight, and not rooted in a
  * Clash, where △ is the pump and nothing else moves.
@@ -877,7 +892,7 @@ const looksAround = (
   clash: ClashState | null
 ) =>
   (phase === "fighting" || phase === "intro") &&
-  !self.knockedOut &&
+  onFeet(self) &&
   clashOpponentOf(clash, self.id) === undefined;
 
 /** Where a Duelist's Spells leave the Wand. */
@@ -1277,7 +1292,7 @@ export const createDuel = (config: DuelConfig): Duel => {
       }
 
       const bodies = duelists.flatMap((other) =>
-        other.id === self.id || other.knockedOut
+        other.id === self.id || !onFeet(other)
           ? []
           : [
               {
@@ -1320,6 +1335,7 @@ export const createDuel = (config: DuelConfig): Duel => {
       chargeSeconds: 0,
       cooldowns: { depulso: 0, expelliarmus: 0, incendio: 0, petrificus: 0 },
       dodgeSeconds: 0,
+      downSeconds: 0,
       drinking: null,
       elevation: 0,
       facing: defaultForward,
@@ -1376,7 +1392,7 @@ export const createDuel = (config: DuelConfig): Duel => {
     duelists.filter(
       (other) =>
         other.team !== self.team &&
-        !other.knockedOut &&
+        onFeet(other) &&
         distanceBetween(self.position, other.position) <= range &&
         !sightBlocked(self.position, other.position, arena.cover)
     );
@@ -2257,7 +2273,7 @@ export const createDuel = (config: DuelConfig): Duel => {
         ? draft.duelists.filter(
             (each) =>
               each.team !== spell.team &&
-              !each.knockedOut &&
+              onFeet(each) &&
               each.dodgeSeconds === 0 &&
               inBlast(each, position)
           )
@@ -2396,7 +2412,7 @@ export const createDuel = (config: DuelConfig): Duel => {
 
       const pickedUp =
         grounded &&
-        !self.knockedOut &&
+        onFeet(self) &&
         distanceBetween(self.position, wand.landing) <= flight.pickupRadius;
 
       if (pickedUp || wand.ageTicks >= returnTicks) {
@@ -2717,9 +2733,7 @@ export const createDuel = (config: DuelConfig): Duel => {
     const [first, second] = clash.sides;
 
     const standing = (side: ClashSide) =>
-      draft.duelists.some(
-        (each) => each.id === side.duelistId && !each.knockedOut
-      );
+      draft.duelists.some((each) => each.id === side.duelistId && onFeet(each));
 
     if (
       draft.round.phase !== "fighting" ||
@@ -2802,7 +2816,7 @@ export const createDuel = (config: DuelConfig): Duel => {
         targets:
           draft.round.phase === "fighting"
             ? draft.duelists.filter(
-                (each) => !each.knockedOut && each.dodgeSeconds === 0
+                (each) => onFeet(each) && each.dodgeSeconds === 0
               )
             : [],
       },
@@ -3137,7 +3151,7 @@ export const createDuel = (config: DuelConfig): Duel => {
     book: Bookkeeping,
     clash: ClashState | null
   ) =>
-    !self.knockedOut &&
+    onFeet(self) &&
     book.staggerTicks === 0 &&
     book.petrifiedTicks === 0 &&
     book.knockback === undefined &&
@@ -3150,7 +3164,7 @@ export const createDuel = (config: DuelConfig): Duel => {
     phase: RoundPhase
   ) =>
     phase === "fighting" &&
-    !self.knockedOut &&
+    onFeet(self) &&
     book.staggerTicks === 0 &&
     book.petrifiedTicks === 0 &&
     book.knockback?.guarded === true;
@@ -3615,7 +3629,7 @@ export const createDuel = (config: DuelConfig): Duel => {
 
       if (
         other.team === caster.team ||
-        other.knockedOut ||
+        !onFeet(other) ||
         other.dodgeSeconds > 0 ||
         reach > range ||
         off > halfAngle ||

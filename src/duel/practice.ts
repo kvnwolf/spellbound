@@ -3,7 +3,8 @@
  * Training Dummy or the AI. Its rules are fixed, never toggled: no Knockout
  * and no Round end, the practising Duelist's Health, Stamina and Focus come
  * back full, and the rival's Health comes back a moment after it reaches
- * zero. Cooldowns and Spell costs still apply. The Duel simulation applies
+ * zero, the rival down meanwhile (falling, lying, then getting back up),
+ * unable to act or be hit. Cooldowns and Spell costs still apply. The Duel simulation applies
  * these rules when its config carries them. Pure: no three.js, no DOM.
  */
 import type { Tuning } from "../tuning";
@@ -54,6 +55,8 @@ interface Meters {
   readonly health: number;
   readonly stamina: number;
   readonly focus: number;
+  /** Seconds left down after reaching zero Health (see `DuelistState`). */
+  readonly downSeconds: number;
 }
 
 type Meter = "focus" | "health" | "stamina";
@@ -78,6 +81,7 @@ export const createPracticeKeeper = (
   const ticksOf = (seconds: number) => Math.round(seconds * tuning.tickRate);
   const refillTicks = ticksOf(tuning.practice.refillSeconds);
   const recoveryTicks = ticksOf(tuning.practice.recoverySeconds);
+  const getUpTicks = ticksOf(tuning.practice.getUpSeconds);
 
   const full: Readonly<Record<Meter, number>> = {
     focus: tuning.focus.max,
@@ -140,17 +144,41 @@ export const createPracticeKeeper = (
     return { ...after, health: full.health };
   };
 
+  /**
+   * A rival down from the tick its Health reaches zero until it has got
+   * back up, `getUpSeconds` after its Health came back.
+   */
+  const fall = <T extends Meters>(before: T, after: T): T => {
+    const key = `${after.id}:down`;
+    const fell = before.health > 0 && after.health <= 0;
+
+    // The tick it falls counts as the first of its wait for Health, as in `recover`.
+    const left = fell
+      ? recoveryTicks + getUpTicks - 1
+      : (waits.get(key) ?? 1) - 1;
+
+    if (left > 0) {
+      waits.set(key, left);
+    } else {
+      waits.delete(key);
+    }
+
+    return { ...after, downSeconds: Math.max(left, 0) / tuning.tickRate };
+  };
+
   return {
     tend: <T extends Meters>(
       before: readonly T[],
       after: readonly T[]
     ): readonly T[] =>
       after.map((self) => {
+        const was = before.find((each) => each.id === self.id) ?? self;
+
         if (self.id !== rules.learner) {
-          return recover(self);
+          return recover(fall(was, self));
         }
 
-        return refill(before.find((each) => each.id === self.id) ?? self, self);
+        return refill(was, self);
       }),
   };
 };

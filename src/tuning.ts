@@ -823,6 +823,56 @@ export const tuning = {
     /** Height of the chest above the floor; the aim point sits there. */
     chestHeight: 1.3,
     /**
+     * How a Training Dummy looks (Practice and Training only; a Duel keeps
+     * the wizards): an enchanted wooden practice mannequin on the wizard's
+     * own skeleton and clips, in a dark hooded robe with nothing under the
+     * hood. The outfit's cloth takes `cloth` (the hood `hood`), its metal
+     * fittings `metal` and its leather `leatherShade` of its own colour,
+     * except on the forearms, hands, shins and feet, where it is wood, as
+     * the hands are. Colours are hex; radiance is scene-linear HDR. The
+     * Team's edge light is `rim`.
+     *
+     * The wood's grain runs along each bone (rest pose): a noise of
+     * `grain` cycles per metre across it and `grainAlong` along it, wound
+     * into `grainRings` rings a cycle, blending `wood` into `woodLate` by
+     * `grainContrast`, and fading to its mean wherever a pixel spans more
+     * than `grainFade` (from the first edge to the second) of a ring, so
+     * it never shimmers. Every joint between two of
+     * the wooden bones is a carved groove (`groove` colour and roughness),
+     * `grooveWidth` of the way from one bone to the next either side of it
+     * (along the skin's blend between them), filtered by the pixel's span.
+     *
+     * The hood's inside is a void (`hollow`) holding a faint light
+     * (`hollowGlow` at `hollowRadiance`), the enchantment that moves the
+     * dummy: it goes out as the dummy falls in a Practice (eased at
+     * `lifeSharpness` per second) and flares back up to `surgeRadiance`
+     * over `surgeSeconds` as it gets back up.
+     */
+    dummyLook: {
+      cloth: "#2b2632",
+      grain: 40,
+      grainAlong: 3,
+      grainContrast: 0.85,
+      grainFade: [0.2, 0.45],
+      grainRings: 2.5,
+      groove: "#24160c",
+      grooveRoughness: 0.9,
+      grooveWidth: 0.05,
+      hollow: "#020203",
+      hollowGlow: "#8fd8ff",
+      hollowRadiance: 0.004,
+      hood: "#24202b",
+      leatherShade: 0.45,
+      lifeSharpness: 4,
+      metal: "#6b6660",
+      rim: "#7ff0ff",
+      surgeRadiance: 0.5,
+      surgeSeconds: 0.9,
+      wood: "#a8743f",
+      woodLate: "#5a361b",
+      woodRoughness: 0.62,
+    },
+    /**
      * How the Wand sits in the right fist and the vial in the left: in the
      * palm (`palmAlong` of the way from the wrist to the knuckles,
      * `palmDepth` metres below them), the Wand leaving the fist between
@@ -1674,7 +1724,13 @@ export const tuning = {
       /** Maniquí desarmador casts Expelliarmus at the player this often (seconds). */
       disarmsInterval: 8,
     },
-    /** The rival's Health, once at zero, comes back full after this many seconds. */
+    /**
+     * The rival's Health, once at zero, comes back full after this many
+     * seconds, the rival down meanwhile; it then takes `getUpSeconds`
+     * (the length of the `LayToIdle` clip it gets up with) to stand,
+     * still unable to act or be hit.
+     */
+    getUpSeconds: 1.5,
     recoverySeconds: 2.5,
     /**
      * The practising Duelist's Health, Stamina and Focus each come back full

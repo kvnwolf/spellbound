@@ -6,6 +6,11 @@ import { clone } from "three/addons/utils/SkeletonUtils.js";
  * attached to the rig's joints: the Wand in the right hand and the vial in
  * the left.
  *
+ * A Training Dummy (`dummy-look.ts`) wears the same model re-dressed: the
+ * outfit dark as a robe, wood where the forearms, hands, shins and feet
+ * are (carved at every joint), and nothing under the hood but a dark void
+ * holding the faint light of its enchantment.
+ *
  * Every surface reads one shared set of causes, so its PBR channels agree:
  * the model's own texture maps (colour, normals, roughness), the Team's
  * colours (the outfit's cloth re-tinted from its green, its metal fittings
@@ -29,6 +34,7 @@ import {
   cameraPosition,
   color,
   float,
+  frontFacing,
   max,
   mix,
   mx_noise_float,
@@ -47,9 +53,12 @@ import {
   Bone,
   Color,
   CylinderGeometry,
+  DoubleSide,
   Group,
   Matrix4,
   Mesh,
+  MeshBasicNodeMaterial,
+  MeshPhysicalNodeMaterial,
   MeshStandardMaterial,
   MeshStandardNodeMaterial,
   Object3D,
@@ -58,9 +67,16 @@ import {
   SphereGeometry,
   Vector3,
 } from "three/webgpu";
-import type { Node, Texture } from "three/webgpu";
+import type { Material, Node, Texture } from "three/webgpu";
 
 import type { Tuning } from "../tuning";
+import {
+  bakeDummyCauses,
+  dummyWood,
+  grooveColor,
+  hollowColor,
+} from "./dummy-look";
+import type { DummyLook } from "./dummy-look";
 import type { WizardAssets } from "./wizard-assets";
 
 type Duelist = Tuning["duelist"];
@@ -78,6 +94,8 @@ export interface WizardUniforms {
   /** The full-Focus aura in the Wand's wood. */
   readonly auraStrength: { value: number };
   readonly vialTint: { value: Color };
+  /** A Training Dummy's light inside its empty hood, scene-linear radiance. */
+  readonly hollow: { value: number };
 }
 
 /** The joints the view poses after the clips, by role. */
@@ -143,6 +161,9 @@ const isSkinned = (node: Object3D): node is SkinnedMesh =>
 const isBone = (node: Object3D | undefined): node is Bone =>
   node instanceof Bone;
 
+/** A surface with no cloth or metal in it: all leather, or wood. */
+const bare = () => ({ cloth: float(0), metal: float(0) });
+
 const restWorld = new Matrix4();
 const wanted = new Matrix4();
 
@@ -164,10 +185,15 @@ const mount = (
   joint.add(part);
 };
 
+/**
+ * Dresses a copy of the wizard for `team`; given `dummy`, as a Training
+ * Dummy in that look instead.
+ */
 export const createWizardRig = (
   assets: WizardAssets,
   team: TeamLook,
-  settings: WizardLookSettings
+  settings: WizardLookSettings,
+  dummy?: DummyLook
 ): WizardRig => {
   const { aura, duelist, glow, potion, stone } = settings;
   const { look } = duelist;
@@ -175,6 +201,7 @@ export const createWizardRig = (
   const uniforms = {
     auraStrength: uniform(0),
     glowStrength: uniform(0),
+    hollow: uniform(dummy?.hollowRadiance ?? 0),
     petrify: uniform(0),
     potionGlow: uniform(0),
     potionTint: uniform(new Color(potion.colors.wiggenweld)),
@@ -325,22 +352,40 @@ export const createWizardRig = (
     mix(float(1 - look.stoneMottle), float(1), mottle)
   );
 
-  /** A dielectric surface whose colour and roughness both turn to stone with the same weight. */
+  /**
+   * A dielectric surface whose colour and roughness both turn to stone with
+   * the same weight. Given `inside`, it is two-sided, its back faces that
+   * colour (never stone, and with no specular sheen: an empty dark does not
+   * shine) glowing `glow`.
+   */
   const surface = (
     base: Node<"vec3">,
     roughness: Node<"float">,
-    normals: Texture | null = null
+    normals: Texture | null = null,
+    inside?: { color: Node<"vec3">; glow: Node<"vec3"> }
   ) => {
-    const material = new MeshStandardNodeMaterial();
-    material.colorNode = mix(base, stoneColor, petrify);
-    material.roughnessNode = mix(
-      roughness,
-      float(look.stoneRoughness),
-      petrify
-    );
+    const material = inside
+      ? new MeshPhysicalNodeMaterial()
+      : new MeshStandardNodeMaterial();
+
+    const outside = mix(base, stoneColor, petrify);
+
+    const rough = mix(roughness, float(look.stoneRoughness), petrify);
+
     material.metalnessNode = float(0);
-    material.emissiveNode = bodyRim;
     material.normalMap = normals;
+
+    if (inside && material instanceof MeshPhysicalNodeMaterial) {
+      material.side = DoubleSide;
+      material.specularIntensityNode = frontFacing.select(float(1), float(0));
+      material.colorNode = frontFacing.select(outside, inside.color);
+      material.roughnessNode = frontFacing.select(rough, float(1));
+      material.emissiveNode = frontFacing.select(bodyRim, inside.glow);
+    } else {
+      material.colorNode = outside;
+      material.roughnessNode = rough;
+      material.emissiveNode = bodyRim;
+    }
 
     return material;
   };
@@ -412,14 +457,119 @@ export const createWizardRig = (
 
   const { hood } = team;
 
-  const dress = new Map([
-    ["Brows", () => textured("Brows", look.skinRoughness)],
-    ["Eyes", () => textured("Eyes", 0.3)],
-    ["Face", () => textured("Face", look.skinRoughness)],
-    ["Hands", () => textured("Hands", look.skinRoughness)],
-    ["Hood", () => outfitMaterial(hood ?? team.cloth)],
-    ["Outfit", () => outfitMaterial(team.cloth)],
-  ]);
+  /**
+   * A Training Dummy's surface over `name`'s own maps: its cloth (weighted
+   * `cloth`) re-tinted to `tint`, its metal (weighted `metal`) dull iron,
+   * and the rest leather darkened or, on the wooden bones, wood carved at
+   * the joints. The identities' weights sum to one by construction; their
+   * roughnesses blend as alpha (roughness squared).
+   */
+  const dummySurface = (
+    costume: DummyLook,
+    name: string,
+    tint: string,
+    masks: (
+      base: Node<"vec3">,
+      orm: Node<"vec4"> | null
+    ) => {
+      cloth: Node<"float">;
+      metal: Node<"float">;
+    },
+    inside?: { color: Node<"vec3">; glow: Node<"vec3"> }
+  ) => {
+    const { map, normal, roughness } = maps(name);
+
+    if (!map) {
+      throw new Error(`The wizard's ${name} has no colour map`);
+    }
+
+    const base = texture(map).rgb;
+    const orm = roughness ? texture(roughness) : null;
+    const own = orm ? orm.g : float(look.skinRoughness);
+    const shade = base.dot(vec3(0.2126, 0.7152, 0.0722));
+    const { cloth, metal } = masks(base, orm);
+    const wood = dummyWood(costume);
+
+    const clothShare = metal.oneMinus().mul(cloth);
+    const rest = metal.oneMinus().mul(cloth.oneMinus());
+    const carved = rest.mul(wood.share);
+    const groove = carved.mul(wood.groove);
+    const grain = carved.sub(groove);
+    const leather = rest.sub(carved);
+
+    const colour = rgb(tint)
+      .mul(shade.div(look.clothLuminance))
+      .mul(clothShare)
+      .add(rgb(costume.metal).mul(shade.div(look.metalLuminance)).mul(metal))
+      .add(base.mul(costume.leatherShade).mul(leather))
+      .add(wood.color.mul(grain))
+      .add(grooveColor(costume).mul(groove));
+
+    const alpha = own
+      .mul(own)
+      .mul(clothShare.add(leather))
+      .add(metal.mul(look.metalRoughness ** 2))
+      .add(grain.mul(wood.roughness.mul(wood.roughness)))
+      .add(groove.mul(costume.grooveRoughness ** 2));
+
+    return surface(colour, alpha.sqrt(), normal, inside);
+  };
+
+  /** The outfit's cloth (green in its texture) and metal (its ORM map's metal channel). */
+  const outfitMasks = (base: Node<"vec3">, orm: Node<"vec4"> | null) => ({
+    cloth: smoothstep(
+      look.clothMask[0],
+      look.clothMask[1],
+      base.g.sub(max(base.r, base.b))
+    ),
+    metal: orm ? smoothstep(0.3, 0.7, orm.b) : float(0),
+  });
+
+  /** The dark under a Training Dummy's hood, and the light it holds. */
+  const hollowOf = (costume: DummyLook) => ({
+    color: hollowColor(costume),
+    glow: rgb(costume.hollowGlow).mul(uniforms.hollow),
+  });
+
+  /** Where a Training Dummy's face would be: the same dark, unlit and never stone. */
+  const hollowSurface = (costume: DummyLook) => {
+    const { color: dark, glow: light } = hollowOf(costume);
+    const material = new MeshBasicNodeMaterial();
+    material.colorNode = dark.add(light);
+
+    return material;
+  };
+
+  /** The hood, two-sided: its outside cloth, its inside the empty dark. */
+  const dummyHood = (costume: DummyLook) =>
+    dummySurface(
+      costume,
+      "Outfit",
+      costume.hood,
+      outfitMasks,
+      hollowOf(costume)
+    );
+
+  const dress = dummy
+    ? new Map<string, () => Material>([
+        ["Brows", () => hollowSurface(dummy)],
+        ["Eyes", () => hollowSurface(dummy)],
+        ["Face", () => hollowSurface(dummy)],
+        ["Hands", () => dummySurface(dummy, "Hands", dummy.cloth, bare)],
+        ["Hood", () => dummyHood(dummy)],
+        [
+          "Outfit",
+          () => dummySurface(dummy, "Outfit", dummy.cloth, outfitMasks),
+        ],
+      ])
+    : new Map([
+        ["Brows", () => textured("Brows", look.skinRoughness)],
+        ["Eyes", () => textured("Eyes", 0.3)],
+        ["Face", () => textured("Face", look.skinRoughness)],
+        ["Hands", () => textured("Hands", look.skinRoughness)],
+        ["Hood", () => outfitMaterial(hood ?? team.cloth)],
+        ["Outfit", () => outfitMaterial(team.cloth)],
+      ]);
 
   for (const [name, mesh] of meshes) {
     const dressed = dress.get(name);
@@ -428,13 +578,22 @@ export const createWizardRig = (
       throw new Error(`The wizard's ${name} has no surface`);
     }
 
+    if (dummy && (name === "Hands" || name === "Outfit" || name === "Hood")) {
+      bakeDummyCauses(mesh);
+    }
+
     mesh.material = dressed();
     // Posed limbs leave the rest pose's bounds: the two wizards are always drawn.
     mesh.frustumCulled = false;
     shadowed(mesh);
 
     if (name === "Hood") {
-      mesh.visible = hood !== null;
+      mesh.visible = dummy !== undefined || hood !== null;
+    }
+
+    // Under a Training Dummy's hood there is no face: no eyes, no brows.
+    if (dummy && (name === "Eyes" || name === "Brows")) {
+      mesh.visible = false;
     }
   }
 
