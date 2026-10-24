@@ -343,10 +343,6 @@ const eventSounds: EventSounds = {
           }),
         ],
   "round-start": () => [announce({ kind: "duel-start" })],
-  // The slide sounds like the roll: a body thrown along the stone.
-  slide: (event, _frame, place) => [
-    place.by(event.duelistId, { kind: "dodge" }),
-  ],
   "spell-blocked": (event, _frame, place) => {
     const heavy =
       event.spell.kind === "confringo" ||

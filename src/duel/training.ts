@@ -99,7 +99,7 @@ const plan = (
 
 export const lessonPlans: Readonly<Record<Lesson, LessonPlan>> = {
   clash: plan("clash", ["clash"]),
-  crouch: plan("casts", ["duck", "slide"]),
+  crouch: plan("casts", ["duck"]),
   depulso: plan("idle", ["depulso"], "fullFocus"),
   disarmed: plan("disarms", ["disarmed", "pickup"]),
   dodge: plan("casts", ["dodge", "perfectDodge"]),
@@ -319,9 +319,6 @@ const counters: Readonly<Record<Goal, Counter>> = {
       event.how === "pickup"
   ),
   run: metresWhen((after) => after.sprinting),
-  slide: counting(
-    (event, me) => event.type === "slide" && event.duelistId === me
-  ),
   special: counting(
     (event, me) =>
       event.type === "spell-cast" &&

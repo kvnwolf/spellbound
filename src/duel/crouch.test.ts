@@ -1,6 +1,6 @@
 /**
- * Crouching and sliding through the Duel seam: L3 crouches (or stands back
- * up), and pressed while sprinting it slides. Same seam as
+ * Crouching through the Duel seam: L3 crouches (or stands back up). Same
+ * seam as
  * `duel.test.ts`: drive `createDuel` with Intents, assert snapshots and events.
  */
 import { describe, expect, it } from "vitest";
@@ -19,7 +19,7 @@ const openArena: ArenaLayout = {
   obstructions: [],
 };
 
-const { crouch, slide, sprint } = tuning.defence;
+const { crouch, sprint } = tuning.defence;
 
 const secondsToTicks = (seconds: number) =>
   Math.round(seconds * tuning.tickRate);
@@ -267,127 +267,23 @@ describe("Low and area hits", () => {
 /** The hero running forward (toward the rival, -z), R1 held. */
 const running = { move: { x: 0, y: 1 }, sprint: true };
 
-const runUp = (duel: Duel, seconds = 0.6) =>
-  run(duel, secondsToTicks(seconds), { hero: intent(running) });
-
-const speedOf = (self: DuelistState) =>
-  Math.hypot(self.velocity.x, self.velocity.z);
-
-describe("Slide", () => {
-  it("slides on L3 while sprinting, for its Stamina, low, and ends crouched", () => {
+describe("L3 while running", () => {
+  it("crouches and ends the run, until R1 is pressed again", () => {
     const duel = fight(30);
-    runUp(duel);
+    run(duel, secondsToTicks(0.6), { hero: intent(running) });
     const before = duelist(duel, "hero").stamina;
 
-    const events = run(duel, 1, { hero: intent({ ...running, crouch: true }) });
-    const sliding = duelist(duel, "hero");
-    run(duel, secondsToTicks(slide.seconds / 2), { hero: intent(running) });
-    const low = duelist(duel, "hero");
-    run(duel, secondsToTicks(slide.seconds), { hero: intent(running) });
+    run(duel, 1, { hero: intent({ ...running, crouch: true }) });
+    // R1 still held: crouched, walking, not running.
+    run(duel, secondsToTicks(0.5), { hero: intent(running) });
 
-    expect(
-      ofType(events, "slide").map(({ duelistId }) => duelistId)
-    ).toStrictEqual(["hero"]);
-    expect(sliding.stamina).toBeCloseTo(before - slide.cost, 6);
-    expect(sliding.slideSeconds).toBeGreaterThan(0);
-    expect(low).toMatchObject({ crouching: true, height: slide.height });
-    // Over, R1 still held: crouched, not running, until R1 is pressed again.
     expect(duelist(duel, "hero")).toMatchObject({
       crouching: true,
-      slideSeconds: 0,
+      height: crouch.height,
       sprinting: false,
     });
-  });
-
-  it("keeps the run's speed for a moment, then slows to the crouched walk", () => {
-    const duel = fight(30);
-    runUp(duel);
-    const runSpeed = speedOf(duelist(duel, "hero"));
-
-    run(duel, 1, { hero: intent({ ...running, crouch: true }) });
-    run(duel, secondsToTicks(slide.holdSeconds) - 2, {
-      hero: intent(running),
-    });
-    const early = speedOf(duelist(duel, "hero"));
-    run(duel, secondsToTicks(slide.seconds - slide.holdSeconds) + 1, {
-      hero: intent(running),
-    });
-    const late = speedOf(duelist(duel, "hero"));
-
-    expect(runSpeed).toBeCloseTo(
-      tuning.duelist.walkSpeed * sprint.speedScale,
-      1
+    expect(before - duelist(duel, "hero").stamina).toBeLessThan(
+      sprint.drain * 0.1
     );
-    expect(early).toBeCloseTo(runSpeed, 1);
-    expect(late).toBeLessThanOrEqual(
-      tuning.duelist.walkSpeed * crouch.walkScale + 0.2
-    );
-  });
-
-  it("only crouches on L3 from a walk", () => {
-    const duel = fight(30);
-    run(duel, secondsToTicks(0.6), { hero: intent({ move: { x: 0, y: 1 } }) });
-
-    const events = run(duel, 1, {
-      hero: intent({ crouch: true, move: { x: 0, y: 1 } }),
-    });
-
-    expect(ofType(events, "slide")).toStrictEqual([]);
-    expect(duelist(duel, "hero")).toMatchObject({
-      crouching: true,
-      slideSeconds: 0,
-    });
-  });
-
-  it("is refused without the Stamina for it", () => {
-    const duel = fight(30);
-    // A long Shield spends nearly everything.
-    run(duel, secondsToTicks(4.4), { hero: intent({ shield: true }) });
-    run(duel, 1);
-    runUp(duel, 0.2);
-
-    const events = run(duel, 1, { hero: intent({ ...running, crouch: true }) });
-
-    expect(duelist(duel, "hero").stamina).toBeLessThan(slide.cost);
-    expect(ofType(events, "slide")).toStrictEqual([]);
-    expect(
-      ofType(events, "stamina-short").map(({ action }) => action)
-    ).toStrictEqual(["slide"]);
-  });
-
-  it("slides under a chest-high Spell", () => {
-    const duel = fight(30);
-    tap(duel, { lockOn: true }, "rival");
-    runUp(duel, 0.5);
-
-    const events = [
-      ...run(duel, 1, {
-        hero: intent(running),
-        rival: intent({ lightSpell: true }),
-      }),
-      // Once its homing is over, the hero slides.
-      ...run(duel, secondsToTicks(tuning.lockOn.homing.seconds), {
-        hero: intent(running),
-      }),
-      ...run(duel, 1, { hero: intent({ ...running, crouch: true }) }),
-      ...run(duel, secondsToTicks(1), { hero: intent(running) }),
-    ];
-
-    expect(ofType(events, "spell-hit")).toStrictEqual([]);
-    expect(
-      ofType(events, "ducked").map(({ duelistId }) => duelistId)
-    ).toStrictEqual(["hero"]);
-  });
-
-  it("is caught by Depulso's cone", () => {
-    const duel = practice(6.5);
-    runUp(duel, 0.4);
-    run(duel, 1, { hero: intent({ ...running, crouch: true }) });
-
-    const events = castDepulso(duel);
-
-    expect(
-      ofType(events, "spell-hit").map(({ targetId }) => targetId)
-    ).toStrictEqual(["hero"]);
   });
 });

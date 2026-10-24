@@ -126,10 +126,7 @@ describe("what each screen shows", () => {
     ).toStrictEqual([
       ["Movimiento", ["1. Moverse y mirar", "2. Fijar objetivo"]],
       ["Hechizos", ["3. Stupefy", "4. Confringo con carga"]],
-      [
-        "Defensa",
-        ["5. Escudo y Parry", "6. Esquiva", "7. Agacharse y deslizarse"],
-      ],
+      ["Defensa", ["5. Escudo y Parry", "6. Esquiva", "7. Agacharse"]],
       [
         "Determinación y especiales",
         [
@@ -365,7 +362,7 @@ describe("what the Controls show", () => {
         label: "Escudo",
       },
       { control: "r1", label: "Correr" },
-      { control: "l3", detail: "Corriendo: deslizarse", label: "Agacharse" },
+      { control: "l3", label: "Agacharse" },
       {
         control: "r2",
         detail: "Mantén y pulsa △ □ ○ ✕",
@@ -409,7 +406,7 @@ describe("what the Controls show", () => {
       "Sobrecarga y Fallo",
       "Escudo y Parry",
       "Esquiva perfecta",
-      "Agacharse y deslizarse",
+      "Agacharse",
       "Clash",
       "Determinación",
       "Quemadura",

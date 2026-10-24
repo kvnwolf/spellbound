@@ -398,8 +398,8 @@ describe("Esquiva", () => {
   });
 });
 
-describe("Agacharse y deslizarse", () => {
-  it("counts chest-high Spells passing over the crouching learner, then slides", () => {
+describe("Agacharse", () => {
+  it("counts chest-high Spells passing over the crouching learner", () => {
     const ducked = withEvents(
       startLesson("crouch"),
       { duelistId: "learner", spell: spell(), type: "ducked" },
@@ -411,20 +411,13 @@ describe("Agacharse y deslizarse", () => {
     );
 
     expect(goalOf(ducked)).toMatchObject({ count: 1, goal: "duck" });
-
-    const sliding = atGoal("crouch", 1);
-    const duel = practiceFor("crouch", 20);
-
-    // Runs at the dummy, sliding on L3 every second.
-    const slid = play(duel, sliding, ticksOf(3.2), (tick) =>
-      intent({
-        crouch: tick % ticksOf(1) === ticksOf(0.5),
-        move: { x: 0, y: 1 },
-        sprint: tick % ticksOf(1) < ticksOf(0.5),
-      })
-    );
-
-    expect(slid.done).toBeTruthy();
+    expect(
+      withEvents(ducked, {
+        duelistId: "learner",
+        spell: spell(),
+        type: "ducked",
+      }).done
+    ).toBeTruthy();
   });
 
   it("does not count a crouch with nothing passing over", () => {

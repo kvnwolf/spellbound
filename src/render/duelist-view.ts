@@ -411,7 +411,6 @@ export const createDuelistView = (
     knockback: 0,
     lock: 0,
     shield: 0,
-    slide: 0,
     sprint: 0,
     stagger: 0,
     thrown: 0,
@@ -702,11 +701,9 @@ export const createDuelistView = (
     const distance = Math.hypot(localX, localZ);
     const rate = seconds > 0 ? 1 / seconds : 0;
 
-    // A slide is not a gait: the legs hold the slide's pose (`slidePose`).
     const travelling =
       elevation <= 1e-3 &&
       rollAge >= dodgeSeconds &&
-      !sample.sliding &&
       !sample.knockedBack &&
       !sample.knockedOut &&
       !sample.clashing;
@@ -776,7 +773,7 @@ export const createDuelistView = (
     riseAge < durationOf("LayToIdle") ||
     (sample.sprinting && !sample.charging && !sample.shielding);
 
-  /** Eases the crouch's and the slide's weights toward whether the sample is in them. */
+  /** Eases the crouch's weight toward whether the sample is in it. */
   const easePosture = (sample: DuelistSample, seconds: number) => {
     const down = sample.knockedOut;
 
@@ -784,12 +781,6 @@ export const createDuelistView = (
       weight.crouch,
       sample.crouching && !down ? 1 : 0,
       motion.crouch.sharpness,
-      seconds
-    );
-    weight.slide = approach(
-      weight.slide,
-      sample.sliding && !down ? 1 : 0,
-      motion.slide.sharpness,
       seconds
     );
   };
@@ -917,15 +908,19 @@ export const createDuelistView = (
 
     // Crouched: standing still, the legs take the crouch clip; walking, they
     // keep the gait and are lowered after the clips (`crouchWalk`). The
-    // upper body hunches over them either way; sliding, it leans back instead.
+    // upper body hunches over them either way.
     const crouchTime = loopTime(clock, durationOf("Crouch_Idle_Loop"));
-    const crouched = Math.max(weight.crouch, weight.slide);
-    over(lower, "Crouch_Idle_Loop", crouchTime, crouched * (1 - gaitWeight));
+    over(
+      lower,
+      "Crouch_Idle_Loop",
+      crouchTime,
+      weight.crouch * (1 - gaitWeight)
+    );
     over(
       upper,
       "Crouch_Idle_Loop",
       crouchTime,
-      weight.crouch * (1 - weight.slide) * motion.crouch.upper
+      weight.crouch * motion.crouch.upper
     );
 
     // Braced behind a Shield; standing, the legs brace too.
@@ -1363,7 +1358,7 @@ export const createDuelistView = (
    * forward over the knees, by how much of the gait is under way.
    */
   const crouchWalk = () => {
-    const share = weight.crouch * gaitWeight * (1 - weight.slide);
+    const share = weight.crouch * gaitWeight;
 
     if (share < 1e-3) {
       return;
@@ -1379,79 +1374,6 @@ export const createDuelistView = (
     // The eyes stay up, on where the Duelist creeps to.
     turnAbout(joints.neck, leftAxis, -crouch.lean * crouch.headUp * share);
     lowerPelvis(crouch.walkDrop * share, crouch.kneeForward);
-  };
-
-  const slideTarget = new Vector3();
-
-  /**
-   * The slide, a held low pose (there is no slide clip): the pelvis low over
-   * the floor, the chest leaning back, the left leg out ahead along the
-   * floor and the right folded under it, knee down, and the free hand
-   * trailing on the stone behind; all reached by IK over the crouch the
-   * clips hold, by `weight.slide`. Targets are in the body frame (+z ahead,
-   * +x left, +y up), metres (`motion.slide`).
-   */
-  const slidePose = () => {
-    const share = weight.slide;
-
-    if (share < 1e-3) {
-      return;
-    }
-
-    const { slide } = motion;
-    directionToWorld(leftAxis.set(1, 0, 0), leftAxis);
-
-    // The hips tip back and the chest leans back against the slide, the
-    // head bowing forward again to keep looking ahead.
-    turnAbout(joints.pelvis, leftAxis, -slide.tilt * share);
-
-    for (const spine of joints.spine) {
-      turnAbout(spine, leftAxis, (-slide.lean * share) / joints.spine.length);
-    }
-
-    turnAbout(
-      joints.head,
-      leftAxis,
-      (slide.tilt + slide.lean) * slide.headForward * share
-    );
-
-    // The pelvis down to its height over the floor (and back a little).
-    rig.model.updateMatrixWorld(true);
-    const { pelvis } = joints;
-    pelvis.getWorldPosition(pelvisAt);
-    object.worldToLocal(pelvisAt);
-    pelvisAt.y += (slide.pelvis[1] - pelvisAt.y) * share;
-    pelvisAt.z += (slide.pelvis[2] - pelvisAt.z) * share;
-    toWorld(pelvisAt, pelvisAt);
-    pelvis.parent?.worldToLocal(pelvisAt);
-    pelvis.position.copy(pelvisAt);
-    pelvis.updateMatrixWorld(true);
-
-    // Each leg to its place: knees up for the leg ahead, down and forward
-    // for the one folded under.
-    const legs = [
-      { foot: slide.lead, knee: slide.leadKnee, side: 0 },
-      { foot: slide.trail, knee: slide.trailKnee, side: 1 },
-    ] as const;
-
-    for (const { foot, knee, side } of legs) {
-      toWorld(slideTarget.set(foot[0], foot[1], foot[2]), slideTarget);
-      directionToWorld(kneeHint.set(knee[0], knee[1], knee[2]), kneeHint);
-      solve(
-        joints.thighs[side],
-        joints.calves[side],
-        joints.feet[side],
-        slideTarget,
-        null,
-        kneeHint,
-        share
-      );
-    }
-
-    // The free hand trails on the floor behind.
-    const [hx, hy, hz] = slide.hand;
-    toWorld(slideTarget.set(hx, hy, hz), slideTarget);
-    reach(0, slideTarget, null, share);
   };
 
   /**
@@ -2085,7 +2007,6 @@ export const createDuelistView = (
     turnBody(sample);
     warpGait();
     crouchWalk();
-    slidePose();
     grip(1 - weight.disarmed);
     poseWandArm(sample);
     poseFreeArm(sample);
@@ -2169,9 +2090,6 @@ export const createDuelistView = (
       blendPending = true;
       rollAge = 0;
       rollYaw = Math.atan2(event.direction.x, event.direction.z);
-    } else if (event.type === "slide") {
-      // Thrown down into the slide: blend from the run's last pose.
-      blendPending = true;
     } else if (event.type === "jump") {
       blendPending = true;
       jumpAge = 0;

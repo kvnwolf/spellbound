@@ -75,7 +75,7 @@ How much damage a Duelist can still take in the current Round before a Knockout.
 _Avoid_: HP, life
 
 **Stamina**:
-A regenerating pool spent by Shielding, Dodging, Sliding, jumping and sprinting, and by casting Light and Heavy Spells; whatever it cannot pay for is refused.
+A regenerating pool spent by Shielding, Dodging, jumping and sprinting, and by casting Light and Heavy Spells; whatever it cannot pay for is refused.
 _Avoid_: Energy, mana
 
 **Focus**:
@@ -140,10 +140,6 @@ _Avoid_: Roll, dash, evade
 **Crouch**:
 Lowering the body (L3) so a chest-high Spell already in the air flies over it; it walks slowly, costs nothing and protects from nothing else: a Spell aimed while the Duelist is down finds them, and Depulso or a blast still lands. Running, standing up to act, or L3 again ends it.
 _Avoid_: Kneel, prone
-
-**Slide**:
-L3 pressed while running: the Duelist slides low along the floor at the run's speed for a moment, under chest-high Spells, and ends Crouched; it costs Stamina (less than a Dodge) and, unlike the Dodge, does not stop low or area hits.
-_Avoid_: Slide tackle, dive
 
 **Perfect Dodge**:
 A Dodge started just before a Spell would have hit, which builds Focus.

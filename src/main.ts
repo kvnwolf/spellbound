@@ -74,8 +74,6 @@ import { createFramePipeline, createPreviewPipeline } from "./render/pipeline";
 import { createWebGPURenderer } from "./render/renderer";
 import { createReticle } from "./render/reticle";
 import { createRuinsView } from "./render/ruins/ruins-view";
-import { createSlideDust } from "./render/slide-dust";
-import { seededRandom } from "./render/spark-ring";
 import { createSpellVfx, spellVfxSettings } from "./render/spell-vfx";
 import { loadWizardAssets } from "./render/wizard-assets";
 import { createWorldHud } from "./render/world-hud";
@@ -507,14 +505,6 @@ const start = async () => {
   const depulsoHits = createDepulsoHits(vfx.object, {
     cone: tuning.depulso,
     look: tuning.depulsoLook,
-    sparks: vfx.sparks,
-  });
-
-  // The dust a slide kicks up.
-  const slideDust = createSlideDust(vfx.object, {
-    cloud: tuning.depulsoLook.cloud,
-    look: tuning.slideDust,
-    random: seededRandom(31),
     sparks: vfx.sparks,
   });
 
@@ -1238,8 +1228,6 @@ const start = async () => {
     followArena(current);
     depulsoHits.handle(events);
     depulsoHits.advance(simSeconds);
-    slideDust.update(current.duelists, simSeconds);
-    slideDust.handle(events);
     defenceVfx.handle(events);
     vfx.update(previous.spells, current.spells, alpha, simSeconds, {
       bodyOf: (id) => views.get(id)?.bodyPoints(),

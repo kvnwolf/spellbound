@@ -270,8 +270,7 @@ const curvedWalk = (stick: Vec2, exponent: number): Vec2 => {
  * - □: the Light Spell.
  * - △: the Heavy Spell, held to Charge and released to cast.
  * - ○: Dodge. ✕: jump. L1 (held): the Shield. R1 (held): sprint.
- * - L3: crouch, or stand back up; while sprinting, slide (the simulation
- *   reads the press).
+ * - L3: crouch, or stand back up (the simulation reads the press).
  * - R2 (held): the Spell Slots' modifier. While it is held, pressing a face
  *   button casts from its Spell Slot instead of its usual action (R2 alone
  *   casts nothing); the right stick keeps turning the camera as usual.

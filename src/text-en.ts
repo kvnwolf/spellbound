@@ -45,7 +45,6 @@ export const en: Dictionary = {
       sprint: "Run",
     },
     details: {
-      crouch: "While running: slide",
       heavySpell: "Hold to charge · Mash in a Clash",
       look: "Flick it sideways: switch target",
       potionSlots: "Hold and press ↑ ← → ↓",
@@ -76,8 +75,8 @@ export const en: Dictionary = {
         title: "Perfect Dodge",
       },
       {
-        body: "Crouch with L3 once a spell is already flying at your chest and it passes overhead; while running, L3 slides you under it. A spell cast while you're already down comes for you low, and Depulso or a blast still finds you.",
-        title: "Crouch and slide",
+        body: "Crouch with L3 once a spell is already flying at your chest and it passes overhead. A spell cast while you're already down comes for you low, and Depulso or a blast still finds you.",
+        title: "Crouch",
       },
       {
         body: "Two fully charged heavy spells meeting head-on lock into a beam. Mash △ faster than your rival to push it into them.",
@@ -240,7 +239,6 @@ export const en: Dictionary = {
       petrificus: "Petrify the dummy: hold R2 and press {petrificus}",
       pickup: "Walk over your wand to pick it up",
       run: "Run by holding R1",
-      slide: "Run with R1 and slide with L3",
       special:
         "Spend that Determination on Depulso: hold R2 and press {depulso} near the dummy",
       strength: "Drink the Maxima Potion: hold L2 and press {strength}",
@@ -258,7 +256,7 @@ export const en: Dictionary = {
     lessonDone: "Lesson complete!",
     lessons: {
       clash: "Win a Clash",
-      crouch: "Crouch and slide",
+      crouch: "Crouch",
       depulso: "Depulso",
       disarmed: "Disarmed: get your wand back",
       dodge: "Dodge",
@@ -280,8 +278,7 @@ export const en: Dictionary = {
     previews: {
       clash:
         "Two charged Confringos meeting head-on lock into a beam: mash △ faster than your rival to push it home.",
-      crouch:
-        "Crouch in time and the spell flies overhead; while running, slide under it.",
+      crouch: "Crouch in time and the spell flies overhead.",
       depulso:
         "A short cone of force that shoves your rival back and cuts off their charge or potion.",
       disarmed:
@@ -325,8 +322,8 @@ export const en: Dictionary = {
         when: "Mash △, faster than your rival, to drive the beam into them. Winning it builds your Determination.",
       },
       crouch: {
-        controls: "L3: crouch and stand · Running with R1, L3: slide",
-        what: "L3 crouches you: you walk slowly, and spells meant for your chest fly overhead. It costs nothing, but a spell cast while you're already down comes for you low. While running, L3 slides you along the floor, fast and low, for a little stamina, and you end up crouched.",
+        controls: "L3: crouch and stand",
+        what: "L3 crouches you: you walk slowly, and spells meant for your chest fly overhead. It costs nothing, but a spell cast while you're already down comes for you low.",
         when: "Crouch right after your rival casts, once the spell can no longer correct, and stand before the next one. Depulso and blasts still reach you: for those, roll with ○.",
       },
       depulso: {

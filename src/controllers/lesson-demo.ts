@@ -199,40 +199,22 @@ const scriptFor = (lesson: Lesson, tuning: Tuning): Script => {
       lockOn: lockedOn(moment),
     }),
     // Crouches as each of the dummy's Stupefies comes and stands once it
-    // has passed; then runs at the dummy and slides, and back, and slides
-    // again.
+    // has passed.
     crouch: (moment) => {
-      const { back, duck, slideBack, slideToward, toward } = script.crouch;
+      const { hold, lead } = script.crouch;
 
-      if (moment.seconds < duck.until) {
-        const soon = secondsToHit(moment, reach);
-
-        if (moment.me.crouching) {
-          return { crouch: moment.seconds - crouchedAt >= duck.hold };
-        }
-
-        const down = soon !== undefined && soon <= duck.lead;
-
-        if (down) {
-          crouchedAt = moment.seconds;
-        }
-
-        return { crouch: down };
+      if (moment.me.crouching) {
+        return { crouch: moment.seconds - crouchedAt >= hold };
       }
 
-      let { move } = idleIntent;
+      const soon = secondsToHit(moment, reach);
+      const down = soon !== undefined && soon <= lead;
 
-      if (during(moment, toward)) {
-        move = { x: 0, y: 1 };
-      } else if (during(moment, back)) {
-        move = { x: 0, y: -1 };
+      if (down) {
+        crouchedAt = moment.seconds;
       }
 
-      return {
-        crouch: pressedAt(moment, [slideToward, slideBack], press),
-        move,
-        sprint: move !== idleIntent.move,
-      };
+      return { crouch: down };
     },
     depulso: (moment) => ({
       lockOn: lockedOn(moment),

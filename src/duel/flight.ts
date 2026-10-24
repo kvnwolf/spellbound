@@ -15,7 +15,7 @@ export interface FlightTarget {
   readonly position: GroundPoint;
   /** Height of the cylinder's base (the feet) above the floor. */
   readonly elevation: number;
-  /** How tall the cylinder stands (lower crouched or sliding); `bodyHeight` when not given. */
+  /** How tall the cylinder stands (lower crouched); `bodyHeight` when not given. */
   readonly height?: number;
 }
 

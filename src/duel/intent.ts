@@ -76,7 +76,7 @@ export interface Intent {
   readonly sprint: boolean;
   /**
    * The crouch button is down this tick. The simulation reads the press: it
-   * crouches, or stands back up; pressed while sprinting, it slides.
+   * crouches, or stands back up.
    */
   readonly crouch: boolean;
   /** The Spell Slots: the modifier held, and a slot pressed this tick. */
