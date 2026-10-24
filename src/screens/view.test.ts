@@ -183,7 +183,7 @@ describe("what the Controls show", () => {
       { control: "square", label: "Hechizo ligero" },
       {
         control: "triangle",
-        detail: "Mantén para cargar · Pulsa en un Clash",
+        detail: "Mantén para cargar\u00A0· Pulsa en un Clash",
         label: "Hechizo pesado",
       },
       { control: "circle", label: "Esquivar" },
@@ -207,28 +207,24 @@ describe("what the Controls show", () => {
   it("lists the Potions under L2 and the Special Spells under R2 by their face buttons, an empty slot without a name", () => {
     const help = viewOf(controls("controls"))?.help;
 
-    expect(help?.tab === "controls" && help.slots).toStrictEqual([
-      {
-        heading: "Mantén L2",
-        slots: [
-          { button: "triangle", label: "Fuerza" },
-          { button: "square", label: "Wiggenweld" },
-          { button: "circle", label: "Celeridad" },
-          { button: "cross", label: null },
-        ],
-        trigger: "l2",
-      },
-      {
-        heading: "Mantén R2",
-        slots: [
-          { button: "triangle", label: "Incendio" },
-          { button: "square", label: "Petrificus Totalus" },
-          { button: "circle", label: "Expelliarmus" },
-          { button: "cross", label: "Depulso" },
-        ],
-        trigger: "r2",
-      },
-    ]);
+    expect(help?.tab === "controls" && help.potionSlots).toStrictEqual({
+      heading: "Mantén L2",
+      slots: [
+        { button: "triangle", kind: "strength", label: "Fuerza" },
+        { button: "square", kind: "wiggenweld", label: "Wiggenweld" },
+        { button: "circle", kind: "swiftness", label: "Celeridad" },
+        { button: "cross", kind: null, label: null },
+      ],
+    });
+    expect(help?.tab === "controls" && help.spellSlots).toStrictEqual({
+      heading: "Mantén R2",
+      slots: [
+        { button: "triangle", kind: "incendio", label: "Incendio" },
+        { button: "square", kind: "petrificus", label: "Petrificus Totalus" },
+        { button: "circle", kind: "expelliarmus", label: "Expelliarmus" },
+        { button: "cross", kind: "depulso", label: "Depulso" },
+      ],
+    });
   });
 
   it("shows a short card for each less obvious mechanic on Mecánicas", () => {

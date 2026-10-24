@@ -39,7 +39,12 @@ const marks: Record<PotionKind, string> = {
   wiggenweld: "M12 14.2v4.4M9.8 16.4h4.4",
 };
 
-const vial = (kind: PotionKind, parent: Element, className: string) => {
+/** Draws `kind`'s vial into `parent`, as a Potion Slot's badge shows it (also on the Controls). */
+export const potionVial = (
+  kind: PotionKind,
+  parent: Element,
+  className: string
+) => {
   const svg = document.createElementNS(svgNs, "svg");
   svg.setAttribute("viewBox", "0 0 24 24");
   svg.classList.add(className);
@@ -88,7 +93,7 @@ const createSlot = (
   const count = create("span", "sd-count", badge);
 
   if (kind) {
-    vial(kind, badge, "ps-glyph");
+    potionVial(kind, badge, "ps-glyph");
     item.dataset.potion = kind;
     name.textContent = text.potions[kind];
   }
@@ -118,7 +123,7 @@ const createEffects = (parent: HTMLElement, settings: PotionHudSettings) => {
     const item = create("div", "ps-effect", root);
     item.dataset.potion = kind;
     item.setAttribute("aria-label", text.potions[kind]);
-    vial(kind, item, "ps-effect-glyph");
+    potionVial(kind, item, "ps-effect-glyph");
     const seconds = create("span", "ps-effect-seconds", item);
 
     return { item, kind, seconds };

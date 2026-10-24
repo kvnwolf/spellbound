@@ -45,7 +45,8 @@ const glyphs: Record<SpecialSpellKind, string> = {
   petrificus: "M12 2 20 7v10l-8 5-8-5V7l8-5Zm0 0v20M4 7l16 10M20 7 4 17",
 };
 
-const glyph = (kind: SpecialSpellKind, parent: Element) => {
+/** Draws `kind`'s glyph into `parent`, as a Spell Slot's badge shows it (also on the Controls). */
+export const specialGlyph = (kind: SpecialSpellKind, parent: Element) => {
   const svg = document.createElementNS(svgNs, "svg");
   svg.setAttribute("viewBox", "0 0 24 24");
   svg.classList.add("ss-glyph");
@@ -99,7 +100,7 @@ const createSlot = (
   const kind = boundTo(slot, settings);
 
   if (kind) {
-    glyph(kind, badge);
+    specialGlyph(kind, badge);
     item.dataset.spell = kind;
     name.textContent = text.specials[kind];
   }

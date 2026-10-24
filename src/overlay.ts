@@ -1,4 +1,5 @@
 import { writeWithIcons } from "./button-icons";
+import { createControlsHelp } from "./controls-help";
 import type { ScreenView } from "./screens/view";
 import { text } from "./text";
 
@@ -23,7 +24,9 @@ export const createOverlay = (element: HTMLElement) => {
   const legal = document.createElement("p");
   legal.className = "overlay-legal";
   legal.textContent = text.legal;
-  element.append(heading, body, items, veil, legal);
+  // The Controls' tab bar and open tab (controls-help.ts).
+  const help = createControlsHelp();
+  element.append(heading, help.tabs, body, items, help.panel, veil, legal);
   let shown: string | undefined;
 
   /**
@@ -36,7 +39,7 @@ export const createOverlay = (element: HTMLElement) => {
     const laidOut = [...element.children].filter(
       (child): child is HTMLElement =>
         child instanceof HTMLElement &&
-        child.matches("h2, p:not([class]), ul") &&
+        child.matches("h2, p:not([class]), ul, .overlay-tabs, .overlay-help") &&
         child.offsetParent !== null
     );
 
@@ -119,6 +122,7 @@ export const createOverlay = (element: HTMLElement) => {
         })
       );
       items.hidden = view.items === undefined;
+      help.show(view);
       element.hidden = false;
       menu.hidden = false;
       measure();

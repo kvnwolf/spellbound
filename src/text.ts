@@ -45,7 +45,7 @@ export const text = {
     },
     /** A second line under some labels. */
     details: {
-      heavySpell: "Mantén para cargar · Pulsa en un Clash",
+      heavySpell: "Mantén para cargar\u00A0· Pulsa en un Clash",
       look: "Muévelo rápido a un lado: cambiar de objetivo",
       potionSlots: "Mantén y pulsa △ □ ○ ✕",
       shield: "Justo antes del impacto: Parry",
