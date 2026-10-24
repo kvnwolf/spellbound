@@ -320,6 +320,25 @@ describe("Practice", () => {
     expect(learnerOf(duel).focus).toBe(tuning.focus.max);
   });
 
+  it("gives the learner a spent Potion back once its effect has worn off, after the refill delay", () => {
+    const duel = create("idle");
+    const drink = intent({ potionSlots: { held: true, press: "up" } });
+
+    run(duel, 1, () => ({ learner: drink }));
+    run(duel, ticksOf(tuning.potions.drink.seconds + 0.1));
+    const spent = learnerOf(duel).potions.strength;
+    // Still working: not back yet, however long past the refill delay.
+    run(duel, ticksOf(tuning.potions.strength.seconds - 1));
+    const working = learnerOf(duel).potions.strength;
+    run(duel, ticksOf(1 + tuning.practice.refillSeconds));
+
+    expect(spent).toBe(0);
+    expect(working).toBe(0);
+    expect(learnerOf(duel).potions.strength).toBe(
+      tuning.potions.strength.charges
+    );
+  });
+
   it("still charges the learner Focus and Cooldown for a Special Spell", () => {
     const duel = create("idle");
 

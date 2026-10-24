@@ -372,8 +372,7 @@ export const text = {
         when: "Úsalo para presionar al rival y para llenar tu Determinación: cada acierto suma.",
       },
       lockOn: {
-        controls:
-          "R3: fijar y soltar · Stick derecho rápido a un lado: cambiar de objetivo",
+        controls: "R3: fijar y soltar",
         what: "R3 fija la cámara y la puntería en el rival, y tus hechizos lo siguen un poco.",
         when: "Fíjalo para no perderlo de vista en pleno duelo; suéltalo con R3 para apuntar a mano.",
       },

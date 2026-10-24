@@ -2,12 +2,15 @@
  * Practice: a Duel with nothing at stake, for learning the game against a
  * Training Dummy or the AI. Its rules are fixed, never toggled: no Knockout
  * and no Round end, the practising Duelist's Health, Stamina and Focus come
- * back full, and the rival's Health comes back a moment after it reaches
+ * back full (unless a Training lesson keeps one where it is) and their spent
+ * Potions come back once worn off, and the rival's Health comes back a moment after it reaches
  * zero, the rival down meanwhile (falling, lying, then getting back up),
  * unable to act or be hit. Cooldowns and Spell costs still apply. The Duel simulation applies
  * these rules when its config carries them. Pure: no three.js, no DOM.
  */
 import type { Tuning } from "../tuning";
+import { fullCharges, potionKinds } from "./potions";
+import type { LastingPotion, PotionKind } from "./potions";
 
 /** The Training Dummies, each a scripted Controller for practising one thing. */
 export const trainingDummies = ["idle", "casts", "clash", "disarms"] as const;
@@ -77,6 +80,9 @@ interface Meters {
   readonly focus: number;
   /** Seconds left down after reaching zero Health (see `DuelistState`). */
   readonly downSeconds: number;
+  readonly potions: Readonly<Record<PotionKind, number>>;
+  readonly drinking: unknown;
+  readonly potionEffects: Readonly<Record<LastingPotion, number>>;
 }
 
 const meters: readonly Meter[] = ["health", "stamina", "focus"];
@@ -93,7 +99,7 @@ export const createPracticeKeeper = (
   rules: PracticeRules,
   tuning: Pick<
     Tuning,
-    "defence" | "duelist" | "focus" | "practice" | "tickRate"
+    "defence" | "duelist" | "focus" | "potions" | "practice" | "tickRate"
   >
 ) => {
   const ticksOf = (seconds: number) => Math.round(seconds * tuning.tickRate);
@@ -147,6 +153,41 @@ export const createPracticeKeeper = (
     }
 
     return { ...after, ...topped };
+  };
+
+  const charges = fullCharges(tuning);
+
+  /**
+   * The learner's Potions: every spent charge back once nothing is being
+   * drunk and no effect is still working, after the refill delay.
+   */
+  const restock = <T extends Meters>(self: T): T => {
+    const key = `${self.id}:potions`;
+    const spent = potionKinds.some(
+      (kind) => self.potions[kind] < charges[kind]
+    );
+
+    const busy =
+      self.drinking !== null ||
+      Object.values(self.potionEffects).some((seconds) => seconds > 0);
+
+    if (!spent || busy) {
+      waits.delete(key);
+
+      return self;
+    }
+
+    const left = (waits.get(key) ?? refillTicks) - 1;
+
+    if (left > 0) {
+      waits.set(key, left);
+
+      return self;
+    }
+
+    waits.delete(key);
+
+    return { ...self, potions: charges };
   };
 
   /** A rival's Health: back full a while after it reached zero. */
@@ -206,7 +247,7 @@ export const createPracticeKeeper = (
           return recover(fall(was, self));
         }
 
-        return refill(was, self);
+        return restock(refill(was, self));
       }),
   };
 };
