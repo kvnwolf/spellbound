@@ -1319,11 +1319,11 @@ export const tuning = {
         },
         calm: 0.42,
         counterTwist: 0.45,
-        // The run (R1, 6 m/s) is the sprint clip: the jog's high heel kicks
+        // The run (R1, 7.6 m/s) is the sprint clip: the jog's high heel kicks
         // skip like a cartoon; the jog only bridges the walk to it.
         crossovers: [
-          [3.2, 4.2],
-          [4.2, 5.2],
+          [4, 5],
+          [5, 6.2],
         ],
         gaitSharpness: 8,
         headLead: { max: 0.45, seconds: 0.18 },
@@ -1437,7 +1437,7 @@ export const tuning = {
         rim: "#ffb36b",
       },
     },
-    walkSpeed: 3.05,
+    walkSpeed: 3.8,
     /**
      * The visible Wand and the right arm that holds it. At rest, walking or
      * running the arm hangs with the clips, the Wand held low. It rises (by
@@ -1869,7 +1869,7 @@ export const tuning = {
      * and turn toward it at no more than `turnRate` (radians per second) for
      * their first `seconds`: enough to follow a small step, never a strafe.
      */
-    homing: { seconds: 0.35, turnRate: 0.35 },
+    homing: { seconds: 0.35, turnRate: 0.45 },
     /**
      * While Locked On the right stick only nudges the framing, like a spring:
      * its turn rate, scaled by `gain`, pushes the view off the Target up to

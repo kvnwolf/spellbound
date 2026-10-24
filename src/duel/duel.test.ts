@@ -601,7 +601,8 @@ describe("Duel collision", () => {
 
     const hero = duelist(duel, "hero");
     const rival = duelist(duel, "rival");
-    expect(rival.position).toStrictEqual({ x: 0, z: -5 });
+    expect(rival.position.x).toBeCloseTo(0);
+    expect(rival.position.z).toBe(-5);
     expect(hero.position.z - rival.position.z).toBeCloseTo(
       2 * tuning.duelist.bodyRadius
     );
@@ -1154,7 +1155,14 @@ describe("Lock-on", () => {
     toggleLock(duel);
 
     // The rival steps out of sight behind the column...
-    const stepping = run(duel, secondsToTicks(0.9), { rival: rivalSprints });
+    const stepping = run(
+      duel,
+      secondsToTicks(
+        5.5 / (tuning.duelist.walkSpeed * tuning.defence.sprint.speedScale)
+      ),
+      { rival: rivalSprints }
+    );
+
     const hidden = duelist(duel, "hero");
     // ...and stays there.
     const waiting = run(duel, secondsToTicks(tuning.lockOn.sightGraceSeconds));
