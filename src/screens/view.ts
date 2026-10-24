@@ -88,7 +88,7 @@ export const viewOf = (screen: Screen): ScreenView | undefined => {
   if (screen.kind === "difficulty") {
     return {
       body: text.difficulty.heading,
-      heading: screen.practice ? text.practice.heading : text.title,
+      heading: screen.practice ? text.practice.heading : text.mainMenu.duel,
       hint: text.menu.hint,
       items: menu(
         difficulties,

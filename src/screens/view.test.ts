@@ -61,12 +61,12 @@ describe("what each screen shows", () => {
     ]);
   });
 
-  it("names the game over the Difficulty select of a Duel, and Práctica over that of a Practice", () => {
+  it("heads the Difficulty select of a Duel with Duelo, and that of a Practice with Práctica", () => {
     expect(
       viewOf({ kind: "difficulty", practice: false, selected: "novato" })
     ).toMatchObject({
       body: text.difficulty.heading,
-      heading: text.title,
+      heading: "Duelo",
     });
 
     expect(
