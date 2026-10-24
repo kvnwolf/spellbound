@@ -9,8 +9,8 @@ import type { HumanAction } from "../controllers/human-controller";
 import type { DualSenseButton } from "../dualsense/input";
 import { pauseButton } from "../dualsense/menu-input";
 import { difficulties } from "../duel/difficulty";
-import { potionIn } from "../duel/potions";
-import type { PotionKind } from "../duel/potions";
+import { potionIn, potionSlots } from "../duel/potions";
+import type { PotionKind, PotionSlot } from "../duel/potions";
 import { practiceRivals } from "../duel/practice";
 import { boundTo, spellSlots } from "../duel/spell-slots";
 import type { SpecialSpellKind, SpellSlot } from "../duel/spell-slots";
@@ -61,12 +61,12 @@ export interface ControlLabel {
   readonly detail?: string;
 }
 
-/** A trigger's four face-button slots, laid out like the HUD's diamond. */
-export interface SlotsLabel<Kind extends string> {
+/** A trigger's four slots, laid out like the HUD's diamond: on the face buttons, or on the D-pad. */
+export interface SlotsLabel<Kind extends string, Button extends string> {
   readonly heading: string;
-  /** △ □ ○ ✕, each with what it holds; null for an empty slot. */
+  /** △ □ ○ ✕ (or ↑ ← → ↓), each with what it holds; null for an empty slot. */
   readonly slots: readonly {
-    readonly button: SpellSlot;
+    readonly button: Button;
     readonly kind: Kind | null;
     readonly label: string | null;
   }[];
@@ -77,10 +77,10 @@ export type ControlsHelp =
       readonly tab: "controls";
       /** What each control of the drawn DualSense does. */
       readonly controls: readonly ControlLabel[];
-      /** The Potion Slots, under L2. */
-      readonly potionSlots: SlotsLabel<PotionKind>;
-      /** The Spell Slots, under R2. */
-      readonly spellSlots: SlotsLabel<SpecialSpellKind>;
+      /** The Potion Slots, under L2, on the D-pad. */
+      readonly potionSlots: SlotsLabel<PotionKind, PotionSlot>;
+      /** The Spell Slots, under R2, on the face buttons. */
+      readonly spellSlots: SlotsLabel<SpecialSpellKind, SpellSlot>;
     }
   | {
       readonly tab: "mechanics";
@@ -135,14 +135,15 @@ const controlLabels = (): ControlLabel[] => [
   { control: pauseButton, label: text.controls.actions.pause },
 ];
 
-/** The slots under `trigger`: what each face button holds there, and its name. */
-const slotsUnder = <Kind extends string>(
+/** The slots under `trigger`: what each of `buttons` holds there, and its name. */
+const slotsUnder = <Kind extends string, Button extends string>(
   trigger: keyof typeof text.controls.triggers,
-  kindIn: (button: SpellSlot) => Kind | null,
+  buttons: readonly Button[],
+  kindIn: (button: Button) => Kind | null,
   name: (kind: Kind) => string
-): SlotsLabel<Kind> => ({
+): SlotsLabel<Kind, Button> => ({
   heading: text.controls.hold(text.controls.triggers[trigger]),
-  slots: spellSlots.map((button) => {
+  slots: buttons.map((button) => {
     const kind = kindIn(button);
 
     return { button, kind, label: kind === null ? null : name(kind) };
@@ -155,11 +156,13 @@ const helpFor = (tab: ControlsTab): ControlsHelp =>
         controls: controlLabels(),
         potionSlots: slotsUnder(
           humanBindings.potionSlots,
+          potionSlots,
           (button) => potionIn(button, tuning),
           (kind) => text.potions[kind]
         ),
         spellSlots: slotsUnder(
           humanBindings.spellSlots,
+          spellSlots,
           (button) => boundTo(button, tuning),
           (kind) => text.specials[kind]
         ),

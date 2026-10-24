@@ -3247,27 +3247,45 @@ export const createDuel = (config: DuelConfig): Duel => {
     return kind;
   };
 
-  /** A Potion is down: Wiggenweld heals at once, the others start lasting. Returns the drinker's new Health. */
+  /**
+   * A Potion is down: Wiggenweld heals and Felix Felicis grants Focus at
+   * once, the others start lasting. Returns the drinker's new Health and Focus.
+   */
   const takeEffect = (
     self: DuelistState,
     book: Bookkeeping,
     kind: PotionKind,
     draft: Draft
-  ) => {
+  ): Pick<DuelistState, "focus" | "health"> => {
     draft.events.push({ duelistId: self.id, kind, type: "potion-drunk" });
 
     if (kind === "wiggenweld") {
       const max = tuning.duelist.health;
 
-      return Math.min(
-        self.health + max * tuning.potions.wiggenweld.healShare,
-        max
-      );
+      return {
+        focus: self.focus,
+        health: Math.min(
+          self.health + max * tuning.potions.wiggenweld.healShare,
+          max
+        ),
+      };
+    }
+
+    if (kind === "felix") {
+      const { max, segment } = tuning.focus;
+
+      return {
+        focus: Math.min(
+          self.focus + segment * tuning.potions.felix.segments,
+          max
+        ),
+        health: self.health,
+      };
     }
 
     book.effectTicks[kind] = ticksOf(tuning.potions[kind].seconds);
 
-    return self.health;
+    return { focus: self.focus, health: self.health };
   };
 
   /** The walking stride's multiplier under a Swiftness Potion: faster while it lasts. */
@@ -3325,9 +3343,9 @@ export const createDuel = (config: DuelConfig): Duel => {
 
     const down = drink.ticksLeft === 0;
 
-    const health = down
+    const { focus, health } = down
       ? takeEffect(self, book, drink.kind, draft)
-      : self.health;
+      : self;
 
     if (down) {
       book.drink = undefined;
@@ -3361,6 +3379,7 @@ export const createDuel = (config: DuelConfig): Duel => {
         castRecently(book),
         walkHeading(self.aim.yaw, move)
       ),
+      focus,
       health,
       knockbackSeconds: 0,
       position: collide(wanted, bodyRadius, obstacles, arena),

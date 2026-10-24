@@ -6,12 +6,16 @@ export const text = {
     effects: "Haz clic en la página para activar los efectos del DualSense",
     sound: "Haz clic en la página para activar el sonido",
   },
-  /** The face buttons' names, for screen readers, where their icons stand in the text. */
+  /** The face buttons' and D-pad arrows' names, for screen readers, where their icons stand in the text. */
   buttons: {
     circle: "círculo",
     cross: "equis",
+    down: "flecha abajo",
+    left: "flecha izquierda",
+    right: "flecha derecha",
     square: "cuadrado",
     triangle: "triángulo",
+    up: "flecha arriba",
   },
   /** While the local Duelist is locked in a Clash. */
   clash: {
@@ -47,7 +51,7 @@ export const text = {
     details: {
       heavySpell: "Mantén para cargar\u00A0· Pulsa en un Clash",
       look: "Muévelo rápido a un lado: cambiar de objetivo",
-      potionSlots: "Mantén y pulsa △ □ ○ ✕",
+      potionSlots: "Mantén y pulsa ↑ ← → ↓",
       shield: "Justo antes del impacto: Parry",
       spellSlots: "Mantén y pulsa △ □ ○ ✕",
     },
@@ -73,7 +77,7 @@ export const text = {
         title: "Escudo y Parry",
       },
       {
-        body: "Esquiva justo antes de que un hechizo te alcance: no te toca y ganas Concentración.",
+        body: "Esquiva justo antes de que un hechizo te alcance: no te toca y ganas Determinación.",
         title: "Esquiva perfecta",
       },
       {
@@ -82,7 +86,7 @@ export const text = {
       },
       {
         body: "Tres segmentos que llenas acertando Hechizos ligeros, con Parrys, Esquivas perfectas y Clashes ganados. Pagan los Hechizos especiales y empiezan vacíos cada ronda.",
-        title: "Concentración",
+        title: "Determinación",
       },
       {
         body: "La explosión de Incendio deja ardiendo a quien alcanza, que sigue perdiendo salud unos segundos.",
@@ -97,7 +101,7 @@ export const text = {
         title: "Desarme y varita",
       },
       {
-        body: "Mientras bebes eres vulnerable, y un golpe te hace perder la poción. Sus dosis se recargan cada ronda.",
+        body: "Mantén L2 y pulsa una flecha de la cruceta para beber. Mientras bebes eres vulnerable, y un golpe te hace perder la poción. Sus dosis se recargan cada ronda.",
         title: "Pociones",
       },
     ],
@@ -166,17 +170,21 @@ export const text = {
    * local Duelist's Potion is down, or lost to a hit.
    */
   potionCallouts: {
+    felix: "¡Felix Felicis!",
     interrupted: "¡Poción perdida!",
-    strength: "¡Poción de Fuerza!",
-    swiftness: "¡Poción de Celeridad!",
+    strength: "¡Poción Máxima!",
+    swiftness: "¡Poción Vigorizante!",
     wiggenweld: "¡Wiggenweld!",
   },
   /** The Potions, as the Potion Slots and the active effects in the HUD name them. */
   potions: {
+    felix: "Felix Felicis",
     /** Accessible label of the Potion Slots, bottom-left. */
     label: "Pociones",
-    strength: "Fuerza",
-    swiftness: "Celeridad",
+    /** The Strength Potion. */
+    strength: "Poción Máxima",
+    /** The Swiftness Potion. */
+    swiftness: "Poción Vigorizante",
     wiggenweld: "Wiggenweld",
   },
   /** The Practice rival picker: the Training Dummies and the AI. */
@@ -198,8 +206,8 @@ export const text = {
   specials: {
     depulso: "Depulso",
     expelliarmus: "Expelliarmus",
-    /** Accessible label of the Focus orbs. */
-    focus: "Concentración",
+    /** Accessible label of the Focus orbs: Focus is shown as Determinación. */
+    focus: "Determinación",
     incendio: "Incendio",
     petrificus: "Petrificus Totalus",
   },

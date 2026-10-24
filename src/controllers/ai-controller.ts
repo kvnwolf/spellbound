@@ -1111,7 +1111,8 @@ export const createAiController = ({
    * AI weighs its Potions: Wiggenweld at low Health when it is safe (else it
    * may hide to drink); Swiftness to chase a Wand lying far off, or to get
    * away at low Health with no Wiggenweld left; Strength while the opponent
-   * is Disarmed or its own Focus is full. Never with a Spell on its way.
+   * is Disarmed or its own Focus is full; Felix Felicis when a whole Focus
+   * segment would fit. Never with a Spell on its way.
    */
   const potionFor = (
     self: DuelistState,
@@ -1164,7 +1165,8 @@ export const createAiController = ({
     const chance =
       choice === "wiggenweld" ? profile.potions.chance : profile.potions.boost;
 
-    if (choice === undefined || random() >= chance) {
+    // Felix Felicis is never a gamble: once it makes sense it is drunk.
+    if (choice === undefined || (choice !== "felix" && random() >= chance)) {
       return undefined;
     }
 

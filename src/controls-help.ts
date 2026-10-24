@@ -8,7 +8,7 @@
  */
 import "./controls-help.css";
 import { buttonIcon, writeWithIcons } from "./button-icons";
-import type { FaceButton } from "./button-icons";
+import type { FaceButton, IconButton } from "./button-icons";
 import { potionVial } from "./potion-slots-hud";
 import type {
   ControlLabel,
@@ -17,7 +17,13 @@ import type {
   ScreenView,
   SlotsLabel,
 } from "./screens/view";
-import { create, createSlotDiamond } from "./slot-diamond";
+import {
+  create,
+  createSlotDiamond,
+  dpadDiamond,
+  faceDiamond,
+} from "./slot-diamond";
+import type { DiamondLayout } from "./slot-diamond";
 import { specialGlyph } from "./spell-slots-hud";
 import { text } from "./text";
 
@@ -350,21 +356,22 @@ const placeLabels = (
 };
 
 /** A trigger's slots as the HUD's diamond, held open, each with its glyph and name. */
-const drawSlots = <Kind extends string>(
+const drawSlots = <Kind extends string, Button extends IconButton>(
   parent: HTMLElement,
-  slots: SlotsLabel<Kind>,
+  slots: SlotsLabel<Kind, Button>,
   className: string,
+  layout: DiamondLayout<Button>,
   glyph: (kind: Kind, badge: HTMLElement) => void,
   data: "potion" | "spell"
 ) => {
   const group = create("div", "ch-slots", parent);
   create("span", "ch-slots-heading", group).textContent = slots.heading;
   const frame = create("div", "ch-slots-frame", group);
-  const diamond = createSlotDiamond(frame, className);
+  const diamond = createSlotDiamond(frame, className, layout);
   diamond.held(true);
 
   for (const { button, kind, label } of slots.slots) {
-    const slot = diamond.slots[button];
+    const slot = diamond.slot(button);
 
     if (kind === null) {
       slot.item.dataset.state = "empty";
@@ -388,6 +395,7 @@ const drawControls = (
     layout,
     help.potionSlots,
     "ps-diamond",
+    dpadDiamond,
     (kind, badge) => {
       potionVial(kind, badge, "ps-glyph");
     },
@@ -402,7 +410,14 @@ const drawControls = (
   );
 
   placeLabels(pad, help.controls);
-  drawSlots(layout, help.spellSlots, "ss-diamond", specialGlyph, "spell");
+  drawSlots(
+    layout,
+    help.spellSlots,
+    "ss-diamond",
+    faceDiamond,
+    specialGlyph,
+    "spell"
+  );
 };
 
 const drawMechanics = (

@@ -23,6 +23,10 @@
   --potion: var(--wiggenweld);
 }
 
+.sd-slot[data-potion="felix"] {
+  --potion: var(--felix);
+}
+
 .sd-slot[data-potion="strength"],
 .ps-effect[data-potion="strength"] {
   --potion: var(--strength);

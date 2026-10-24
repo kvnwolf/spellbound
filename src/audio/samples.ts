@@ -72,6 +72,8 @@ const roundEnd: Readonly<Record<RoundOutcome, SampleId>> = {
 
 /** Each Potion's effect as it is down. */
 const potionEffect: Readonly<Record<PotionKind, SampleId>> = {
+  // Felix Felicis's luck lands like Wiggenweld's healing: a bright chime.
+  felix: "potion-heal",
   strength: "potion-strength",
   swiftness: "potion-swiftness",
   wiggenweld: "potion-heal",

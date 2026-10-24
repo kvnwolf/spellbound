@@ -10,9 +10,8 @@ import type {
   PotionKind,
 } from "../duel/duel";
 import { distanceBetween } from "../duel/geometry";
-import { potionIn } from "../duel/potions";
+import { potionIn, potionSlots } from "../duel/potions";
 import type { PotionSlot } from "../duel/potions";
-import { spellSlots } from "../duel/spell-slots";
 import type { Tuning } from "../tuning";
 import { withinDepulso } from "./ai-specials";
 
@@ -21,7 +20,7 @@ export const potionSlotOf = (
   kind: PotionKind,
   settings: Pick<Tuning, "potionSlots">
 ): PotionSlot | undefined =>
-  spellSlots.find((slot) => potionIn(slot, settings) === kind);
+  potionSlots.find((slot) => potionIn(slot, settings) === kind);
 
 /** An opponent who cannot cast at all right now: Disarmed, Staggered, Petrified, knocked back or drinking. */
 export const helpless = (opponent: DuelistState) =>
@@ -75,7 +74,10 @@ export const safeToDrink = ({
  * - Wiggenweld at `low` Health, if it is `safe`;
  * - Swiftness to chase its Wand lying more than `ai.potions.chaseDistance`
  *   off, or to get away at low Health with no Wiggenweld left (safe);
- * - Strength while the opponent is Disarmed or its own Focus is full (safe).
+ * - Strength while the opponent is Disarmed or its own Focus is full (safe);
+ * - Felix Felicis to top up Focus it has started building, while a whole
+ *   segment still fits (safe, and with no opening on the opponent to take
+ *   instead), so none of what it grants is wasted.
  * Never with a Spell `incoming`. A Potion whose effect is still on is not drunk again.
  */
 export const potionToDrink = ({
@@ -117,6 +119,18 @@ export const potionToDrink = ({
 
   if (lasting("strength") && safe && self.looseWand === null && strong) {
     return "strength";
+  }
+
+  const { max, segment } = settings.focus;
+
+  if (
+    has("felix") &&
+    safe &&
+    !helpless(opponent) &&
+    self.focus > 0 &&
+    self.focus <= max - segment
+  ) {
+    return "felix";
   }
 
   return undefined;

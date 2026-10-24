@@ -1231,6 +1231,45 @@ describe("AI Potions", () => {
     }
   );
 
+  it.each(["duelista", "maestro"] as const)(
+    "drinks Felix Felicis when it is safe and short of Focus on %s",
+    (difficulty) => {
+      const lucky = seeds(10).filter(
+        (seed) =>
+          drinksOf(
+            play({ difficulty, player: idleController, seconds: 6, seed }),
+            "felix"
+          ).length > 0
+      );
+
+      expect(lucky.length).toBeGreaterThanOrEqual(8);
+    }
+  );
+
+  it("drinks Felix Felicis only with a whole Focus segment to fill, and never with a Spell on its way", () => {
+    const { max, segment } = tuning.focus;
+
+    const drinks = seeds(10).flatMap((seed) =>
+      drinksOf(
+        play({
+          difficulty: "maestro",
+          player: steadyCaster(0.5),
+          seconds: 10,
+          seed,
+          sturdy: true,
+        }),
+        "felix"
+      )
+    );
+
+    expect(drinks.length).toBeGreaterThan(0);
+
+    for (const seen of drinks) {
+      expect(find(seen, "ai").focus).toBeLessThanOrEqual(max - segment);
+      expect(incoming(seen)).toBeFalsy();
+    }
+  });
+
   it("keeps its Wiggenweld while its Health is high", () => {
     for (const seed of seeds(5)) {
       const played = afterHurt({
@@ -1266,7 +1305,7 @@ const drinksNow = (): Controller => {
       return {
         ...idleIntent,
         lockOn: me.targetId === null && tick % 10 === 1,
-        potionSlots: { held: due, press: due ? "square" : null },
+        potionSlots: { held: due, press: due ? "left" : null },
         shield: !due && me.drinking === null,
       };
     },

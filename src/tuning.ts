@@ -1,3 +1,8 @@
+/** The Potion Slots' bindings, typed so a variant can leave a slot empty (null). */
+const potionSlotsOf = (
+  slots: Readonly<Record<"down" | "left" | "right" | "up", string | null>>
+) => slots;
+
 /**
  * Every tuning number in Spellbound lives here, so balancing never touches
  * logic. Distances are metres, times are seconds, speeds are metres per second.
@@ -1766,6 +1771,7 @@ export const tuning = {
    */
   potionLook: {
     colors: {
+      felix: "#ffd24a",
       strength: "#ff4a3a",
       swiftness: "#5fe0d0",
       wiggenweld: "#7fe06a",
@@ -1783,18 +1789,18 @@ export const tuning = {
   },
 
   /**
-   * The Potion bound to each Potion Slot (one per face button), or null for
+   * The Potion bound to each Potion Slot (one per D-pad arrow), or null for
    * an empty slot.
    */
-  potionSlots: {
-    circle: "swiftness",
-    cross: null,
-    square: "wiggenweld",
-    triangle: "strength",
-  },
+  potionSlots: potionSlotsOf({
+    down: "felix",
+    left: "wiggenweld",
+    right: "swiftness",
+    up: "strength",
+  }),
 
   /**
-   * Potions, drunk from the Potion Slots (L2 held and a face button). Each
+   * Potions, drunk from the Potion Slots (L2 held and a D-pad arrow). Each
    * Round every Duelist starts with `charges` of each, spent as drinking
    * starts. Drinking takes `drink.seconds`, during which the drinker walks at
    * `drink.moveScale` of their speed and cannot cast, Shield, Charge, Dodge
@@ -1803,6 +1809,8 @@ export const tuning = {
    */
   potions: {
     drink: { moveScale: 0.4, seconds: 1 },
+    /** Felix Felicis: grants `segments` Focus segments at once, never past the full meter. */
+    felix: { charges: 1, segments: 1 },
     /** Spell damage dealt is multiplied by `damageScale` for `seconds`. */
     strength: { charges: 1, damageScale: 1.25, seconds: 10 },
     /** Stamina is never spent and walking is `speedScale` times faster for `seconds`. */

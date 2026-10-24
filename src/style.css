@@ -12,6 +12,7 @@
   --wiggenweld: #8fe07a;
   --strength: #ff7466;
   --swiftness: #6fe6d6;
+  --felix: #ffd65e;
   /* The Stamina bar: a calm magical blue, cool against the gold. */
   --stamina: #5f8fd8;
 
@@ -343,6 +344,10 @@ body {
 
 .hud-spell-callout[data-spell="swiftness"] {
   color: var(--swiftness);
+}
+
+.hud-spell-callout[data-spell="felix"] {
+  color: var(--felix);
 }
 
 /* A Potion lost to a hit: a muted, smaller call-out. */

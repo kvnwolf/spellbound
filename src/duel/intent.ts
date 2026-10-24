@@ -1,4 +1,5 @@
 import type { Aim } from "./geometry";
+import type { PotionSlot } from "./potions";
 import type { SpellSlot } from "./spell-slots";
 
 /** A 2D vector in controller space: x is right, y is up/forward. */
@@ -9,13 +10,14 @@ export interface Vec2 {
 
 /**
  * The Spell Slots (or the Potion Slots) this tick: `held` while the modifier
- * (R2, or L2, for a human) is held, and `press`, the slot whose face button
- * was pressed this tick (for that single tick), or null. The simulation casts
- * the Special Spell (or drinks the Potion) bound to a pressed slot, if it can.
+ * (R2, or L2, for a human) is held, and `press`, the slot whose button (a
+ * face button, or a D-pad arrow for a Potion) was pressed this tick (for
+ * that single tick), or null. The simulation casts the Special Spell (or
+ * drinks the Potion) bound to a pressed slot, if it can.
  */
-export interface SlotsIntent {
+export interface SlotsIntent<Slot extends string = SpellSlot> {
   readonly held: boolean;
-  readonly press: SpellSlot | null;
+  readonly press: Slot | null;
 }
 
 /** A Lock-on Target switch: to the next opponent on the left (-1) or right (1), or none (0). */
@@ -75,7 +77,7 @@ export interface Intent {
   /** The Spell Slots: the modifier held, and a slot pressed this tick. */
   readonly spellSlots: SlotsIntent;
   /** The Potion Slots: the modifier held, and a slot pressed this tick. */
-  readonly potionSlots: SlotsIntent;
+  readonly potionSlots: SlotsIntent<PotionSlot>;
   /**
    * The Clash pump (△, for a human) is down this tick. Only a Duelist locked
    * in a Clash reads it: each press, not the hold, pushes the meeting point

@@ -344,7 +344,7 @@ describe("Depulso", () => {
 
     // The rival holds L2 and presses □ for Wiggenweld, then the push lands.
     run(duel, 1, {
-      rival: intent({ potionSlots: { held: true, press: "square" } }),
+      rival: intent({ potionSlots: { held: true, press: "left" } }),
     });
     const { drinking } = duelist(duel, "rival");
 

@@ -397,7 +397,7 @@ describe("Hechizos especiales", () => {
 describe("Pociones", () => {
   it("counts the Potions drunk with L2 and a face button, once down", () => {
     const duel = practiceFor("potions");
-    const slot = slotOf("wiggenweld");
+    const slot = "left" as const;
     const press = intent({ potionSlots: { held: true, press: slot } });
     const hold = intent({ potionSlots: { held: true, press: null } });
 

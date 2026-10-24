@@ -84,16 +84,17 @@ const duelist = (duel: Duel, id: string): DuelistState => {
   return found;
 };
 
-/** The Potion Slots as the tuning binds them: □ Wiggenweld, △ Strength, ○ Swiftness, ✕ empty. */
-const toWiggenweld: PotionSlot = "square";
-const toStrength: PotionSlot = "triangle";
-const toSwiftness: PotionSlot = "circle";
+/** The Potion Slots as the tuning binds them: ← Wiggenweld, ↑ Strength, → Swiftness, ↓ Felix Felicis. */
+const toWiggenweld: PotionSlot = "left";
+const toStrength: PotionSlot = "up";
+const toSwiftness: PotionSlot = "right";
+const toFelix: PotionSlot = "down";
 
-/** L2 held this tick, with `press` the slot whose face button went down on it. */
+/** L2 held this tick, with `press` the slot whose D-pad arrow went down on it. */
 const potionSlot = (press: PotionSlot | null, extra: Partial<Intent> = {}) =>
   intent({ ...extra, potionSlots: { held: true, press } });
 
-/** Holds L2 and presses `press`'s face button for a tick, then lets go of both. */
+/** Holds L2 and presses `press`'s D-pad arrow for a tick, then lets go of both. */
 const drinkFrom = (
   duel: Duel,
   press: PotionSlot,
@@ -142,13 +143,13 @@ const stride = (duel: Duel) => {
 };
 
 describe("Potions", () => {
-  it("start each Round with 2 Wiggenweld, 1 Strength Potion and 1 Swiftness Potion, nothing drunk and nothing active", () => {
+  it("start each Round with 2 Wiggenweld, 1 Strength Potion, 1 Swiftness Potion and 1 Felix Felicis, nothing drunk and nothing active", () => {
     const duel = fight();
 
     expect(duelist(duel, "hero")).toMatchObject({
       drinking: null,
       potionEffects: { strength: 0, swiftness: 0 },
-      potions: { strength: 1, swiftness: 1, wiggenweld: 2 },
+      potions: { felix: 1, strength: 1, swiftness: 1, wiggenweld: 2 },
     });
   });
 
@@ -177,17 +178,21 @@ describe("Potions", () => {
     expect(duelist(duel, "hero").potionSlotsHeld).toBeFalsy();
   });
 
-  it("drink nothing from the empty ✕ slot, or from L2 alone", () => {
-    const duel = fight();
+  it("drink nothing from an empty slot, or from L2 alone", () => {
+    const duel = fight({
+      ...tuning,
+      potionSlots: { ...tuning.potionSlots, down: null },
+    });
 
     const events = [
-      ...drinkFrom(duel, "cross"),
+      ...drinkFrom(duel, "down"),
       ...run(duel, 5, { hero: potionSlot(null) }),
       ...run(duel, secondsToTicks(1.5)),
     ];
 
     expect(ofType(events, "potion-start")).toStrictEqual([]);
     expect(duelist(duel, "hero").potions).toStrictEqual({
+      felix: 1,
       strength: 1,
       swiftness: 1,
       wiggenweld: 2,
@@ -232,6 +237,44 @@ describe("Potions", () => {
       drinkDown(duel, toWiggenweld);
 
       expect(duelist(duel, "hero").health).toBe(tuning.duelist.health);
+    });
+  });
+
+  describe("Felix Felicis", () => {
+    it("grants one Focus segment at once, once it is down", () => {
+      const duel = fight();
+      const before = duelist(duel, "hero").focus;
+
+      drinkFrom(duel, toFelix);
+      run(duel, secondsToTicks(potions.drink.seconds - 0.1));
+      const almost = duelist(duel, "hero").focus;
+      const events = run(duel, secondsToTicks(0.15));
+
+      expect(before).toBe(0);
+      expect(almost).toBe(0);
+      expect(ofType(events, "potion-drunk")).toStrictEqual([
+        { duelistId: "hero", kind: "felix", type: "potion-drunk" },
+      ]);
+      expect(duelist(duel, "hero").focus).toBe(33);
+      expect(duelist(duel, "hero").potions.felix).toBe(0);
+    });
+
+    it("never fills Focus past the full meter", () => {
+      // One Stupefy landed nearly fills the meter.
+      const duel = fight({
+        ...tuning,
+        focus: {
+          ...tuning.focus,
+          gain: { ...tuning.focus.gain, lightSpellHit: 90 },
+        },
+      });
+
+      loneStupefyDamage(duel);
+      const nearlyFull = duelist(duel, "hero").focus;
+      drinkDown(duel, toFelix);
+
+      expect(nearlyFull).toBe(90);
+      expect(duelist(duel, "hero").focus).toBe(tuning.focus.max);
     });
   });
 
@@ -404,11 +447,16 @@ describe("Potions", () => {
       run(duel, secondsToTicks(0.3));
     }
 
-    expect(spent).toStrictEqual({ strength: 0, swiftness: 1, wiggenweld: 1 });
+    expect(spent).toStrictEqual({
+      felix: 1,
+      strength: 0,
+      swiftness: 1,
+      wiggenweld: 1,
+    });
     expect(duelist(duel, "hero")).toMatchObject({
       drinking: null,
       potionEffects: { strength: 0, swiftness: 0 },
-      potions: { strength: 1, swiftness: 1, wiggenweld: 2 },
+      potions: { felix: 1, strength: 1, swiftness: 1, wiggenweld: 2 },
     });
   });
 });

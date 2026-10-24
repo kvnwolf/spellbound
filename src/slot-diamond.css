@@ -53,19 +53,19 @@
     calc(-50% + var(--dy) * var(--sd-spread));
 }
 
-.sd-slot-triangle {
+.sd-at-top {
   --dy: -1;
 }
 
-.sd-slot-square {
+.sd-at-left {
   --dx: -1;
 }
 
-.sd-slot-circle {
+.sd-at-right {
   --dx: 1;
 }
 
-.sd-slot-cross {
+.sd-at-bottom {
   --dy: 1;
 }
 

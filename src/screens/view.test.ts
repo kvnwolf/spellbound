@@ -251,21 +251,21 @@ describe("what the Controls show", () => {
         detail: "Mantén y pulsa △ □ ○ ✕",
         label: "Hechizos especiales",
       },
-      { control: "l2", detail: "Mantén y pulsa △ □ ○ ✕", label: "Pociones" },
+      { control: "l2", detail: "Mantén y pulsa ↑ ← → ↓", label: "Pociones" },
       { control: "options", label: "Pausa" },
     ]);
   });
 
-  it("lists the Potions under L2 and the Special Spells under R2 by their face buttons, an empty slot without a name", () => {
+  it("lists the Potions under L2 by their D-pad arrows and the Special Spells under R2 by their face buttons", () => {
     const help = viewOf(controls("controls"))?.help;
 
     expect(help?.tab === "controls" && help.potionSlots).toStrictEqual({
       heading: "Mantén L2",
       slots: [
-        { button: "triangle", kind: "strength", label: "Fuerza" },
-        { button: "square", kind: "wiggenweld", label: "Wiggenweld" },
-        { button: "circle", kind: "swiftness", label: "Celeridad" },
-        { button: "cross", kind: null, label: null },
+        { button: "up", kind: "strength", label: "Poción Máxima" },
+        { button: "left", kind: "wiggenweld", label: "Wiggenweld" },
+        { button: "right", kind: "swiftness", label: "Poción Vigorizante" },
+        { button: "down", kind: "felix", label: "Felix Felicis" },
       ],
     });
     expect(help?.tab === "controls" && help.spellSlots).toStrictEqual({
@@ -290,7 +290,7 @@ describe("what the Controls show", () => {
       "Escudo y Parry",
       "Esquiva perfecta",
       "Clash",
-      "Concentración",
+      "Determinación",
       "Quemadura",
       "Petrificado",
       "Desarme y varita",

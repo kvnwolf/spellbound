@@ -14,7 +14,12 @@ import "./spell-slots-hud.css";
 import type { DuelistId, DuelistState, DuelSnapshot } from "./duel/duel";
 import { boundTo, readiness, spellSlots } from "./duel/spell-slots";
 import type { SpecialSpellKind, SpellSlot } from "./duel/spell-slots";
-import { create, createSlotDiamond, setData } from "./slot-diamond";
+import {
+  create,
+  createSlotDiamond,
+  faceDiamond,
+  setData,
+} from "./slot-diamond";
 import type { DiamondSlot } from "./slot-diamond";
 import { text } from "./text";
 import type { Tuning } from "./tuning";
@@ -130,11 +135,11 @@ export const createSpellSlotsHud = (
   settings: SpellSlotsHudSettings
 ): SpellSlotsHud => {
   const panel = create("div", "ss-panel", root);
-  const diamond = createSlotDiamond(panel, "ss-diamond");
+  const diamond = createSlotDiamond(panel, "ss-diamond", faceDiamond);
   const focus = createFocusOrbs(panel, settings);
 
   const slots = spellSlots.map((slot) =>
-    createSlot(diamond.slots[slot], slot, settings)
+    createSlot(diamond.slot(slot), slot, settings)
   );
 
   return {
