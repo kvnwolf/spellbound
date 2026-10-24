@@ -49,7 +49,7 @@ The source of a Duelist's intent: either a human holding a gamepad or the AI.
 _Avoid_: Input, brain, agent
 
 **Training Dummy**:
-A scripted Controller a Practice can be fought against, each built to practise one thing: standing still, casting Light Spells on a beat, meeting a Charge in a Clash, or Disarming.
+A scripted Controller a Practice can be fought against, each built to practise one thing: standing still, casting Light Spells on a beat, meeting a Charge in a Clash, or Disarming. Its Stamina is kept full, so it never misses its beat for want of it.
 _Avoid_: Bot, target, debug rival
 
 **Difficulty**:

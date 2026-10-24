@@ -5,7 +5,8 @@
  * back full (unless a Training lesson keeps one where it is) and their spent
  * Potions come back once worn off, and the rival's Health comes back a moment after it reaches
  * zero, the rival down meanwhile (falling, lying, then getting back up),
- * unable to act or be hit. Cooldowns and Spell costs still apply. The Duel simulation applies
+ * unable to act or be hit. Cooldowns and Spell costs still apply, though a
+ * Training Dummy's Stamina is kept full. The Duel simulation applies
  * these rules when its config carries them. Pure: no three.js, no DOM.
  */
 import type { Tuning } from "../tuning";
@@ -31,6 +32,11 @@ export interface PracticeRules {
    * Training Dummy can cast one on its beat without earning Focus.
    */
   readonly rivalsCastFree: boolean;
+  /**
+   * The other Duelists' Stamina is kept full, so a Training Dummy casting
+   * on its beat is never refused for want of it. The AI tires as in a Duel.
+   */
+  readonly rivalsTireless: boolean;
   /** How the learner starts, as a Training lesson sets them up. */
   readonly setup: LearnerSetup;
 }
@@ -59,8 +65,8 @@ export const plainSetup: LearnerSetup = {
 
 /**
  * The rules for a Practice against `rival`: only Maniquí desarmador casts
- * free, and the learner starts as `setup` says (plainly, unless a Training
- * lesson asks otherwise).
+ * free, every Training Dummy (never the AI) is tireless, and the learner
+ * starts as `setup` says (plainly, unless a Training lesson asks otherwise).
  */
 export const practiceRulesFor = (
   rival: PracticeRival,
@@ -69,6 +75,7 @@ export const practiceRulesFor = (
 ): PracticeRules => ({
   learner,
   rivalsCastFree: rival === "disarms",
+  rivalsTireless: rival !== "ai",
   setup,
 });
 
@@ -245,7 +252,11 @@ export const createPracticeKeeper = (
         const was = before.find((each) => each.id === self.id) ?? self;
 
         if (self.id !== rules.learner) {
-          return recover(fall(was, self));
+          const rival = recover(fall(was, self));
+
+          return rules.rivalsTireless
+            ? { ...rival, stamina: full.stamina }
+            : rival;
         }
 
         return restock(refill(was, self));

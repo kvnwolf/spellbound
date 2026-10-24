@@ -79,6 +79,7 @@ const fight = (
       ? {
           learner: "hero",
           rivalsCastFree: false,
+          rivalsTireless: false,
           setup: { focusShare: 1, healthShare: 1, kept: [] },
         }
       : undefined,
