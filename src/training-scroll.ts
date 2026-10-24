@@ -1,5 +1,5 @@
 /**
- * The Training scrolls, a sheet of parchment unrolled over the frozen
+ * The Training scrolls, a sheet of parchment popped up over the frozen
  * lesson: the lesson's own before it starts (its name, what it teaches,
  * when to use it and its buttons), its success once completed, and the Club
  * de Duelo's welcome once every lesson is. Drawn from a `ScrollView`; face
@@ -46,8 +46,8 @@ export const createTrainingScroll = (root: HTMLElement) => {
         return;
       }
 
-      // A new scroll unrolls; moving the highlight on one does not.
-      const unrolls = view !== undefined && sheet.dataset.kind !== view.kind;
+      // A new scroll pops in; moving the highlight on one does not.
+      const pops = view !== undefined && sheet.dataset.kind !== view.kind;
       shown = key;
       veil.hidden = view === undefined;
 
@@ -84,10 +84,17 @@ export const createTrainingScroll = (root: HTMLElement) => {
         })
       );
 
-      if (unrolls) {
-        sheet.classList.remove("scroll-unroll");
-        void sheet.offsetWidth;
-        sheet.classList.add("scroll-unroll");
+      // Its lines fade up in turn as it settles.
+      for (const [index, line] of [...body.children].entries()) {
+        if (line instanceof HTMLElement) {
+          line.style.setProperty("--line", String(index));
+        }
+      }
+
+      if (pops) {
+        veil.classList.remove("scroll-pop");
+        void veil.offsetWidth;
+        veil.classList.add("scroll-pop");
       }
     },
   };
