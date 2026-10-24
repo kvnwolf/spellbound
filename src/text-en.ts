@@ -345,7 +345,7 @@ export const en: Dictionary = {
       },
       heavy: {
         controls: "Hold △ to charge · Release △ to cast",
-        what: "Hold △ to charge Confringo and release it to cast. Letting go right as the charge fills is a Perfect Release: it flies out stronger.",
+        what: "Hold △ to charge Confringo and release it to cast; casting it takes a good bite of stamina. Letting go right as the charge fills is a Perfect Release: it flies out stronger.",
         when: "Charge it when your rival can't punish you. Hold a full charge too long and it blows up in your hand.",
       },
       incendio: {
@@ -355,8 +355,8 @@ export const en: Dictionary = {
       },
       light: {
         controls: "□: Stupefy",
-        what: "□ casts Stupefy, a quick spell you can fire again and again. Every third in a row hits harder and staggers.",
-        when: "Use it to keep your rival under pressure and to fill your Determination: every hit counts.",
+        what: "□ casts Stupefy, a quick spell that costs a little stamina. Every third in a row hits harder and staggers, but leaves you a beat before the next.",
+        when: "Use it to press your rival and fill your Determination, but don't mash □: run your stamina dry and you can't dodge or Shield.",
       },
       lockOn: {
         controls: "R3: lock on and off",
@@ -386,7 +386,7 @@ export const en: Dictionary = {
       swiftness: {
         controls: "Hold L2 and press {swiftness}",
         what: "The Invigoration Draught makes you faster and gives you unlimited stamina for a few seconds.",
-        when: "Drink it to reach your wand sooner, to escape on low health, or to dodge and Shield without tiring.",
+        when: "Drink it to reach your wand sooner, to escape on low health, or to dodge, Shield and cast without tiring.",
       },
       wiggenweld: {
         controls: "Hold L2 and press {wiggenweld}",
