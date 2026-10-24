@@ -1,0 +1,2252 @@
+/**
+ * A Duelist drawn as a rigged wizard (`wizard-rig.ts`) animated with real
+ * clips through an `AnimationMixer`. It only reads presentation samples and
+ * simulation events.
+ *
+ * The pose is layered. Every clip is split into an upper body and a lower
+ * body, so the legs can walk, run or brace while the arms cast, Charge,
+ * Shield or drink. In each half a stack of clips blends: locomotion at the
+ * bottom (its cycles advanced at a real runner's cadence by the ground
+ * actually covered, blended by speed), then each state eased in and out
+ * over what is beneath it (the armed stance, Protego, a Charge, drinking, a
+ * Clash, a Stagger, the jump's take-off, air and reach for the floor), then
+ * one-shots on their own timelines (each Spell's cast, a Parry, a flinch, a
+ * knockback, a landing, a Wand pickup, the Dodge roll, the Knockout and
+ * getting back up).
+ *
+ * After the clips, code writes what clips cannot know: moving off the
+ * facing (there are no strafe clips) the legs turn toward the motion while
+ * the spine turns the chest back; the legs reach by two-bone IK to the
+ * gait's own stride (the clips' strides are far too long for their speed)
+ * and the pelvis keeps only part of their bounce, so planted feet stay put;
+ * the head follows the aim's pitch. At rest and on the move the Wand hangs
+ * low in the hand; to cast, Charge, Shield or Parry and in a Clash the
+ * right arm rises by two-bone IK so the drawn Wand tip sits exactly on the
+ * simulation's `wandTip` (snapping up on the very frame a Spell leaves it,
+ * the chest leading the body round to the aim), so Spells visibly leave the
+ * Wand, and lowers again shortly after. A Charge raises it overhead instead,
+ * and its release throws it down over the top, the Spell leaving as the tip
+ * passes `wandTip`. Disarmed, that hand reaches for the
+ * loose Wand instead. In a Clash the Wand arm thrusts out along the beam,
+ * the chest leaning into it, and the free arm braces back, a fist.
+ * Petrified, the pose freezes and the body turns to stone.
+ *
+ * It keeps every cue of the procedural wizard it replaces: the Lock-on rim
+ * glow, the full-Focus Wand aura, the empty hand while Disarmed, the vial
+ * raised while drinking and the auras of Potions at work.
+ *
+ * A Knockout's fall turns and slides as it goes down so the body lies on
+ * open floor, never through a wall, Cover or an Obstruction (`fall-room.ts`).
+ *
+ * A Practice rival down at zero Health falls and lies as at a Knockout,
+ * and gets up as after one the moment its Health is back. A Training
+ * Dummy (the same rig, re-dressed) also shows it in the light under its
+ * hood: out as it falls, flaring back up as it gets up.
+ */
+import {
+  AnimationMixer,
+  Color,
+  Group,
+  Quaternion,
+  Vector3,
+} from "three/webgpu";
+import type { AnimationAction, Object3D } from "three/webgpu";
+
+import type {
+  ArenaLayout,
+  DuelEvent,
+  DuelistId,
+  PotionKind,
+  SpellState,
+} from "../duel/duel";
+import { springStep } from "../duel/geometry";
+import type { Point3 } from "../duel/geometry";
+import type { Tuning } from "../tuning";
+import type { DummyLook } from "./dummy-look";
+import { fallRoom, unmoved } from "./fall-room";
+import type { FallPlacement } from "./fall-room";
+import type { DuelistSample } from "./interpolate";
+import { locomotionClips } from "./wizard-assets";
+import type { WizardAssets } from "./wizard-assets";
+import { approach, pulse, smooth, solveLimb, unit } from "./wizard-motion";
+import { createWizardRig } from "./wizard-rig";
+import type { TeamLook } from "./wizard-rig";
+
+export interface DuelistView {
+  readonly object: Group;
+  /** Where the Wand tip is on screen right now, as last drawn. */
+  readonly wandTipPosition: () => Point3;
+  /**
+   * Reacts to this frame's simulation events about this Duelist: each
+   * Spell's cast, a Backfire, a Dodge, a landing, a hit, a Parry, a
+   * Potion down and a Wand picked up off the floor.
+   */
+  readonly handle: (events: readonly DuelEvent[]) => void;
+  /**
+   * Draws `sample`, easing poses over the `seconds` since the last frame.
+   * `glow` is the rim glow it eases toward: 0 off, 1 the full lock mark of
+   * the local Duelist's Lock-on Target.
+   */
+  readonly show: (sample: DuelistSample, seconds: number, glow: number) => void;
+  /**
+   * The body's joints as last drawn, for what crawls over it (see
+   * `impact-vfx.ts`): head, neck, chest, waist, pelvis, both shoulders,
+   * both elbows, both hands, both hips.
+   */
+  readonly bodyPoints: () => readonly Point3[];
+}
+
+/** The full-Focus aura's settings, with the Focus that fills the meter. */
+export type WandAuraSettings = Tuning["wandAura"] & {
+  readonly focusMax: number;
+};
+
+/** How Potions look on a Duelist, with how long one takes to drink. */
+export type PotionLookSettings = Tuning["potionLook"] & {
+  readonly drinkSeconds: number;
+};
+
+export interface DuelistViewSettings {
+  /** The Arena the Duelist is drawn in: a Knockout lies clear of its walls, Cover and Obstructions. */
+  readonly arena: ArenaLayout;
+  readonly duelist: Tuning["duelist"];
+  readonly glow: Tuning["lockOnGlow"];
+  readonly stone: Tuning["petrifiedLook"];
+  readonly aura: WandAuraSettings;
+  readonly potion: PotionLookSettings;
+  /** How long a Dodge lasts: the roll's length. */
+  readonly dodgeSeconds: number;
+  /** Full Stamina, against which the Duelist's breathing is measured. */
+  readonly staminaMax: number;
+  /** How long a Practice rival takes to get up once its Health is back (`DuelistSample.downSeconds`). */
+  readonly getUpSeconds: number;
+  /** A Spell landing flares the silhouette in its colour. */
+  readonly hit: Tuning["spellLook"]["hitFlare"];
+  readonly palette: Tuning["spellPalette"];
+  /** A Burning body's cloth smoulders. */
+  readonly robe: Tuning["spellLook"]["burn"]["robe"];
+}
+
+type Triple = readonly [number, number, number];
+
+const vector = ([x, y, z]: Triple) => new Vector3(x, y, z);
+
+/** A one-shot's age; infinite when it is not playing. */
+const idle = Number.POSITIVE_INFINITY;
+
+/** Wraps an angle to (-π, π]. */
+const wrap = (angle: number) => Math.atan2(Math.sin(angle), Math.cos(angle));
+
+/** A state's age: 0 as it starts, growing while it lasts, idle once it ends. */
+const ageWhile = (on: boolean, age: number, seconds: number) => {
+  if (!on) {
+    return idle;
+  }
+
+  return age === idle ? 0 : age + seconds;
+};
+
+/** Where a looping clip of `duration` is after `seconds`. */
+const loopTime = (seconds: number, duration: number) =>
+  ((seconds % duration) + duration) % duration;
+
+const up = new Vector3(0, 1, 0);
+
+/** One half of the body's clip stack: weights by clip, each with the time it plays at. */
+interface Layer {
+  readonly weights: Map<string, number>;
+  readonly times: Map<string, number>;
+}
+
+const createLayer = (): Layer => ({ times: new Map(), weights: new Map() });
+
+/** Puts `clip` under everything in `layer` (the base: weights are raw). */
+const lay = (layer: Layer, clip: string, time: number, weight: number) => {
+  if (weight <= 0) {
+    return;
+  }
+
+  layer.weights.set(clip, (layer.weights.get(clip) ?? 0) + weight);
+  layer.times.set(clip, time);
+};
+
+/** Blends `clip` over everything already in `layer` by `weight` (0 to 1). */
+const over = (layer: Layer, clip: string, time: number, weight: number) => {
+  const share = unit(weight);
+
+  if (share <= 1e-3) {
+    return;
+  }
+
+  for (const [name, each] of layer.weights) {
+    layer.weights.set(name, each * (1 - share));
+  }
+
+  lay(layer, clip, time, share);
+};
+
+const scratch = new Vector3();
+const scratchQuaternion = new Quaternion();
+const parentQuaternion = new Quaternion();
+
+/** Turns `joint` by `angle` about `axis` (a world direction), after whatever posed it. */
+/** The rotation vector (axis times angle, the short way) of `quaternion`, into `out`. */
+const rotationVectorOf = (quaternion: Quaternion, out: Vector3) => {
+  const sign = quaternion.w < 0 ? -1 : 1;
+  const w = Math.min(Math.abs(quaternion.w), 1);
+  const sine = Math.sqrt(1 - w * w);
+  const angle = 2 * Math.acos(w);
+  const scale = sine < 1e-6 ? 2 : (angle / sine) * sign;
+
+  return out.set(
+    quaternion.x * scale,
+    quaternion.y * scale,
+    quaternion.z * scale
+  );
+};
+
+/** The quaternion turning by the rotation vector `turn`, into `out`. */
+const quaternionOfRotation = (turn: Vector3, out: Quaternion) => {
+  const angle = turn.length();
+
+  return angle < 1e-9
+    ? out.identity()
+    : out.setFromAxisAngle(scratch.copy(turn).divideScalar(angle), angle);
+};
+
+const turnAbout = (joint: Object3D, axis: Vector3, angle: number) => {
+  if (Math.abs(angle) < 1e-5 || !joint.parent) {
+    return;
+  }
+
+  joint.parent.updateWorldMatrix(true, false);
+  joint.parent.getWorldQuaternion(parentQuaternion);
+  scratch.copy(axis).applyQuaternion(parentQuaternion.invert());
+  scratchQuaternion.setFromAxisAngle(scratch, angle);
+  joint.quaternion.premultiply(scratchQuaternion);
+};
+
+/** A Duelist's view in `team`'s colours; given `dummy`, as a Training Dummy in that look. */
+export const createDuelistView = (
+  id: DuelistId,
+  team: TeamLook,
+  settings: DuelistViewSettings,
+  assets: WizardAssets,
+  dummy?: DummyLook
+): DuelistView => {
+  const {
+    arena,
+    aura,
+    dodgeSeconds,
+    duelist,
+    getUpSeconds,
+    glow,
+    hit,
+    palette,
+    potion,
+    robe,
+    staminaMax,
+    stone,
+  } = settings;
+
+  const { motion, wand } = duelist;
+  const { gait, shots } = motion;
+  const rig = createWizardRig(assets, team, settings, dummy);
+  const { joints, uniforms } = rig;
+
+  // The Duelist's frame (position and facing), and inside it the body,
+  // which turns on its own for the Dodge roll.
+  const object = new Group();
+  const turn = new Group();
+  // Yaw first (the Dodge's turn), then the lean in the turned frame.
+  turn.rotation.order = "YXZ";
+  turn.add(rig.model);
+  object.add(turn);
+
+  // Every clip's two halves, playing at the times and weights set each frame.
+  const mixer = new AnimationMixer(rig.model);
+
+  const actions = new Map<
+    string,
+    { duration: number; lower: AnimationAction; upper: AnimationAction }
+  >();
+
+  for (const [name, halves] of assets.clips) {
+    const start = (clip: typeof halves.upper) => {
+      const action = mixer.clipAction(clip);
+      action.play();
+      action.enabled = false;
+
+      return action;
+    };
+
+    actions.set(name, {
+      duration: halves.duration,
+      lower: start(halves.lower),
+      upper: start(halves.upper),
+    });
+  }
+
+  const durationOf = (clip: string) => actions.get(clip)?.duration ?? 1;
+
+  // The free hand's fist: the Wand hand's grip on the mirrored fingers.
+  const leftFist = [...assets.grip].flatMap(([name, fist]) => {
+    const finger = rig.model.getObjectByName(name.replace(/_r$/u, "_l"));
+
+    return finger ? [[finger, fist] as const] : [];
+  });
+
+  const upper = createLayer();
+  const lower = createLayer();
+
+  // The pose the clips last set, before this view's own turns and IK. The
+  // mixer only writes a joint whose clip value changed, so a joint it skips
+  // would keep last frame's turns and they would pile up (a spine spinning
+  // round): every joint goes back to the clips' pose before the mixer runs.
+  const bones: Object3D[] = [];
+  rig.model.traverse((node) => {
+    if (node.type === "Bone") {
+      bones.push(node);
+    }
+  });
+
+  const clipPose = bones.map((bone) => ({
+    position: bone.position.clone(),
+    quaternion: bone.quaternion.clone(),
+  }));
+
+  // Inertialization: when a one-shot starts (a Dodge, a hit, a jump, a
+  // landing...), the new pose takes over at once and the gap from the last
+  // drawn pose decays on a critically damped spring, so the body flows into
+  // it instead of popping (Holden's offset inertialization).
+  const drawnPose = bones.map((bone) => ({
+    position: bone.position.clone(),
+    quaternion: bone.quaternion.clone(),
+  }));
+
+  const offsets = bones.map(() => ({
+    position: new Vector3(),
+    positionRate: new Vector3(),
+    rotation: new Vector3(),
+    rotationRate: new Vector3(),
+  }));
+
+  let blendPending = false;
+  let blending = false;
+  const was = { knockedBack: false, knockedOut: false, staggered: false };
+
+  /** Hands each layer's weights and times to the mixer and poses the body. */
+  const play = () => {
+    for (const [index, bone] of bones.entries()) {
+      const pose = clipPose[index];
+
+      if (pose) {
+        bone.position.copy(pose.position);
+        bone.quaternion.copy(pose.quaternion);
+      }
+    }
+
+    for (const [name, action] of actions) {
+      for (const [layer, half] of [
+        [upper, action.upper],
+        [lower, action.lower],
+      ] as const) {
+        const weight = layer.weights.get(name) ?? 0;
+        half.enabled = weight > 1e-3;
+        half.weight = weight;
+        half.time = Math.min(
+          Math.max(layer.times.get(name) ?? 0, 0),
+          action.duration - 1e-4
+        );
+      }
+    }
+
+    mixer.update(0);
+
+    for (const [index, bone] of bones.entries()) {
+      clipPose[index]?.position.copy(bone.position);
+      clipPose[index]?.quaternion.copy(bone.quaternion);
+    }
+  };
+
+  // Motion, measured from the samples: how fast and which way, in the body frame.
+  let speed = 0;
+  let gaitWeight = 0;
+  let walking = false;
+  const heading = new Vector3(0, 0, 1);
+  /** `heading` as a yaw in the body frame, eased the short way round. */
+  let headingYaw = 0;
+  let last: { x: number; z: number; elevation: number } | null = null;
+  let phase = 0;
+  let twist = 0;
+  /** The legs' reach on the clips' own stride (1 their own), so the gait keeps its cadence. */
+  let stride = 1;
+  /** How fast the feet rise (+) or fall (-), m/s. */
+  let climb = 0;
+  /** The ground velocity, smoothed (m/s, world), and how it changes (m/s²). */
+  const flow = { ax: 0, az: 0, vx: 0, vz: 0 };
+  /** The body's tilt into that change: forward (+) and to its left (+), radians. */
+  const lean = { forward: 0, left: 0 };
+  /** How fast the facing turns (radians a second, left +), smoothed. */
+  let turnRate = 0;
+  let lastYaw: number | null = null;
+  /** The legs stepping round as the body turns on the spot, 0 to 1. */
+  let pivot = 0;
+  /** A hit's kick to the upper body: a springy recoil back (pitch) and to a side (roll), radians and their rates. */
+  const kick = { pitch: 0, pitchRate: 0, roll: 0, rollRate: 0 };
+  /** How winded the Duelist is (0 to 1), and where their breath is in its cycle. */
+  let winded = 0;
+  let breathPhase = 0;
+  // Each Duelist breathes and shifts their weight to their own rhythm.
+  const rhythm = id.length * motion.breath.rhythmPerLetter;
+
+  // Eased state weights.
+  const weight = {
+    air: 0,
+    charge: 0,
+    clash: 0,
+    crouch: 0,
+    disarmed: 0,
+    drink: 0,
+    knockback: 0,
+    lock: 0,
+    shield: 0,
+    sprint: 0,
+    stagger: 0,
+    thrown: 0,
+  };
+
+  /** Whether the arm is lowering out of a Confringo's throw. */
+  let thrown = false;
+
+  // One-shots: their ages in seconds.
+  let castAge = idle;
+  let castKind: keyof typeof wand.flicks = "stupefy";
+  let strikeAge = idle;
+  let pushAge = idle;
+  let parryAge = idle;
+  let flinchAge = idle;
+  let flinchClip = "Hit_Chest";
+  let landAge = idle;
+  let jumpAge = idle;
+  /** Since the last Spell left this Duelist's Wand, and where it left it (world). */
+  let spawnAge = idle;
+  const spawnAt = new Vector3();
+  const spawnOffset = new Vector3();
+  /** Seconds since the Wand last had to be up: a cast or a Parry. */
+  let raisedAge = idle;
+  let pickupAge = idle;
+  let rollAge = idle;
+  let knockoutAge = idle;
+  let riseAge = idle;
+  /** Where the fall is drawn (turned and slid clear of walls and Cover), eased toward `fallGoal`. */
+  const fall = { turn: 0, x: 0, z: 0 };
+  let fallGoal: FallPlacement = unmoved;
+  /** The ground point and facing `fallGoal` was found for. */
+  let fallFrom: { x: number; yaw: number; z: number } | null = null;
+  let knockbackAge = idle;
+  let staggerAge = idle;
+  let rollYaw = 0;
+  let petrified = false;
+  let clock = 0;
+  // A Spell landing: its flare round the silhouette, and Petrificus's stone
+  // spreading from where it struck.
+  let flareAge = idle;
+  let stoneAge = idle;
+
+  // Full Focus: the Wand in hand breathes its aura.
+  let auraClock = 0;
+
+  const breathe = (sample: DuelistSample, seconds: number) => {
+    auraClock += seconds;
+
+    const breath =
+      aura.low +
+      (1 - aura.low) *
+        (0.5 + 0.5 * Math.sin(auraClock * aura.pulseSpeed * Math.PI * 2));
+
+    const wanted =
+      sample.focus >= aura.focusMax && !sample.disarmed ? breath : 0;
+
+    uniforms.auraStrength.value = approach(
+      uniforms.auraStrength.value,
+      wanted,
+      aura.fadeSharpness,
+      seconds
+    );
+  };
+
+  // The silhouette's flash as a Potion goes down, and the lasting auras.
+  let flashAge = idle;
+  let flashKind: PotionKind = "wiggenweld";
+  let potionClock = 0;
+  const lastingTint = new Color();
+  const flashTint = new Color();
+
+  const glowPotions = (sample: DuelistSample, seconds: number) => {
+    potionClock += seconds;
+    flashAge += seconds;
+    const { strength, swiftness } = sample.potionEffects;
+    const lasting = strength > 0 || swiftness > 0;
+
+    const breath =
+      potion.low +
+      (1 - potion.low) *
+        (0.5 + 0.5 * Math.sin(potionClock * potion.pulseSpeed * Math.PI * 2));
+
+    const wanted = lasting && !sample.knockedOut ? breath * potion.radiance : 0;
+    uniforms.potionGlow.value = approach(
+      uniforms.potionGlow.value,
+      wanted,
+      potion.fadeSharpness,
+      seconds
+    );
+
+    if (strength > 0 && swiftness > 0) {
+      lastingTint
+        .set(potion.colors.strength)
+        .lerp(flashTint.set(potion.colors.swiftness), 0.5);
+    } else if (lasting) {
+      lastingTint.set(potion.colors[strength > 0 ? "strength" : "swiftness"]);
+    }
+
+    if (lasting) {
+      uniforms.potionTint.value.copy(lastingTint);
+    }
+
+    const flash =
+      flashAge < potion.flashSeconds
+        ? (1 - flashAge / potion.flashSeconds) ** 2
+        : 0;
+
+    if (flash > 0) {
+      uniforms.potionTint.value.lerp(
+        flashTint.set(potion.colors[flashKind]),
+        flash
+      );
+      uniforms.potionGlow.value = Math.max(
+        uniforms.potionGlow.value,
+        flash * potion.flashRadiance
+      );
+    }
+  };
+
+  /** The locomotion clips' weights at the current speed: between neighbours by their own speeds. */
+  const strideWeights = () => {
+    const weights = locomotionClips.map(() => 0);
+    let clip = 0;
+
+    // Each clip alone (played faster or slower) except across the
+    // crossover bands, where it hands over to the next one.
+    for (const [index, [from, to]] of gait.crossovers.entries()) {
+      if (speed >= to) {
+        clip = index + 1;
+      } else if (speed > from) {
+        const share = smooth((speed - from) / (to - from));
+        weights[index] = 1 - share;
+        weights[index + 1] = share;
+
+        return weights;
+      }
+    }
+
+    weights[clip] = 1;
+
+    return weights;
+  };
+
+  /** How far the body travels over one blended cycle of the clips' own strides, metres. */
+  const cycleNow = () =>
+    strideWeights().reduce(
+      (sum, share, index) =>
+        sum +
+        share * assets.strides[locomotionClips[index] ?? "Walk_Loop"].cycle,
+      0
+    ) || 1;
+
+  /**
+   * The legs' reach on the clips' own stride at the current speed: the
+   * stride that, at the gait's cadence, covers the ground travelled.
+   */
+  const strideNow = () => {
+    if (speed < 1e-3) {
+      return 1;
+    }
+
+    const { cadence } = gait;
+
+    let steps = 0;
+
+    for (const [index, share] of strideWeights().entries()) {
+      const { base, perSpeed } =
+        locomotionClips[index] === "Walk_Loop" ? cadence.walk : cadence.run;
+
+      steps += share * (base + perSpeed * speed);
+    }
+
+    // Crouched, the steps are shorter and quicker.
+    steps *= 1 + (motion.crouch.cadence - 1) * weight.crouch;
+
+    // Two steps a cycle.
+    const wanted = (2 * speed) / (steps * cycleNow());
+
+    return Math.min(Math.max(wanted, gait.stride[0]), gait.stride[1]);
+  };
+
+  /**
+   * How the body feels its motion: velocity and its change, smoothed so
+   * frame jitter does not shake it, tilt into that change (speeding up
+   * leans forward, braking back, turning into the turn: `gait.lean`), and
+   * how fast the facing turns; turning on the spot steps the legs round.
+   */
+  const feelMotion = (dx: number, dz: number, yaw: number, seconds: number) => {
+    if (seconds <= 0) {
+      return;
+    }
+
+    const { lean: tilt } = gait;
+    const follow = 1 - Math.exp(-tilt.velocitySharpness * seconds);
+    const vx = flow.vx + (dx / seconds - flow.vx) * follow;
+    const vz = flow.vz + (dz / seconds - flow.vz) * follow;
+    const settle = 1 - Math.exp(-tilt.accelerationSharpness * seconds);
+    flow.ax += ((vx - flow.vx) / seconds - flow.ax) * settle;
+    flow.az += ((vz - flow.vz) / seconds - flow.az) * settle;
+    flow.vx = vx;
+    flow.vz = vz;
+
+    // In the body's frame: +z ahead, +x to its left.
+    const ahead = flow.ax * Math.sin(yaw) + flow.az * Math.cos(yaw);
+    const left = flow.ax * Math.cos(yaw) - flow.az * Math.sin(yaw);
+
+    const angle = (acceleration: number, most: number) =>
+      Math.max(
+        -most,
+        Math.min(most, Math.atan(acceleration / 9.81) * tilt.share)
+      );
+
+    lean.forward = approach(
+      lean.forward,
+      angle(ahead, tilt.maxForward),
+      tilt.sharpness,
+      seconds
+    );
+
+    lean.left = approach(
+      lean.left,
+      angle(left, tilt.maxSide),
+      tilt.sharpness,
+      seconds
+    );
+
+    const turned = lastYaw === null ? 0 : wrap(yaw - lastYaw);
+    lastYaw = yaw;
+    turnRate = approach(
+      turnRate,
+      turned / seconds,
+      tilt.velocitySharpness,
+      seconds
+    );
+
+    // Turning on the spot: the legs step round, a stride for every
+    // `pivot.radiansPerStride` turned.
+    const spin = Math.abs(turnRate);
+    pivot = approach(
+      pivot,
+      walking
+        ? 0
+        : Math.min(Math.max((spin - gait.pivot.from) / gait.pivot.full, 0), 1) *
+            gait.pivot.weight,
+      gait.pivot.sharpness,
+      seconds
+    );
+
+    if (pivot > 1e-3 && !walking) {
+      phase = loopTime(
+        phase + Math.abs(turned) / gait.pivot.radiansPerStride / 2,
+        1
+      );
+    }
+  };
+
+  /** Measures the body's motion from the samples and advances the gait by the ground covered. */
+  const measure = (sample: DuelistSample, seconds: number) => {
+    const { position, elevation } = sample;
+    const yaw = Math.atan2(sample.facing.x, sample.facing.z);
+    let dx = 0;
+    let dz = 0;
+    let dy = 0;
+
+    if (last && seconds > 0) {
+      dx = position.x - last.x;
+      dz = position.z - last.z;
+      dy = elevation - last.elevation;
+    }
+
+    climb = seconds > 0 ? dy / seconds : 0;
+
+    last = { elevation, x: position.x, z: position.z };
+
+    // A jump of position (a new Round lining everyone up) is not motion.
+    if (Math.hypot(dx, dz) > 1) {
+      dx = 0;
+      dz = 0;
+    }
+
+    feelMotion(dx, dz, yaw, seconds);
+
+    const cos = Math.cos(yaw);
+    const sin = Math.sin(yaw);
+    const localX = dx * cos - dz * sin;
+    const localZ = dx * sin + dz * cos;
+    const distance = Math.hypot(localX, localZ);
+    const rate = seconds > 0 ? 1 / seconds : 0;
+
+    const travelling =
+      elevation <= 1e-3 &&
+      rollAge >= dodgeSeconds &&
+      !sample.knockedBack &&
+      !sample.knockedOut &&
+      !sample.clashing;
+
+    speed = approach(
+      speed,
+      travelling ? distance * rate : 0,
+      gait.speedSharpness,
+      seconds
+    );
+
+    // Eased as an angle, not a vector: reversing (right to left) swings
+    // one way round instead of collapsing through zero and flipping about.
+    if (distance > 1e-5) {
+      headingYaw = wrap(
+        headingYaw +
+          wrap(Math.atan2(localX, localZ) - headingYaw) *
+            (1 - Math.exp(-gait.speedSharpness * seconds))
+      );
+      heading.set(Math.sin(headingYaw), 0, Math.cos(headingYaw));
+    }
+
+    walking = travelling && speed > gait.minSpeed;
+    gaitWeight = approach(
+      gaitWeight,
+      walking ? 1 : 0,
+      gait.gaitSharpness,
+      seconds
+    );
+
+    // The legs always run the way the body goes, turning with it as an
+    // angle (so circling a Target never flips them about, there being no
+    // backwards gait to switch to); with the Wand up they turn to the aim,
+    // no further than `raisedTwist` from it.
+    const limit =
+      gait.maxTwist + (gait.raisedTwist - gait.maxTwist) * weight.lock;
+
+    const legs = walking ? Math.max(-limit, Math.min(limit, headingYaw)) : 0;
+
+    twist = wrap(
+      twist +
+        wrap(legs - twist) * (1 - Math.exp(-gait.twistSharpness * seconds))
+    );
+
+    // The cycle advances by the ground covered over the stride the legs
+    // reach to, so planted feet stay put.
+    stride = strideNow();
+
+    if (travelling) {
+      phase = loopTime(phase + distance / (stride * cycleNow()), 1);
+    }
+  };
+
+  /**
+   * Whether the Wand hand is busy: thrown about with the body, drinking,
+   * following through a strike, picking up, getting up or pumping a
+   * sprint. Otherwise the Wand is held ready, its tip on the simulation's.
+   */
+  const handBusy = (sample: DuelistSample) =>
+    sample.disarmed ||
+    sample.knockedOut ||
+    sample.drinking !== null ||
+    sample.knockedBack ||
+    sample.staggered ||
+    rollAge < dodgeSeconds ||
+    pickupAge < shots.pickup.seconds ||
+    riseAge < durationOf("LayToIdle") ||
+    (sample.sprinting && !sample.charging && !sample.shielding);
+
+  /** Eases the crouch's weight toward whether the sample is in it. */
+  const easePosture = (sample: DuelistSample, seconds: number) => {
+    const down = sample.knockedOut;
+
+    weight.crouch = approach(
+      weight.crouch,
+      sample.crouching && !down ? 1 : 0,
+      motion.crouch.sharpness,
+      seconds
+    );
+  };
+
+  /** Eases every state's weight toward whether the sample is in it. */
+  const easeWeights = (sample: DuelistSample, seconds: number) => {
+    const ease = (now: number, on: boolean, sharpness = motion.sharpness) =>
+      approach(now, on ? 1 : 0, sharpness, seconds);
+
+    const down = sample.knockedOut;
+
+    weight.air = ease(
+      weight.air,
+      sample.elevation > 0.02 && !down,
+      motion.jump.sharpness
+    );
+    weight.charge = ease(weight.charge, sample.charging && !down);
+    weight.clash = ease(weight.clash, sample.clashing && !down);
+    weight.disarmed = ease(weight.disarmed, sample.disarmed && !down);
+    weight.drink = ease(weight.drink, sample.drinking !== null && !down);
+    weight.knockback = ease(weight.knockback, sample.knockedBack && !down);
+    weight.shield = ease(weight.shield, sample.shielding && !down);
+    weight.sprint = ease(weight.sprint, sample.sprinting && walking);
+    weight.stagger = ease(weight.stagger, sample.staggered && !down);
+    easePosture(sample, seconds);
+
+    // The Wand is up to cast, Charge, Shield, Parry or Clash, for a moment
+    // after a cast or Parry and through a Confringo's follow-through;
+    // otherwise it is held low.
+    const following = strikeAge < shots.strike.seconds;
+
+    const raised =
+      !handBusy(sample) &&
+      (sample.charging ||
+        sample.shielding ||
+        sample.clashing ||
+        raisedAge < wand.hold ||
+        following);
+
+    weight.lock = ease(
+      weight.lock,
+      raised,
+      raised ? wand.lockSharpness : wand.lowerSharpness
+    );
+
+    // Thrown, the arm lowers from where the follow-through leaves it, not
+    // back up through the ready stance, until the Wand is down or up again.
+    if (following) {
+      thrown = true;
+    } else if (raised || weight.lock < 0.02) {
+      thrown = false;
+    }
+
+    weight.thrown = ease(weight.thrown, thrown, wand.lockSharpness);
+  };
+
+  /** A one-shot's clip time and weight at `age`, by its `shots` entry. */
+  const shot = (age: number, timing: (typeof shots)["cast"]) => {
+    const progress = age / timing.seconds;
+
+    return {
+      time: timing.from + (timing.to - timing.from) * unit(progress),
+      weight: pulse(progress, timing.peak),
+    };
+  };
+
+  /** Builds both layers' clip stacks for this frame. */
+  const stack = (sample: DuelistSample) => {
+    for (const layer of [upper, lower]) {
+      layer.weights.clear();
+      layer.times.clear();
+    }
+
+    // Locomotion, in step: one phase for every clip, each offset so its
+    // left foot leads at the same moment. The upper body keeps `gait.calm`
+    // of the standing pose on the move: the clips swing the arms and rock
+    // the shoulders far more than a person jogging does.
+    const strides = strideWeights();
+
+    for (const layer of [upper, lower]) {
+      const calm = layer === upper ? gait.calm * gaitWeight : 0;
+
+      const stepping = layer === lower ? pivot * (1 - gaitWeight) : 0;
+
+      lay(
+        layer,
+        "Idle_Loop",
+        loopTime(clock, durationOf("Idle_Loop")),
+        1 - gaitWeight + calm - stepping
+      );
+
+      lay(
+        layer,
+        "Walk_Loop",
+        loopTime(
+          (phase + assets.strides.Walk_Loop.offset) * durationOf("Walk_Loop"),
+          durationOf("Walk_Loop")
+        ),
+        stepping
+      );
+
+      for (const [index, clip] of locomotionClips.entries()) {
+        const duration = durationOf(clip);
+        lay(
+          layer,
+          clip,
+          loopTime((phase + assets.strides[clip].offset) * duration, duration),
+          (gaitWeight - calm) * (strides[index] ?? 0)
+        );
+      }
+    }
+
+    const armed = 1 - weight.disarmed;
+    const { stance } = motion;
+    over(
+      upper,
+      "Spell_Simple_Idle_Loop",
+      loopTime(clock, durationOf("Spell_Simple_Idle_Loop")),
+      armed *
+        weight.lock *
+        (1 - weight.thrown) *
+        (1 - weight.sprint) *
+        (stance.standing + (stance.moving - stance.standing) * gaitWeight)
+    );
+
+    // Crouched: standing still, the legs take the crouch clip; walking, they
+    // keep the gait and are lowered after the clips (`crouchWalk`). The
+    // upper body hunches over them either way.
+    const crouchTime = loopTime(clock, durationOf("Crouch_Idle_Loop"));
+    over(
+      lower,
+      "Crouch_Idle_Loop",
+      crouchTime,
+      weight.crouch * (1 - gaitWeight)
+    );
+    over(
+      upper,
+      "Crouch_Idle_Loop",
+      crouchTime,
+      weight.crouch * motion.crouch.upper
+    );
+
+    // Braced behind a Shield; standing, the legs brace too.
+    const shieldTime = loopTime(clock, durationOf("Idle_Shield_Loop"));
+    over(
+      upper,
+      "Idle_Shield_Loop",
+      shieldTime,
+      weight.shield * motion.shieldUpper
+    );
+    over(
+      lower,
+      "Idle_Shield_Loop",
+      shieldTime,
+      weight.shield * (1 - gaitWeight)
+    );
+    over(upper, "OverhandThrow", motion.chargeAt, weight.charge);
+
+    // Airborne: the push off the floor and the legs tucking, then the air
+    // pose; falling, the legs reach for the floor.
+    const { jump } = motion;
+    const airTime = loopTime(clock, durationOf("Jump_Loop"));
+    const { takeoff } = jump;
+    const launch = unit(jumpAge / takeoff.seconds);
+
+    const launching =
+      jumpAge === idle
+        ? 0
+        : 1 - smooth((launch - takeoff.handOver) / (1 - takeoff.handOver));
+
+    const reaching = climb < 0 ? 1 - smooth(sample.elevation / jump.reach) : 0;
+
+    for (const [layer, share] of [
+      [lower, 1],
+      [upper, jump.upperAir],
+    ] as const) {
+      over(layer, "Jump_Loop", airTime, weight.air * share);
+      over(
+        layer,
+        "Jump_Start",
+        takeoff.from + (takeoff.to - takeoff.from) * launch,
+        weight.air * launching * share
+      );
+      over(layer, "Jump_Land", 0, weight.air * reaching * share);
+    }
+
+    // Drinking: the left hand lifts the vial to the lips.
+    if (sample.drinking) {
+      const share = unit(1 - sample.drinking.secondsLeft / potion.drinkSeconds);
+      over(upper, "Consume", share * durationOf("Consume"), weight.drink);
+    }
+
+    const knock = shot(knockbackAge, shots.knockback);
+    over(upper, "Hit_Knockback", knock.time, weight.knockback);
+
+    // One-shots on the arms.
+    const cast = shot(castAge, shots.cast);
+    over(upper, "Spell_Simple_Shoot", cast.time, cast.weight);
+    const strike = shot(strikeAge, shots.strike);
+    over(
+      upper,
+      "OverhandThrow",
+      strike.time,
+      strike.weight * motion.strikeUpper
+    );
+    over(lower, "OverhandThrow", strike.time, strike.weight * 0.5);
+    const push = shot(pushAge, shots.push);
+    over(upper, "Push_Loop", push.time, push.weight);
+    const parry = shot(parryAge, shots.parry);
+    over(upper, "Shield_OneShot", parry.time, parry.weight);
+    const flinch = shot(flinchAge, shots.flinch);
+    over(upper, flinchClip, flinch.time, flinch.weight);
+    const pickup = shot(pickupAge, shots.pickup);
+    over(upper, "PickUp_Table", pickup.time, pickup.weight);
+    over(lower, "Crouch_Idle_Loop", 0, pickup.weight);
+
+    // A Clash: lunging into the beam, both hands on the Wand.
+    for (const layer of [upper, lower]) {
+      over(layer, "Push_Loop", motion.clashAt, weight.clash);
+    }
+
+    // A Stagger rocks the whole body.
+    const staggerTime = Math.min(staggerAge, durationOf("Idle_Shield_Break"));
+
+    for (const layer of [upper, lower]) {
+      over(layer, "Idle_Shield_Break", staggerTime, weight.stagger);
+    }
+
+    const land = shot(landAge, shots.land);
+    over(lower, "Jump_Land", land.time, land.weight * jump.landWeight);
+    over(upper, "Jump_Land", land.time, land.weight * jump.landWeight * 0.5);
+
+    // The Dodge roll: the clip's roll over the Dodge, then its recovery fading out.
+    const { roll, knockout } = motion;
+    let rolling = 0;
+    let rollTime = roll.to;
+
+    if (rollAge < dodgeSeconds) {
+      rolling = 1;
+      rollTime = roll.from + ((roll.to - roll.from) * rollAge) / dodgeSeconds;
+    } else if (rollAge < dodgeSeconds + roll.recoverSeconds) {
+      rolling = 1 - smooth((rollAge - dodgeSeconds) / roll.recoverSeconds);
+      rollTime = roll.to + (rollAge - dodgeSeconds);
+    }
+
+    // The Knockout: falling and lying; then getting back up.
+    const riseDuration = durationOf("LayToIdle");
+
+    const rising =
+      riseAge < riseDuration
+        ? 1 -
+          smooth(
+            (riseAge - (riseDuration - knockout.riseFadeSeconds)) /
+              knockout.riseFadeSeconds
+          )
+        : 0;
+
+    for (const layer of [upper, lower]) {
+      over(layer, "Roll", rollTime, rolling);
+      over(
+        layer,
+        "Death01",
+        Math.min(knockoutAge, knockout.lieAt),
+        knockoutAge === idle
+          ? 0
+          : smooth(knockoutAge / knockout.fallFadeSeconds)
+      );
+      over(layer, "LayToIdle", riseAge, rising);
+    }
+
+    return rolling;
+  };
+
+  // --- After the clips: the body frame, the legs' turn, the head, the arms.
+
+  const leftAxis = new Vector3();
+  const tipTarget = new Vector3();
+  const wandDirection = new Vector3();
+  const handTarget = new Vector3();
+  const shoulder = new Vector3();
+  const elbowAt = new Vector3();
+  const wristAt = new Vector3();
+  const solvedElbow = new Vector3();
+  const solvedWrist = new Vector3();
+  const elbowHint = new Vector3();
+  const solvedDirection = new Vector3();
+  const inverseUpper = new Quaternion();
+  const swing = new Quaternion();
+  const handRotation = new Quaternion();
+  const posedUpper = new Quaternion();
+  const posedLower = new Quaternion();
+  const posedHand = new Quaternion();
+  const worldUpper = new Quaternion();
+  const worldLower = new Quaternion();
+  const worldHand = new Quaternion();
+  const parentWorld = new Quaternion();
+
+  /** A point in the Duelist's body frame, in the world. */
+  const toWorld = (local: Vector3, out: Vector3) =>
+    out.copy(local).applyMatrix4(object.matrixWorld);
+
+  /** A direction in the Duelist's body frame, in the world. */
+  const directionToWorld = (local: Vector3, out: Vector3) =>
+    out.copy(local).transformDirection(object.matrixWorld);
+
+  /** The share of the lower body the running clips (jog, sprint) hold this frame. */
+  const runningShare = () =>
+    Math.min(
+      (lower.weights.get("Jog_Fwd_Loop") ?? 0) +
+        (lower.weights.get("Sprint_Loop") ?? 0),
+      1
+    );
+
+  /**
+   * Two-bone IK on a limb (upper bone, lower bone, end): the end reaches
+   * `target` (world), bending toward `hint` (a world direction), and turns
+   * to `rotation` (world) if given, all blended over the clip's pose by
+   * `amount`. Returns how far the end fell short.
+   */
+  const solve = (
+    upperArm: Object3D,
+    lowerArm: Object3D,
+    hand: Object3D,
+    target: Vector3,
+    rotation: Quaternion | null,
+    hint: Vector3,
+    amount: number
+  ) => {
+    if (amount <= 1e-3) {
+      return 0;
+    }
+
+    upperArm.updateWorldMatrix(true, true);
+    upperArm.getWorldPosition(shoulder);
+    lowerArm.getWorldPosition(elbowAt);
+    hand.getWorldPosition(wristAt);
+    posedUpper.copy(upperArm.quaternion);
+    posedLower.copy(lowerArm.quaternion);
+    posedHand.copy(hand.quaternion);
+
+    const upperLength = elbowAt.distanceTo(shoulder);
+    const lowerLength = wristAt.distanceTo(elbowAt);
+
+    const short = solveLimb(
+      shoulder,
+      target,
+      upperLength,
+      lowerLength,
+      hint,
+      solvedElbow,
+      solvedWrist
+    );
+
+    // The upper arm swings its elbow onto the solved one...
+    upperArm.getWorldQuaternion(worldUpper);
+    swing.setFromUnitVectors(
+      scratch.subVectors(elbowAt, shoulder).normalize(),
+      solvedDirection.subVectors(solvedElbow, shoulder).normalize()
+    );
+    worldUpper.premultiply(swing);
+    upperArm.parent?.getWorldQuaternion(parentWorld);
+    upperArm.quaternion.copy(parentWorld.invert()).multiply(worldUpper);
+    upperArm.updateWorldMatrix(false, true);
+
+    // ...then the forearm its wrist onto the solved wrist.
+    lowerArm.getWorldPosition(elbowAt);
+    hand.getWorldPosition(wristAt);
+    lowerArm.getWorldQuaternion(worldLower);
+    swing.setFromUnitVectors(
+      scratch.subVectors(wristAt, elbowAt).normalize(),
+      solvedDirection.subVectors(solvedWrist, elbowAt).normalize()
+    );
+    worldLower.premultiply(swing);
+    lowerArm.quaternion
+      .copy(inverseUpper.copy(worldUpper).invert())
+      .multiply(worldLower);
+
+    if (rotation) {
+      hand.quaternion.copy(worldLower.invert()).multiply(rotation);
+    }
+
+    // Over the clip's pose by `amount` (each slerp starts from the clip's).
+    if (amount < 1) {
+      upperArm.quaternion.copy(posedUpper.slerp(upperArm.quaternion, amount));
+      lowerArm.quaternion.copy(posedLower.slerp(lowerArm.quaternion, amount));
+      hand.quaternion.copy(posedHand.slerp(hand.quaternion, amount));
+    }
+
+    upperArm.updateWorldMatrix(false, true);
+
+    return short;
+  };
+
+  /**
+   * Two-bone IK on an arm (0 left, 1 right): the wrist reaches `target`
+   * (world), the hand turns to `rotation` (world) if given, the elbow bends
+   * toward `elbowHint`, all blended over the clip's pose by `amount`.
+   */
+  const reach = (
+    side: 0 | 1,
+    target: Vector3,
+    rotation: Quaternion | null,
+    amount: number
+  ) =>
+    solve(
+      joints.upperArms[side],
+      joints.lowerArms[side],
+      joints.hands[side],
+      target,
+      rotation,
+      directionToWorld(
+        vector(wand.elbowHint).multiply(scratch.set(side === 0 ? -1 : 1, 1, 1)),
+        elbowHint
+      ),
+      amount
+    );
+
+  const motionAxis = new Vector3();
+  const lift = new Vector3();
+  const hips = [new Vector3(), new Vector3()] as const;
+  const ankles = [new Vector3(), new Vector3()] as const;
+  const knees = [new Vector3(), new Vector3()] as const;
+  const footTurns = [new Quaternion(), new Quaternion()] as const;
+  const kneeHint = new Vector3();
+  const footTarget = new Vector3();
+
+  /**
+   * After the clips, the gait's own stride and bounce: each foot's reach
+   * along the motion is scaled by `stride` about its hip (planted feet stay
+   * on the floor, the cycle already advances by that stride) and the pelvis
+   * keeps `gait.bob` of the clips' bounce, by the share the locomotion
+   * clips hold of the lower body. A shorter step than the clip's raises
+   * the pelvis so the planted leg stays as straight as the clip has it
+   * (short steps fold the knees otherwise: a crouched shuffle).
+   */
+  const warpGait = () => {
+    let share = 0;
+    let pelvisMean = 0;
+
+    for (const clip of locomotionClips) {
+      const each = lower.weights.get(clip) ?? 0;
+      share += each;
+      pelvisMean += each * assets.strides[clip].pelvis;
+    }
+
+    if (share < 1e-3) {
+      return;
+    }
+
+    pelvisMean /= share;
+    const scale = 1 + (stride - 1) * share;
+
+    directionToWorld(heading, motionAxis);
+    motionAxis.y = 0;
+
+    if (motionAxis.lengthSq() < 1e-6) {
+      return;
+    }
+
+    motionAxis.normalize();
+    rig.model.updateMatrixWorld(true);
+
+    for (const side of [0, 1] as const) {
+      joints.thighs[side].getWorldPosition(hips[side]);
+      joints.calves[side].getWorldPosition(knees[side]);
+      joints.feet[side].getWorldPosition(ankles[side]);
+      joints.feet[side].getWorldQuaternion(footTurns[side]);
+    }
+
+    // How much higher the pelvis rides for each foot to keep its leg's
+    // length at the shorter reach, the planted (lower) foot counting most.
+    let raise = 0;
+    let weights = 0;
+
+    for (const side of [0, 1] as const) {
+      const hip = hips[side];
+      const ankle = ankles[side];
+      const along = scratch.subVectors(ankle, hip).dot(motionAxis);
+      const length = ankle.distanceTo(hip);
+      const drop = hip.y - ankle.y;
+      const level = Math.max(length * length - drop * drop, 0);
+      const spread = Math.max(level - along * along * (1 - scale * scale), 0);
+      const each = Math.sqrt(Math.max(length * length - spread, 0)) - drop;
+      const planted = 1 / (0.02 + Math.max(ankle.y - object.position.y, 0));
+      raise += Math.max(each, 0) * planted;
+      weights += planted;
+    }
+
+    // The pelvis bounces less: moved toward the clips' mean height.
+    const { pelvis } = joints;
+    pelvis.getWorldPosition(lift);
+    const above = lift.y - object.position.y - pelvisMean;
+    lift.y -= (1 - gait.bob) * above * share;
+    lift.y +=
+      Math.min(raise / weights, gait.maxRaise) * share +
+      gait.lift * runningShare();
+    pelvis.parent?.worldToLocal(lift);
+    pelvis.position.copy(lift);
+    pelvis.updateMatrixWorld(true);
+
+    for (const side of [0, 1] as const) {
+      const hip = hips[side];
+      const ankle = ankles[side];
+      const along = scratch.subVectors(ankle, hip).dot(motionAxis);
+      footTarget.copy(ankle).addScaledVector(motionAxis, (scale - 1) * along);
+      // The knee keeps bending the way the clip bends it.
+      kneeHint
+        .copy(knees[side])
+        .sub(scratch.addVectors(hip, ankle).multiplyScalar(0.5))
+        .addScaledVector(motionAxis, 0.02);
+      solve(
+        joints.thighs[side],
+        joints.calves[side],
+        joints.feet[side],
+        footTarget,
+        footTurns[side],
+        kneeHint,
+        1
+      );
+    }
+  };
+
+  const crouchKnee = new Vector3();
+  const pelvisAt = new Vector3();
+
+  /**
+   * Lowers the pelvis by `drop` metres (world), each leg reaching by IK back
+   * to where the clips (and the gait) left its foot, the foot keeping its
+   * turn: the knees bend and planted feet stay put. Knees bend the way the
+   * clip bends them, pushed `forward` metres toward the body's front.
+   */
+  const lowerPelvis = (drop: number, forward: number) => {
+    if (drop < 1e-4) {
+      return;
+    }
+
+    rig.model.updateMatrixWorld(true);
+
+    for (const side of [0, 1] as const) {
+      joints.thighs[side].getWorldPosition(hips[side]);
+      joints.calves[side].getWorldPosition(knees[side]);
+      joints.feet[side].getWorldPosition(ankles[side]);
+      joints.feet[side].getWorldQuaternion(footTurns[side]);
+    }
+
+    const { pelvis } = joints;
+    pelvis.getWorldPosition(pelvisAt);
+    pelvisAt.y -= drop;
+    pelvis.parent?.worldToLocal(pelvisAt);
+    pelvis.position.copy(pelvisAt);
+    pelvis.updateMatrixWorld(true);
+    directionToWorld(crouchKnee.set(0, 0, 1), crouchKnee);
+
+    for (const side of [0, 1] as const) {
+      kneeHint
+        .copy(knees[side])
+        .sub(scratch.addVectors(hips[side], ankles[side]).multiplyScalar(0.5))
+        .addScaledVector(crouchKnee, forward);
+      solve(
+        joints.thighs[side],
+        joints.calves[side],
+        joints.feet[side],
+        ankles[side],
+        footTurns[side],
+        kneeHint,
+        1
+      );
+    }
+  };
+
+  /**
+   * Walking crouched (the rig has no crouch-walk clip): after the gait's
+   * stride, the pelvis drops `crouch.walkDrop` and the legs bend to keep
+   * their feet where the gait put them, and the chest leans `crouch.lean`
+   * forward over the knees, by how much of the gait is under way.
+   */
+  const crouchWalk = () => {
+    const share = weight.crouch * gaitWeight;
+
+    if (share < 1e-3) {
+      return;
+    }
+
+    const { crouch } = motion;
+    directionToWorld(leftAxis.set(1, 0, 0), leftAxis);
+
+    for (const spine of joints.spine) {
+      turnAbout(spine, leftAxis, (crouch.lean * share) / joints.spine.length);
+    }
+
+    // The eyes stay up, on where the Duelist creeps to.
+    turnAbout(joints.neck, leftAxis, -crouch.lean * crouch.headUp * share);
+    lowerPelvis(crouch.walkDrop * share, crouch.kneeForward);
+  };
+
+  /**
+   * The yaw the raised Wand works in: the aim's, as the simulation casts
+   * (the body may still be coming round to it); in a Clash, the body's,
+   * which already faces down the beam.
+   */
+  const wandYaw = (sample: DuelistSample) =>
+    sample.clashing
+      ? object.rotation.y
+      : Math.atan2(Math.sin(sample.aim.yaw), -Math.cos(sample.aim.yaw));
+
+  /**
+   * Where a Confringo's overhead throw has the Wand: 0 on `wandTip` (where
+   * the Spell leaves), up to 1 overhead at full Charge, down to -1 at the
+   * end of the follow-through, where it stays as the arm lowers.
+   */
+  const throwSwing = () =>
+    strikeAge < shots.strike.seconds
+      ? -1 + (1 - unit(strikeAge / wand.charge.follow.seconds)) ** 2
+      : weight.charge - weight.thrown;
+
+  /**
+   * Moves `tip` (body frame) toward `end` by `amount` along an arc about the
+   * shoulder (`wand.charge.pivot`), so the Wand swings over the top.
+   */
+  const swingTip = (tip: Vector3, end: Triple, amount: number) => {
+    const { forward: pz, height: py } = wand.charge.pivot;
+    const [ex, ey, ez] = end;
+    const from = Math.atan2(tip.y - py, tip.z - pz);
+    const to = Math.atan2(ey - py, ez - pz);
+    const angle = from + (to - from) * amount;
+    const fromRadius = Math.hypot(tip.y - py, tip.z - pz);
+
+    const radius =
+      fromRadius + (Math.hypot(ey - py, ez - pz) - fromRadius) * amount;
+
+    tip.set(
+      tip.x + (ex - tip.x) * amount,
+      py + radius * Math.sin(angle),
+      pz + radius * Math.cos(angle)
+    );
+  };
+
+  /** Where the Wand tip should be and which way the Wand points (world), with the flick of a cast. */
+  const wandAim = (sample: DuelistSample) => {
+    const { forward, height, right } = duelist.wandTip;
+    const tipLocal = scratch.set(-right, height, forward);
+    const pointing = vector(wand.rest).normalize();
+
+    // A Confringo: up overhead while Charging, then down over the top.
+    const swung = throwSwing() * (1 - weight.clash);
+    const { charge } = wand;
+    const end = swung > 0 ? charge : charge.follow;
+    swingTip(tipLocal, end.tip, Math.abs(swung));
+    pointing.lerp(vector(end.pointing).normalize(), Math.abs(swung));
+    pointing.normalize();
+    pointing.lerp(vector(wand.shield).normalize(), weight.shield).normalize();
+
+    // A Clash: along the beam, straight ahead at the opponent, thrust out
+    // down it and trembling.
+    if (weight.clash > 0) {
+      const pitch = Math.max(-1, Math.min(1, sample.aim.pitch));
+      const beam = new Vector3(0, Math.sin(pitch), Math.cos(pitch));
+      pointing.lerp(beam, weight.clash).normalize();
+      tipLocal.addScaledVector(beam, motion.clash.reach * weight.clash);
+
+      const shake =
+        motion.tremble * Math.sin(clock * motion.trembleRate * Math.PI * 2);
+
+      tipLocal.x += shake * weight.clash;
+      tipLocal.y += shake * 0.6 * weight.clash;
+    }
+
+    // A flick for a Light or Special cast: the Wand snaps up and across
+    // about the hand, which reaches ahead, and back; it starts on the tip.
+    if (castAge < wand.flickSeconds) {
+      const flick = wand.flicks[castKind];
+      const amount = pulse(castAge / wand.flickSeconds, 0.35);
+      const hand = tipLocal.clone().addScaledVector(pointing, -wand.length);
+      hand.z += flick.reach * amount;
+      pointing.applyAxisAngle(new Vector3(1, 0, 0), -flick.raise * amount);
+      pointing.applyAxisAngle(up, flick.inward * amount);
+      tipLocal.copy(hand).addScaledVector(pointing, wand.length);
+    }
+
+    const yaw = wandYaw(sample);
+
+    tipTarget.copy(tipLocal).applyAxisAngle(up, yaw).add(object.position);
+    wandDirection.copy(pointing).applyAxisAngle(up, yaw);
+
+    // The frame a Spell appears the tip is exactly where it leaves the
+    // simulation's Wand (the drawn body lags it by up to a tick); that
+    // correction fades over the flick.
+    if (spawnAge === 0) {
+      spawnOffset.subVectors(spawnAt, tipTarget);
+    }
+
+    if (spawnAge < wand.flickSeconds) {
+      tipTarget.addScaledVector(
+        spawnOffset,
+        1 - smooth(spawnAge / wand.flickSeconds)
+      );
+    }
+  };
+
+  /**
+   * Lowered, the Wand hangs relaxed in the hand, pointing `wand.low` (down
+   * and ahead, in the body's frame) however the arm swings: the clips'
+   * swing would wave it up and down like a sabre at every step.
+   */
+  const holdWandLow = (sample: DuelistSample) => {
+    const share = (1 - weight.lock) * (1 - weight.disarmed);
+
+    if (share < 1e-3 || sample.knockedOut) {
+      return;
+    }
+
+    const [, hand] = joints.hands;
+    hand.updateWorldMatrix(true, true);
+    rig.wand.getWorldQuaternion(handRotation);
+    const pointingNow = up.clone().applyQuaternion(handRotation);
+    const wanted = directionToWorld(vector(wand.low).normalize(), scratch);
+    const axis = pointingNow.clone().cross(wanted);
+    const length = axis.length();
+
+    if (length < 1e-5) {
+      return;
+    }
+
+    const angle = Math.atan2(length, pointingNow.dot(wanted));
+    turnAbout(hand, axis.divideScalar(length), angle * share);
+  };
+
+  /** The right arm holds the Wand tip on its mark, or reaches for the loose Wand. */
+  const poseWandArm = (sample: DuelistSample) => {
+    const [, hand] = joints.hands;
+
+    if (weight.lock > 1e-3 && !sample.disarmed) {
+      wandAim(sample);
+      // The hand turns so the Wand points the right way, keeping the clip's twist...
+      hand.updateWorldMatrix(true, true);
+      rig.wand.getWorldQuaternion(handRotation);
+      const pointingNow = up.clone().applyQuaternion(handRotation);
+      swing.setFromUnitVectors(pointingNow, wandDirection);
+      hand.getWorldQuaternion(worldHand).premultiply(swing);
+      // ...and the wrist goes where that puts the tip on its mark.
+      handTarget
+        .copy(rig.wand.position)
+        .applyQuaternion(worldHand)
+        .negate()
+        .add(tipTarget)
+        .addScaledVector(wandDirection, -wand.length);
+      reach(1, handTarget, worldHand, weight.lock);
+    }
+
+    holdWandLow(sample);
+  };
+
+  /**
+   * The free arm: the vial to the lips while drinking; in a Clash braced
+   * back and down for balance (`motion.clash.brace`), the hand a fist.
+   */
+  const poseFreeArm = (sample: DuelistSample) => {
+    // Drinking: the vial goes to the lips, the head tipping back as it empties.
+    if (sample.drinking && weight.drink > 1e-3) {
+      const share = unit(1 - sample.drinking.secondsLeft / potion.drinkSeconds);
+      const { lower: drop, raise: rise } = motion.drink;
+      const lifted = smooth(share / rise) * smooth((1 - share) / drop);
+      joints.head.getWorldPosition(handTarget);
+      object.worldToLocal(handTarget).add(vector(motion.drink.lips));
+      reach(0, toWorld(handTarget, handTarget), null, weight.drink * lifted);
+      directionToWorld(leftAxis.set(1, 0, 0), leftAxis);
+      turnAbout(joints.head, leftAxis, -motion.drink.headBack * share * lifted);
+    }
+
+    if (weight.clash <= 1e-3) {
+      return;
+    }
+
+    joints.upperArms[0].updateWorldMatrix(true, false);
+    joints.upperArms[0].getWorldPosition(handTarget);
+    handTarget.add(directionToWorld(vector(motion.clash.brace), scratch));
+    reach(0, handTarget, null, weight.clash);
+
+    for (const [finger, fist] of leftFist) {
+      finger.quaternion.slerp(fist, weight.clash);
+    }
+  };
+
+  /** The right fist closes round the Wand (open while Disarmed). */
+  const grip = (amount: number) => {
+    for (const finger of joints.fingers) {
+      const fist = assets.grip.get(finger.name);
+
+      if (fist) {
+        finger.quaternion.slerp(fist, amount);
+      }
+    }
+  };
+
+  /**
+   * The head looks where the Duelist means to: the facing, or the aim
+   * while the Wand is up, whatever the clips and the spine left it at (a
+   * cast clip turns it toward the Wand hand).
+   */
+  const lookAhead = (sample: DuelistSample) => {
+    if (
+      sample.knockedOut ||
+      rollAge < dodgeSeconds ||
+      riseAge < durationOf("LayToIdle")
+    ) {
+      return;
+    }
+
+    // The head leads a turn, looking into it before the body comes round.
+    const lead = Math.max(
+      -gait.headLead.max,
+      Math.min(gait.headLead.max, turnRate * gait.headLead.seconds)
+    );
+
+    const wanted =
+      object.rotation.y +
+      wrap(wandYaw(sample) - object.rotation.y) * weight.lock +
+      lead * (1 - weight.lock);
+
+    joints.head.updateWorldMatrix(true, false);
+    const e = joints.head.matrixWorld.elements;
+
+    const off = Math.max(
+      -gait.headTurn,
+      Math.min(gait.headTurn, wrap(wanted - Math.atan2(e[8], e[10])))
+    );
+
+    turnAbout(joints.neck, up, off * 0.4);
+    turnAbout(joints.head, up, off * 0.6);
+
+    // The eyes find the horizon: the clips hang the head, looking at the
+    // floor; it lifts back `gait.horizon` of that.
+    joints.head.updateWorldMatrix(true, false);
+    const forward = joints.head.matrixWorld.elements;
+
+    const length = Math.hypot(
+      forward[8] ?? 0,
+      forward[9] ?? 0,
+      forward[10] ?? 0
+    );
+
+    const bowed = length > 0 ? Math.asin(-(forward[9] ?? 0) / length) : 0;
+
+    directionToWorld(leftAxis.set(1, 0, 0), leftAxis);
+    turnAbout(joints.neck, leftAxis, -bowed * gait.horizon * 0.4);
+    turnAbout(joints.head, leftAxis, -bowed * gait.horizon * 0.6);
+  };
+
+  /**
+   * Breathing and a standing weight shift laid over the clips: the chest
+   * rises and falls (slow and shallow at rest, quick and deep when winded:
+   * Stamina spent, easing back over `breath.recoverSeconds`), and standing,
+   * the hips drift side to side as the weight moves between the feet.
+   */
+  const breatheAndSway = () => {
+    const { breath } = motion;
+
+    const air =
+      breath.restAmplitude +
+      (breath.windedAmplitude - breath.restAmplitude) * winded;
+
+    const chest = air * Math.sin(breathPhase * Math.PI * 2);
+
+    directionToWorld(leftAxis.set(1, 0, 0), leftAxis);
+
+    for (const spine of joints.spine.slice(1)) {
+      turnAbout(spine, leftAxis, -chest / 2);
+    }
+
+    // The head keeps still while the chest breathes.
+    turnAbout(joints.head, leftAxis, chest);
+
+    const standing = 1 - gaitWeight;
+
+    const sway =
+      breath.sway *
+      standing *
+      Math.sin(clock * breath.swayRate * Math.PI * 2 + rhythm);
+
+    directionToWorld(leftAxis.set(0, 0, 1), leftAxis);
+    turnAbout(joints.pelvis, leftAxis, sway);
+    turnAbout(joints.spine[0] ?? joints.pelvis, leftAxis, -sway);
+  };
+
+  /**
+   * A Spell landing at `where` (world) kicks the upper body: back, and away
+   * from the side it struck (`motion.kick`).
+   */
+  const kickFrom = (where: Point3) => {
+    const { kick: tuned } = motion;
+    const local = object.worldToLocal(scratch.set(where.x, where.y, where.z));
+    const side = Math.max(-1, Math.min(1, local.x / tuned.sideWidth));
+    kick.pitchRate -= tuned.impulse;
+    kick.rollRate += tuned.impulse * tuned.sideShare * side;
+  };
+
+  /** The kick springs back (an underdamped spring, so it rebounds once), for `seconds`. */
+  const settleKick = (seconds: number) => {
+    const { kick: tuned } = motion;
+    const omega = tuned.frequency * Math.PI * 2;
+    const steps = Math.max(1, Math.ceil(seconds / (1 / 240)));
+    const step = seconds / steps;
+
+    for (let index = 0; index < steps; index += 1) {
+      kick.pitchRate +=
+        (-omega * omega * kick.pitch -
+          2 * tuned.damping * omega * kick.pitchRate) *
+        step;
+      kick.pitch += kick.pitchRate * step;
+      kick.rollRate +=
+        (-omega * omega * kick.roll -
+          2 * tuned.damping * omega * kick.rollRate) *
+        step;
+      kick.roll += kick.rollRate * step;
+    }
+  };
+
+  /** How winded the Duelist is (from the Stamina spent) and the breath's cycle, for `seconds`. */
+  const catchBreath = (sample: DuelistSample, seconds: number) => {
+    const { breath } = motion;
+    const spent = 1 - Math.min(Math.max(sample.stamina / staminaMax, 0), 1);
+
+    // Winded at once, recovering slowly.
+    winded =
+      spent > winded
+        ? approach(winded, spent, breath.windSharpness, seconds)
+        : approach(winded, spent, 1 / breath.recoverSeconds, seconds);
+
+    breathPhase = loopTime(
+      breathPhase +
+        seconds *
+          (breath.restRate + (breath.windedRate - breath.restRate) * winded),
+      1
+    );
+  };
+
+  /**
+   * In a Clash the chest leans into the push and turns the Wand shoulder
+   * forward, down the beam (`motion.clash`); the head still looks along it.
+   */
+  const leanIntoClash = () => {
+    if (weight.clash <= 1e-3) {
+      return;
+    }
+
+    const { lean: forward, twist: turned } = motion.clash;
+    const share = weight.clash / joints.spine.length;
+    directionToWorld(leftAxis.set(1, 0, 0), leftAxis);
+
+    for (const spine of joints.spine) {
+      turnAbout(spine, leftAxis, forward * share);
+      turnAbout(spine, up, turned * share);
+    }
+  };
+
+  /**
+   * Turns the legs toward the motion; the chest turns back to the facing
+   * only as far as a spine can (`counterTwist`), all the way while the Wand
+   * is up, and the head looks the rest of the way (`headTurn` at most).
+   */
+  const turnBody = (sample: DuelistSample) => {
+    const held = Math.max(
+      -gait.counterTwist,
+      Math.min(gait.counterTwist, twist)
+    );
+
+    const counter = held + (twist - held) * weight.lock;
+
+    if (Math.abs(twist) > 1e-4) {
+      turnAbout(joints.pelvis, up, twist);
+
+      for (const spine of joints.spine) {
+        turnAbout(spine, up, -counter / joints.spine.length);
+      }
+    }
+
+    // The clips walk and run hips back and stooped: the pelvis tucks under
+    // (the thighs turned back, so the feet stay put) and the spine
+    // straightens, about the hips' own side-to-side axis.
+    const running = runningShare();
+    const walkingShare = Math.max(gaitWeight - running, 0);
+    const tuck = gait.tuck.walk * walkingShare + gait.tuck.run * running;
+
+    const upright =
+      gait.upright.walk * walkingShare + gait.upright.run * running;
+
+    if (tuck + upright > 1e-4) {
+      directionToWorld(leftAxis.set(1, 0, 0), leftAxis).applyAxisAngle(
+        up,
+        twist
+      );
+      turnAbout(joints.pelvis, leftAxis, -tuck);
+
+      for (const thigh of joints.thighs) {
+        turnAbout(thigh, leftAxis, tuck);
+      }
+
+      for (const spine of joints.spine) {
+        turnAbout(spine, leftAxis, -upright / joints.spine.length);
+      }
+    }
+
+    // With the Wand up, the chest leads the body round to the aim.
+    const lead =
+      Math.max(
+        -gait.maxTwist,
+        Math.min(gait.maxTwist, wrap(wandYaw(sample) - object.rotation.y))
+      ) * weight.lock;
+
+    if (Math.abs(lead) > 1e-4) {
+      for (const spine of joints.spine) {
+        turnAbout(spine, up, lead / joints.spine.length);
+      }
+    }
+
+    leanIntoClash();
+    lookAhead(sample);
+
+    breatheAndSway();
+
+    // A hit's kick, spread up the spine and neck.
+    if (Math.abs(kick.pitch) + Math.abs(kick.roll) > 1e-4) {
+      for (const joint of [...joints.spine.slice(1), joints.neck]) {
+        directionToWorld(leftAxis.set(1, 0, 0), leftAxis);
+        turnAbout(joint, leftAxis, kick.pitch / 3);
+        directionToWorld(leftAxis.set(0, 0, 1), leftAxis);
+        turnAbout(joint, leftAxis, kick.roll / 3);
+      }
+    }
+
+    // The head stays level as the body leans: the eyes keep the horizon.
+    const level = gait.lean.headLevel;
+    directionToWorld(leftAxis.set(1, 0, 0), leftAxis);
+    turnAbout(joints.head, leftAxis, -lean.forward * level);
+    directionToWorld(leftAxis.set(0, 0, 1), leftAxis);
+    turnAbout(joints.head, leftAxis, lean.left * level);
+
+    directionToWorld(leftAxis.set(1, 0, 0), leftAxis);
+    const pitch = Math.max(-1, Math.min(1, sample.aim.pitch));
+    const looking = motion.headPitch * pitch * weight.lock;
+    turnAbout(joints.neck, leftAxis, -looking * 0.4);
+    turnAbout(joints.head, leftAxis, -looking * 0.6);
+  };
+
+  /** Starts a blend from the last drawn pose when a state that throws the body about begins or ends. */
+  const watchThrows = (sample: DuelistSample) => {
+    const starts =
+      (sample.knockedBack && !was.knockedBack) ||
+      sample.knockedOut !== was.knockedOut ||
+      (sample.staggered && !was.staggered);
+
+    if (starts) {
+      blendPending = true;
+    }
+
+    was.knockedBack = sample.knockedBack;
+    was.knockedOut = sample.knockedOut;
+    was.staggered = sample.staggered;
+  };
+
+  /** The gap from this new pose back to the last drawn one, to decay from. */
+  const startBlend = () => {
+    blendPending = false;
+    blending = true;
+
+    for (const [index, bone] of bones.entries()) {
+      const drawn = drawnPose[index];
+      const offset = offsets[index];
+
+      if (drawn && offset) {
+        // drawn = offset * new.
+        scratchQuaternion
+          .copy(bone.quaternion)
+          .invert()
+          .premultiply(drawn.quaternion);
+        rotationVectorOf(scratchQuaternion, offset.rotation);
+        offset.position.subVectors(drawn.position, bone.position);
+      }
+    }
+  };
+
+  /** Decays one offset's vector on the spring. */
+  const decay = (value: Vector3, rate: Vector3, seconds: number) => {
+    for (const axis of ["x", "y", "z"] as const) {
+      const next = springStep(
+        value[axis],
+        rate[axis],
+        0,
+        motion.inertialization.halflife,
+        seconds
+      );
+
+      value[axis] = next.value;
+      rate[axis] = next.rate;
+    }
+  };
+
+  /** Decays the blend and lays what is left of it over the new pose. */
+  const decayBlend = (seconds: number) => {
+    let left = 0;
+
+    for (const [index, bone] of bones.entries()) {
+      const offset = offsets[index];
+
+      if (offset) {
+        decay(offset.rotation, offset.rotationRate, seconds);
+        decay(offset.position, offset.positionRate, seconds);
+        left = Math.max(left, offset.rotation.length());
+        bone.quaternion.premultiply(
+          quaternionOfRotation(offset.rotation, scratchQuaternion)
+        );
+        bone.position.add(offset.position);
+      }
+    }
+
+    if (left < 1e-4) {
+      blending = false;
+
+      for (const offset of offsets) {
+        offset.rotation.set(0, 0, 0);
+        offset.rotationRate.set(0, 0, 0);
+        offset.position.set(0, 0, 0);
+        offset.positionRate.set(0, 0, 0);
+      }
+    }
+  };
+
+  /**
+   * Inertialization: a one-shot or a throw starts a blend from the last
+   * drawn pose to this new one, which decays (`motion.inertialization`);
+   * then the pose is noted as drawn.
+   */
+  const inertialize = (sample: DuelistSample, seconds: number) => {
+    watchThrows(sample);
+
+    if (blendPending) {
+      startBlend();
+    }
+
+    if (blending && seconds > 0) {
+      decayBlend(seconds);
+    }
+
+    for (const [index, bone] of bones.entries()) {
+      drawnPose[index]?.position.copy(bone.position);
+      drawnPose[index]?.quaternion.copy(bone.quaternion);
+    }
+  };
+
+  /**
+   * Down or getting up, the fall turns and slides (`motion.knockout.room`)
+   * so the body lies clear of the walls, Cover and Obstructions instead of
+   * through them; back on their feet, it eases back to the facing.
+   */
+  const placeFall = (
+    sample: DuelistSample,
+    facingYaw: number,
+    seconds: number
+  ) => {
+    const { room } = motion.knockout;
+    const down = sample.knockedOut || riseAge < durationOf("LayToIdle");
+    const { x, z } = sample.position;
+
+    if (!down) {
+      fallFrom = null;
+      fallGoal = unmoved;
+    } else if (
+      fallFrom?.x !== x ||
+      fallFrom.z !== z ||
+      fallFrom.yaw !== facingYaw
+    ) {
+      fallFrom = { x, yaw: facingYaw, z };
+      fallGoal = fallRoom(sample.position, facingYaw, arena, room);
+    }
+
+    fall.turn = approach(fall.turn, fallGoal.turn, room.sharpness, seconds);
+    fall.x = approach(fall.x, fallGoal.x, room.sharpness, seconds);
+    fall.z = approach(fall.z, fallGoal.z, room.sharpness, seconds);
+
+    // The slide is in the world; the body's frame is turned to the facing.
+    const cos = Math.cos(facingYaw);
+    const sin = Math.sin(facingYaw);
+    turn.position.set(
+      fall.x * cos - fall.z * sin,
+      0,
+      fall.x * sin + fall.z * cos
+    );
+  };
+
+  /** Poses the whole body for `seconds`. */
+  const pose = (sample: DuelistSample, seconds: number) => {
+    clock += seconds;
+
+    knockbackAge = ageWhile(sample.knockedBack, knockbackAge, seconds);
+    staggerAge = ageWhile(sample.staggered, staggerAge, seconds);
+
+    if (sample.knockedOut) {
+      knockoutAge = knockoutAge === idle ? 0 : knockoutAge + seconds;
+      rollAge = idle;
+      riseAge = idle;
+    } else if (knockoutAge !== idle) {
+      // Back on their feet for the next Round: get up from the floor.
+      knockoutAge = idle;
+      riseAge = 0;
+    }
+
+    measure(sample, seconds);
+    catchBreath(sample, seconds);
+    settleKick(seconds);
+    easeWeights(sample, seconds);
+    const rolling = stack(sample);
+    play();
+
+    // The body turns toward where the Dodge goes while it rolls, and leans
+    // into how its motion changes (from the feet, on the ground only).
+    const facingYaw = Math.atan2(sample.facing.x, sample.facing.z);
+    const grounded = (1 - rolling) * (1 - weight.air) * (1 - weight.knockback);
+    placeFall(sample, facingYaw, seconds);
+    turn.rotation.y = wrap(rollYaw - facingYaw) * rolling + fall.turn;
+    turn.rotation.x = lean.forward * grounded;
+    turn.rotation.z = -lean.left * grounded;
+    object.updateMatrixWorld(true);
+
+    turnBody(sample);
+    warpGait();
+    crouchWalk();
+    grip(1 - weight.disarmed);
+    poseWandArm(sample);
+    poseFreeArm(sample);
+    inertialize(sample, seconds);
+    rig.model.updateMatrixWorld(true);
+
+    // One-shots age after they are drawn, so each starts from its first
+    // pose: a cast's flick leaves from the tip the Spell leaves from.
+    castAge += seconds;
+    strikeAge += seconds;
+    pushAge += seconds;
+    parryAge += seconds;
+    flinchAge += seconds;
+    landAge += seconds;
+    jumpAge += seconds;
+    raisedAge += seconds;
+    spawnAge += seconds;
+    pickupAge += seconds;
+    rollAge += seconds;
+    riseAge += seconds;
+  };
+
+  /** How lit a Training Dummy's enchantment is: 1 on its feet, 0 down. */
+  let life = 1;
+
+  /** A Training Dummy's light under its hood: out while down, flaring up as it gets up. */
+  const kindle = (sample: DuelistSample, seconds: number) => {
+    if (!dummy) {
+      return;
+    }
+
+    life = approach(
+      life,
+      sample.knockedOut ? 0 : 1,
+      dummy.lifeSharpness,
+      seconds
+    );
+
+    const surge =
+      riseAge < dummy.surgeSeconds
+        ? Math.sin((Math.PI * riseAge) / dummy.surgeSeconds)
+        : 0;
+
+    uniforms.hollow.value =
+      life * dummy.hollowRadiance + surge * dummy.surgeRadiance;
+  };
+
+  /** Raises the vial while drinking, in the free hand. */
+  const showVial = (sample: DuelistSample) => {
+    rig.vial.visible = sample.drinking !== null && !sample.knockedOut;
+
+    if (sample.drinking) {
+      uniforms.vialTint.value.set(potion.colors[sample.drinking.kind]);
+    }
+  };
+
+  const cast = ({ kind, position }: SpellState) => {
+    spawnAt.set(position.x, position.y, position.z);
+    spawnAge = 0;
+    castAge = idle;
+    pushAge = idle;
+    strikeAge = idle;
+    // The Spell leaves the Wand: the tip is on its mark this very frame.
+    weight.lock = 1;
+    raisedAge = 0;
+
+    if (kind === "confringo") {
+      strikeAge = 0;
+      weight.charge = 0;
+    } else if (kind === "depulso") {
+      pushAge = 0;
+    } else {
+      castAge = 0;
+      castKind = kind;
+    }
+  };
+
+  /** This Duelist's own moves: a Dodge, a landing, a Parry, a Wand picked up, a Potion down. */
+  const reactToOwn = (event: DuelEvent) => {
+    if (event.type === "dodge") {
+      blendPending = true;
+      rollAge = 0;
+      rollYaw = Math.atan2(event.direction.x, event.direction.z);
+    } else if (event.type === "jump") {
+      blendPending = true;
+      jumpAge = 0;
+    } else if (event.type === "land") {
+      blendPending = true;
+      landAge = 0;
+      jumpAge = idle;
+    } else if (event.type === "parry") {
+      parryAge = 0;
+      raisedAge = 0;
+    } else if (event.type === "wand-recovered" && event.how === "pickup") {
+      blendPending = true;
+      pickupAge = 0;
+    } else if (event.type === "potion-drunk") {
+      flashAge = 0;
+      flashKind = event.kind;
+    } else if (event.type === "backfire") {
+      strikeAge = idle;
+      castAge = idle;
+      weight.charge = 0;
+    }
+  };
+
+  const react = (event: DuelEvent) => {
+    if (event.type === "spell-cast") {
+      if (event.spell.casterId === id) {
+        cast(event.spell);
+      }
+    } else if (event.type === "spell-hit") {
+      if (event.targetId === id) {
+        blendPending = true;
+        flinchAge = 0;
+        kickFrom(event.position);
+        flinchClip =
+          event.position.y - (last?.elevation ?? 0) > duelist.chestHeight + 0.15
+            ? "Hit_Head"
+            : "Hit_Chest";
+      }
+    } else if ("duelistId" in event && event.duelistId === id) {
+      reactToOwn(event);
+    }
+  };
+
+  const tipWorld = new Vector3();
+
+  /** A Spell landing on this Duelist flares the body in its colour; Petrificus starts the stone there. */
+  const struck = (event: DuelEvent) => {
+    if (event.type !== "spell-hit" || event.targetId !== id) {
+      return;
+    }
+
+    flareAge = 0;
+    uniforms.hitTint.value.set(palette[event.spell.kind].main);
+
+    if (event.spell.kind === "petrificus") {
+      stoneAge = 0;
+      uniforms.stoneFrom.value.set(
+        event.position.x,
+        event.position.y,
+        event.position.z
+      );
+    }
+  };
+
+  const bodyJoints = [
+    joints.head,
+    joints.neck,
+    joints.spine[2],
+    joints.spine[0],
+    joints.pelvis,
+    ...joints.upperArms,
+    ...joints.lowerArms,
+    ...joints.hands,
+    ...joints.thighs,
+  ];
+
+  const bodyWorld = bodyJoints.map(() => new Vector3());
+
+  return {
+    bodyPoints: () =>
+      bodyJoints.map((joint, index) => {
+        const world = bodyWorld[index] ?? new Vector3();
+
+        return joint.getWorldPosition(world);
+      }),
+    handle: (events) => {
+      for (const event of events) {
+        struck(event);
+
+        // Stone does not move: a Petrified Duelist's casts and Dodges do not play.
+        if (!petrified || event.type === "potion-drunk") {
+          react(event);
+        }
+      }
+    },
+    object,
+    show: (shown, seconds, wantedGlow) => {
+      // Down in a Practice: fallen as at a Knockout until it gets up.
+      const sample =
+        shown.downSeconds > getUpSeconds
+          ? { ...shown, knockedOut: true }
+          : shown;
+
+      ({ petrified } = sample);
+
+      object.position.set(
+        sample.position.x,
+        sample.elevation,
+        sample.position.z
+      );
+      object.rotation.y = Math.atan2(sample.facing.x, sample.facing.z);
+
+      // Petrified, the pose freezes where it was: stone does not breathe.
+      if (!petrified) {
+        pose(sample, seconds);
+      }
+
+      // The rim follows the limbs as drawn.
+      rig.updateRim();
+
+      rig.wandStick.visible = !sample.disarmed;
+      showVial(sample);
+      breathe(sample, seconds);
+      glowPotions(sample, seconds);
+      kindle(sample, seconds);
+      uniforms.glowStrength.value = approach(
+        uniforms.glowStrength.value,
+        wantedGlow,
+        glow.fadeSharpness,
+        seconds
+      );
+      uniforms.petrify.value = approach(
+        uniforms.petrify.value,
+        sample.petrified ? 1 : 0,
+        stone.fadeSharpness,
+        seconds
+      );
+      stoneAge += seconds;
+      uniforms.stoneFront.value = Math.min(
+        stoneAge * stone.spreadSpeed,
+        stone.spreadReach
+      );
+      flareAge += seconds;
+      uniforms.hitGlow.value =
+        flareAge < hit.seconds ? (1 - flareAge / hit.seconds) ** 2 : 0;
+      uniforms.burn.value = approach(
+        uniforms.burn.value,
+        sample.burning ? 1 : 0,
+        robe.fadeSharpness,
+        seconds
+      );
+    },
+    wandTipPosition: () => {
+      rig.tip.updateWorldMatrix(true, false);
+      rig.tip.getWorldPosition(tipWorld);
+
+      return { x: tipWorld.x, y: tipWorld.y, z: tipWorld.z };
+    },
+  };
+};

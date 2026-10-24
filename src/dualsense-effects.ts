@@ -1,0 +1,323 @@
+import type { ActivationHint } from "./activation-hint";
+/**
+ * Sends the haptics director's output to the DualSense (ADR-0001): through
+ * WebHID output reports once the player has granted the device, otherwise
+ * through the Gamepad API's dual-rumble where the pad supports it. WebHID is
+ * never read: input stays on the Gamepad API.
+ *
+ * WebHID's `requestDevice` needs a mouse click or keypress (gamepad presses
+ * are not user activation), so the first click or keypress on the page asks
+ * for the DualSense, once per page load and only while none is granted yet.
+ * Later visits reattach through `getDevices()` without asking.
+ */
+import {
+  encodeLightbarRelease,
+  encodeOutputReport,
+  fitToDescriptor,
+  transportOf,
+} from "./dualsense/output";
+import type {
+  DualSenseOutput,
+  OutputReport,
+  Transport,
+} from "./dualsense/output";
+import { tuning } from "./tuning";
+
+/** Sony's vendor id with the DualSense and DualSense Edge product ids. */
+const dualSenseFilters = [
+  { productId: 0x0c_e6, vendorId: 0x05_4c },
+  { productId: 0x0d_f2, vendorId: 0x05_4c },
+] as const;
+
+/** Still motors, free triggers and a dark lightbar: what the pad is left with. */
+const silent: DualSenseOutput = {
+  lightbar: { b: 0, g: 0, r: 0 },
+  playerLeds: 0,
+  rumble: { left: 0, right: 0 },
+  triggers: { l2: { kind: "off" }, r2: { kind: "off" } },
+};
+
+/** The output bytes without framing or sequence: equal keys mean nothing changed. */
+const outputKey = (output: DualSenseOutput) =>
+  encodeOutputReport(output, "usb", 0).data.join(",");
+
+/**
+ * An opened DualSense that output reports go to: only when the output
+ * changed, one report in flight at a time, the latest output winning.
+ */
+const createWebHidSink = (
+  device: HIDDevice,
+  transport: Transport,
+  onLost: (reason: Error) => void
+) => {
+  let sequence = 0;
+  let sentKey: string | undefined;
+  let pending: DualSenseOutput | undefined;
+  let busy = false;
+
+  const write = async (report: OutputReport) => {
+    sequence = (sequence + 1) % 16;
+    // Exactly the size the descriptor declares, or WebHID refuses the write.
+    const fitted = fitToDescriptor(report, device.collections);
+    await device.sendReport(fitted.reportId, fitted.data);
+  };
+
+  const pump = async () => {
+    busy = true;
+
+    try {
+      while (pending) {
+        const output = pending;
+        pending = undefined;
+        const key = outputKey(output);
+
+        if (key !== sentKey) {
+          sentKey = key;
+          // oxlint-disable-next-line no-await-in-loop -- reports go out one at a time, in order
+          await write(encodeOutputReport(output, transport, sequence));
+        }
+      }
+    } catch (error) {
+      onLost(error instanceof Error ? error : new Error(String(error)));
+    } finally {
+      busy = false;
+    }
+  };
+
+  return {
+    device,
+    /** Takes the lightbar over from the light a Bluetooth pad shows after pairing. */
+    release: async () => {
+      try {
+        await write(encodeLightbarRelease(transport, sequence));
+      } catch (error) {
+        onLost(error instanceof Error ? error : new Error(String(error)));
+      }
+    },
+    send: (output: DualSenseOutput) => {
+      pending = output;
+
+      if (!busy) {
+        void pump();
+      }
+    },
+  };
+};
+
+type WebHidSink = ReturnType<typeof createWebHidSink>;
+
+/** The pad's Gamepad API rumble, when it can play dual-rumble. */
+const dualRumbleOf = (gamepad: Gamepad | undefined) => {
+  const actuator: GamepadHapticActuator | null | undefined =
+    gamepad?.vibrationActuator;
+
+  return actuator?.effects?.includes("dual-rumble") === true
+    ? actuator
+    : undefined;
+};
+
+/** Plays one moment of dual-rumble. */
+const playRumble = async (
+  actuator: GamepadHapticActuator,
+  left: number,
+  right: number
+) => {
+  try {
+    await actuator.playEffect("dual-rumble", {
+      duration: tuning.haptics.fallback.effectSeconds * 1000,
+      strongMagnitude: Math.min(left, 1),
+      weakMagnitude: Math.min(right, 1),
+    });
+  } catch {
+    // The pad went away or refused: the next frame tries again.
+  }
+};
+
+const stopRumble = async (actuator: GamepadHapticActuator) => {
+  try {
+    await actuator.reset();
+  } catch {
+    // Nothing to stop.
+  }
+};
+
+/**
+ * Dual-rumble through the Gamepad API, for when WebHID was not granted. Each
+ * play lasts a moment, so it is replayed while the rumble fades, and reset
+ * as soon as it stops.
+ */
+const createFallbackRumble = () => {
+  let rumbling = false;
+  let playedAt = Number.NEGATIVE_INFINITY;
+
+  return (output: DualSenseOutput, gamepad: Gamepad | undefined) => {
+    const actuator = dualRumbleOf(gamepad);
+
+    if (!actuator) {
+      return;
+    }
+
+    const { left, right } = output.rumble;
+    const now = performance.now() / 1000;
+    const wasRumbling = rumbling;
+    rumbling = left > 0 || right > 0;
+
+    if (!rumbling) {
+      if (wasRumbling) {
+        void stopRumble(actuator);
+      }
+
+      return;
+    }
+
+    if (
+      !wasRumbling ||
+      now - playedAt >= tuning.haptics.fallback.resendSeconds
+    ) {
+      playedAt = now;
+      void playRumble(actuator, left, right);
+    }
+  };
+};
+
+/**
+ * Drives the DualSense's effects for the page. `hint` is told whether a click
+ * is still needed to turn the effects on, until they are granted.
+ */
+export const createDualSenseEffects = (hint: ActivationHint) => {
+  const { hid } = navigator;
+
+  let sink: WebHidSink | undefined;
+  /** `getDevices()` has answered, so a click knows whether a DualSense is already granted. */
+  let checked = false;
+  let granted = false;
+  /** The chooser was shown this page load; it is never shown twice. */
+  let prompted = false;
+  /** The last look for a DualSense (the visit's reattach, or the chooser), once it has answered. */
+  let looked: Promise<void> = Promise.resolve();
+
+  const updateHint = () => {
+    hint.report("effects", !!hid && checked && !granted && !prompted);
+  };
+
+  const attach = async (device: HIDDevice) => {
+    if (sink) {
+      return;
+    }
+
+    try {
+      if (!device.opened) {
+        await device.open();
+      }
+    } catch (error) {
+      console.warn("DualSense effects: could not open the controller", error);
+
+      return;
+    }
+
+    const transport = transportOf(device.collections);
+
+    if (!transport) {
+      console.warn("DualSense effects: unknown HID descriptor, left alone");
+
+      return;
+    }
+
+    const opened = createWebHidSink(device, transport, (reason) => {
+      // Once per lost sink, not per frame: the sink is gone, so nothing writes again.
+      if (sink === opened) {
+        sink = undefined;
+        console.warn(
+          "DualSense effects: a write failed, falling back to rumble until the controller reconnects or the page reloads",
+          reason
+        );
+      }
+    });
+
+    sink = opened;
+    await opened.release();
+  };
+
+  const attachFirst = async (devices: readonly HIDDevice[]) => {
+    granted ||= devices.length > 0;
+    updateHint();
+
+    for (const device of devices) {
+      // oxlint-disable-next-line no-await-in-loop -- the first one that opens wins
+      await attach(device);
+    }
+  };
+
+  const choose = async (webHid: HID) => {
+    try {
+      await attachFirst(
+        await webHid.requestDevice({ filters: dualSenseFilters })
+      );
+    } catch {
+      // The chooser failed to open: no more asking until the next visit.
+    }
+  };
+
+  const ask = () => {
+    if (!hid || !checked || granted || prompted) {
+      return;
+    }
+
+    prompted = true;
+    updateHint();
+    looked = choose(hid);
+  };
+
+  const reattach = async (webHid: HID) => {
+    try {
+      const devices = await webHid.getDevices();
+      checked = true;
+      await attachFirst(devices);
+    } catch {
+      checked = true;
+      updateHint();
+    }
+  };
+
+  if (hid) {
+    looked = reattach(hid);
+
+    // A granted DualSense plugged back in, over USB or Bluetooth.
+    hid.addEventListener("connect", (event) => {
+      void attachFirst([event.device]);
+    });
+    hid.addEventListener("disconnect", (event) => {
+      if (event.device === sink?.device) {
+        sink = undefined;
+      }
+    });
+
+    const onGesture = () => {
+      ask();
+    };
+
+    window.addEventListener("pointerdown", onGesture);
+    window.addEventListener("keydown", onGesture);
+    // Leave the pad still and dark when the page goes away.
+    window.addEventListener("pagehide", () => sink?.send(silent));
+  }
+
+  const fallback = createFallbackRumble();
+
+  return {
+    /** Whether a DualSense is open over WebHID: the game sees it without a button press. */
+    connected: () => sink !== undefined,
+    /** Sends this frame's desired output: over WebHID when attached, else as dual-rumble on `gamepad`. */
+    send: (output: DualSenseOutput, gamepad: Gamepad | undefined) => {
+      if (sink) {
+        sink.send(output);
+      } else {
+        fallback(output, gamepad);
+      }
+    },
+    /** Settles once the last look for a DualSense (reattach or chooser) has answered. */
+    settled: async () => {
+      await looked;
+    },
+  };
+};

@@ -1,0 +1,341 @@
+/*
+ * The Controls screen (controls-help.ts), inside the menu frame's #overlay:
+ * the tab bar, the drawn DualSense between its two slot diamonds, and the
+ * mechanics' cards. Hairline gold on ink, like the menus and the HUD.
+ */
+
+/* The tab bar: L1 and R1 at its ends, the open tab carrying the gold. */
+#overlay .overlay-tabs:not([hidden]) {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+}
+
+#overlay .ch-tab {
+  padding: 0.3rem 1.1rem;
+  color: rgb(239 228 200 / 55%);
+  border: 1px solid transparent;
+  font-size: clamp(0.9rem, 1.8vw, 1.1rem);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  transition:
+    color 120ms ease-out,
+    border-color 120ms ease-out;
+}
+
+#overlay .ch-tab.selected {
+  color: var(--gold);
+  border-color: rgb(216 180 106 / 75%);
+  background: var(--ink);
+  box-shadow: 0 0 14px rgb(216 180 106 / 16%);
+  text-shadow: 0 0 10px rgb(216 180 106 / 45%);
+}
+
+/* A shoulder button, as on the drawn pad. */
+#overlay .ch-bumper {
+  display: grid;
+  place-items: center;
+  min-width: 2.4rem;
+  padding: 0.1rem 0.45rem;
+  color: rgb(239 228 200 / 75%);
+  border: 1px solid rgb(216 180 106 / 55%);
+  border-radius: 0.6rem 0.6rem 0.3rem 0.3rem;
+  font-family: system-ui, sans-serif;
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+}
+
+/* The open tab's content. */
+#overlay .overlay-help {
+  width: min(100% - 2rem, 92rem);
+}
+
+/*
+ * The Controls are the tallest screen and the disclaimer is not on show
+ * under them: their content may reach as low as the frame's top margin.
+ */
+#overlay[data-screen="controls"] {
+  bottom: clamp(1rem, 4vh, 3rem);
+}
+
+#overlay .overlay-help.switched > * {
+  animation: ch-switch 260ms ease-out both;
+}
+
+@keyframes ch-switch {
+  from {
+    opacity: 0;
+  }
+}
+
+#overlay.entering > :is(.overlay-tabs, .overlay-help) {
+  animation: menu-enter 460ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
+  animation-delay: calc(var(--enter-delay, 0ms) + 70ms);
+}
+
+#overlay.entering > .overlay-help {
+  animation-delay: calc(var(--enter-delay, 0ms) + 130ms);
+}
+
+/* Controles: the Potion Slots, the pad, the Spell Slots, side by side. */
+.ch-controls {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 0.5rem 1rem;
+  align-items: center;
+  justify-content: center;
+}
+
+.ch-pad {
+  container-type: inline-size;
+  position: relative;
+
+  /* As wide as there is room for, and never taller than the screen allows. */
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: min(64rem, calc((100vh - 17rem) * 2.5));
+  aspect-ratio: 1100 / 440;
+}
+
+.ch-drawing {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.ch-body {
+  fill: rgb(10 12 24 / 78%);
+  stroke: rgb(216 180 106 / 85%);
+  stroke-width: 1.6;
+  filter: drop-shadow(0 0 10px rgb(216 180 106 / 18%));
+}
+
+.ch-part {
+  fill: rgb(10 12 24 / 92%);
+  stroke: rgb(216 180 106 / 70%);
+  stroke-width: 1.2;
+}
+
+.ch-quiet {
+  stroke: rgb(216 180 106 / 32%);
+}
+
+.ch-touchpad {
+  fill: rgb(216 180 106 / 4%);
+  stroke: rgb(216 180 106 / 45%);
+}
+
+.ch-cap {
+  fill: rgb(216 180 106 / 7%);
+}
+
+.ch-face {
+  stroke: rgb(216 180 106 / 80%);
+}
+
+.ch-face-icon {
+  color: var(--parchment);
+}
+
+.ch-tag {
+  fill: rgb(239 228 200 / 80%);
+  font-family: system-ui, sans-serif;
+  font-size: 11px;
+  dominant-baseline: central;
+  text-anchor: middle;
+}
+
+.ch-leader {
+  fill: none;
+  stroke: rgb(216 180 106 / 55%);
+  stroke-width: 1.1;
+}
+
+.ch-anchor {
+  fill: var(--gold);
+}
+
+/* A label on its leader line; sizes follow the drawing (cqw). */
+.ch-label {
+  position: absolute;
+  top: var(--y);
+  display: grid;
+  gap: 0.15em;
+  width: 21cqw;
+  font-size: 1.75cqw;
+  line-height: 1.2;
+}
+
+.ch-label[data-align="left"] {
+  left: var(--x);
+  text-align: left;
+  translate: 0 -0.62em;
+}
+
+.ch-label[data-align="right"] {
+  right: calc(100% - var(--x));
+  text-align: right;
+  translate: 0 -0.62em;
+}
+
+.ch-label[data-align="below"],
+.ch-label[data-align="above"] {
+  left: var(--x);
+  width: 16cqw;
+  text-align: center;
+  translate: -50% 0;
+}
+
+.ch-label[data-align="above"] {
+  translate: -50% -100%;
+}
+
+.ch-label-line {
+  color: var(--parchment);
+  letter-spacing: 0.04em;
+}
+
+.ch-label[data-align="right"] .ch-label-line {
+  justify-content: flex-end;
+}
+
+/* The button's mark before its label: a face button's symbol, or a shoulder's name. */
+.ch-key {
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.5em;
+  margin-inline-end: 0.4em;
+  padding: 0 0.25em;
+  color: var(--gold);
+  border: 1px solid rgb(216 180 106 / 55%);
+  border-radius: 0.35em;
+  font-family: system-ui, sans-serif;
+  font-size: 0.72em;
+  line-height: 1.5;
+  vertical-align: 0.1em;
+}
+
+.ch-key svg {
+  width: 1.05em;
+  height: 1.05em;
+  vertical-align: -0.15em;
+}
+
+.ch-detail {
+  color: rgb(239 228 200 / 58%);
+  text-wrap: balance;
+  font-size: 0.78em;
+  letter-spacing: 0.02em;
+}
+
+/* A trigger's slots: its heading over the HUD's diamond, held open. */
+.ch-slots {
+  display: grid;
+  gap: 0.6rem;
+  justify-items: center;
+}
+
+.ch-slots-heading {
+  color: var(--gold);
+  font-size: 0.85rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.ch-slots-frame {
+  position: relative;
+
+  /* The spread diamond, room for its side names and under its lowest one. */
+  width: calc(4.4rem * 2 + 3rem + 3rem);
+  height: calc(4.4rem * 2 + 3rem + 1.5rem);
+}
+
+/* Spread wider than in the HUD: every name shows at once, two lines for the longest. */
+.ch-slots .sd-diamond[data-held="true"] {
+  --sd-spread: 4.4rem;
+}
+
+.ch-slots-frame > .sd-diamond {
+  position: absolute;
+  top: calc(50% - 0.75rem);
+  left: 50%;
+  translate: -50% -50%;
+}
+
+/* On a narrow screen the diamonds shrink, leaving the pad room to read. */
+@media (max-width: 1180px) {
+  .ch-slots {
+    zoom: 0.72;
+  }
+}
+
+/* The slots show what is bound there, lit as if their trigger were held. */
+.ch-slots .sd-slot[data-state="shown"] .sd-badge {
+  border-color: #f3d796;
+}
+
+/* Mecánicas: short cards in a grid. */
+.ch-cards {
+  display: grid;
+  /* Four columns at most, fewer on a narrow screen. */
+  grid-template-columns: repeat(
+    auto-fit,
+    minmax(max(13rem, calc((100% - 2.1rem) / 4)), 1fr)
+  );
+  gap: 0.7rem;
+  text-align: left;
+}
+
+.ch-card {
+  padding: 0.6rem 0.9rem 0.7rem;
+  border: 1px solid rgb(216 180 106 / 28%);
+  background: var(--ink);
+}
+
+#overlay .ch-card-title {
+  margin: 0 0 0.35rem;
+  color: var(--gold);
+  font-family: "Cinzel Variable", "Iowan Old Style", Palatino, serif;
+  font-size: 0.95rem;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+}
+
+#overlay .ch-card-body {
+  color: rgb(239 228 200 / 82%);
+  font-size: 0.86rem;
+  letter-spacing: 0.01em;
+  line-height: 1.34;
+}
+
+/* A short screen: tighter cards, so all of them still fit. */
+@media (max-height: 700px) {
+  .ch-card {
+    padding: 0.45rem 0.7rem 0.5rem;
+  }
+
+  #overlay .ch-card-title {
+    margin-bottom: 0.2rem;
+    font-size: 0.85rem;
+  }
+
+  #overlay .ch-card-body {
+    font-size: 0.78rem;
+    line-height: 1.28;
+  }
+}
+
+#overlay.entering .ch-card {
+  animation: menu-enter 420ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
+  animation-delay: calc(var(--enter-delay, 0ms) + 130ms + var(--entry) * 35ms);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #overlay.entering > :is(.overlay-tabs, .overlay-help),
+  #overlay.entering .ch-card,
+  #overlay .overlay-help.switched > * {
+    animation: none;
+  }
+}

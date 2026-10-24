@@ -1,0 +1,144 @@
+/*
+ * A diamond of four slots laid out like the face buttons. --sd-spread (the
+ * distance from the centre to each slot) and --sd-badge (each slot's size)
+ * are animatable lengths: at rest the slots sit tight and small, and while
+ * the trigger is held they ease apart and grow a little. Hairline gold on
+ * translucent ink, like the rest of the HUD.
+ */
+@property --sd-spread {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 0px;
+}
+
+@property --sd-badge {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 0px;
+}
+
+.sd-diamond {
+  --sd-spread: 2.1rem;
+  --sd-badge: 2.7rem;
+
+  position: relative;
+  flex: none;
+  width: calc(var(--sd-spread) * 2 + var(--sd-badge));
+  height: calc(var(--sd-spread) * 2 + var(--sd-badge));
+  opacity: 0.78;
+  transition:
+    --sd-spread var(--slots-spread-seconds, 0.12s) ease-out,
+    --sd-badge var(--slots-spread-seconds, 0.12s) ease-out,
+    opacity var(--slots-spread-seconds, 0.12s) ease-out;
+}
+
+/* Trigger held: the slots spread apart, ready for a face button. */
+.sd-diamond[data-held="true"] {
+  --sd-spread: 3.3rem;
+  --sd-badge: 3rem;
+
+  opacity: 1;
+}
+
+.sd-slot {
+  --dx: 0;
+  --dy: 0;
+
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: grid;
+  justify-items: center;
+  translate: calc(-50% + var(--dx) * var(--sd-spread))
+    calc(-50% + var(--dy) * var(--sd-spread));
+}
+
+.sd-at-top {
+  --dy: -1;
+}
+
+.sd-at-left {
+  --dx: -1;
+}
+
+.sd-at-right {
+  --dx: 1;
+}
+
+.sd-at-bottom {
+  --dy: 1;
+}
+
+.sd-badge {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: var(--sd-badge);
+  height: var(--sd-badge);
+  border: 1px solid rgb(216 180 106 / 70%);
+  border-radius: 50%;
+  background: var(--ink);
+  box-shadow: 0 0 6px rgb(0 0 0 / 45%);
+  transition:
+    border-color 120ms ease-out,
+    box-shadow 120ms ease-out;
+}
+
+/* The face button, a small mark tucked against the badge's lower edge. */
+.sd-face {
+  position: absolute;
+  top: calc(var(--sd-badge) - 0.55rem);
+  display: grid;
+  place-items: center;
+  width: 1.1rem;
+  height: 1.1rem;
+  border: 1px solid rgb(216 180 106 / 45%);
+  border-radius: 50%;
+  background: rgb(10 12 24 / 92%);
+  color: rgb(239 228 200 / 80%);
+  font-family: system-ui, sans-serif;
+  font-size: 0.6rem;
+  line-height: 1;
+}
+
+/* The names show only while the trigger is held, when the player is choosing. */
+.sd-name {
+  position: absolute;
+  top: calc(var(--sd-badge) + 0.5rem);
+  width: max-content;
+  max-width: 6rem;
+  color: var(--parchment);
+  font-size: 0.65rem;
+  letter-spacing: 0.1em;
+  line-height: 1.15;
+  text-align: center;
+  text-transform: uppercase;
+  opacity: 0;
+  transition: opacity var(--slots-spread-seconds, 0.12s) ease-out;
+}
+
+.sd-diamond[data-held="true"] .sd-name {
+  opacity: 0.85;
+}
+
+/* An empty slot: a faint dashed ring. */
+.sd-slot[data-state="empty"] .sd-badge {
+  border-style: dashed;
+  border-color: rgb(216 180 106 / 30%);
+  background: rgb(10 12 24 / 30%);
+  box-shadow: none;
+}
+
+.sd-slot[data-state="empty"] .sd-face {
+  opacity: 0.45;
+}
+
+/* A Potion's remaining charges, a small numeral on the badge's upper right. */
+.sd-count {
+  position: absolute;
+  top: -0.25rem;
+  right: -0.3rem;
+  color: var(--parchment);
+  font-size: 0.75rem;
+  font-variant-numeric: lining-nums tabular-nums;
+}

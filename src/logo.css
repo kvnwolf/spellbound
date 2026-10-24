@@ -1,0 +1,135 @@
+/*
+ * The Spellbound logo (its SVG lives in index.html): the name over two
+ * Spells meeting in a Clash, crimson from the left, emerald from the right.
+ * Linked from index.html so it styles the loading screen's first paint.
+ * While loading (`#menu[data-intro="loading"]`), `--progress` (0 to 1) grows
+ * the beams and the flare stays dark; when they meet (`data-intro="clash"`)
+ * a flash of light and the flare light up at once.
+ */
+@import "@fontsource-variable/cinzel/wght.css";
+
+.logo {
+  --progress: 1;
+
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+/* Loading starts with the beams drawn in. */
+#menu[data-intro="loading"] .logo {
+  --progress: 0;
+}
+
+.logo-word {
+  fill: #efe4c8;
+  font-family: "Cinzel Variable", "Iowan Old Style", Palatino, serif;
+  font-size: 64px;
+  font-weight: 600;
+}
+
+.logo-beam {
+  transform: scaleX(var(--progress));
+  transform-box: fill-box;
+  transition: transform var(--clash-delay, 160ms) ease-out;
+}
+
+.logo-beam line {
+  stroke-linecap: round;
+}
+
+.logo-crimson {
+  transform-origin: left center;
+  filter: drop-shadow(0 0 6px rgb(217 71 60 / 80%));
+}
+
+.logo-emerald {
+  transform-origin: right center;
+  filter: drop-shadow(0 0 6px rgb(63 174 122 / 80%));
+}
+
+/* The flare lights up on contact, then pulses gently. */
+.logo-flare {
+  filter: drop-shadow(0 0 10px rgb(255 240 200 / 90%));
+  transform-box: fill-box;
+  transform-origin: center;
+  animation:
+    logo-flare-light 520ms cubic-bezier(0.2, 0.9, 0.3, 1.3)
+      var(--clash-delay, 0ms) both,
+    logo-flare 1.6s ease-in-out calc(var(--clash-delay, 0ms) + 520ms) infinite
+      alternate;
+}
+
+#menu[data-intro="loading"] .logo-flare {
+  opacity: 0;
+  animation: none;
+}
+
+@keyframes logo-flare-light {
+  from {
+    opacity: 0;
+    transform: scale(0.1);
+  }
+}
+
+@keyframes logo-flare {
+  to {
+    transform: scale(1.12) rotate(8deg);
+  }
+}
+
+/* The flash rests invisible and plays once, on contact. */
+.logo-flash {
+  opacity: 0;
+  transform-box: view-box;
+  transform-origin: 320px 118px;
+}
+
+/* Forwards only: its bright first frame must not show while the beams close in. */
+#menu[data-intro="clash"] .logo-flash {
+  animation: logo-flash 560ms ease-out var(--clash-delay) forwards;
+}
+
+#menu[data-intro="clash"] .logo-beam {
+  animation: logo-beam-surge 620ms ease-out var(--clash-delay) both;
+}
+
+@keyframes logo-flash {
+  from {
+    opacity: 1;
+    transform: scale(0.15);
+  }
+
+  25% {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+    transform: scale(2.4);
+  }
+}
+
+@keyframes logo-beam-surge {
+  15% {
+    filter: brightness(1.8) drop-shadow(0 0 14px rgb(255 240 200 / 90%));
+  }
+}
+
+/* No burst motion: the flare and the screen only fade in. */
+@media (prefers-reduced-motion: reduce) {
+  #menu[data-intro="clash"] :is(.logo-flash, .logo-beam) {
+    animation: none;
+  }
+
+  .logo-flare {
+    animation: logo-flare-light 520ms ease-out var(--clash-delay, 0ms) both;
+  }
+
+  @keyframes logo-flare-light {
+    from {
+      opacity: 0;
+    }
+  }
+}

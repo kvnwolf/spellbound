@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Spellbound</title>
+    <meta
+      name="description"
+      content="Wizard duels in the browser, played with a DualSense: charge Confringo, Parry, Clash and drink your potions. A free fan game."
+    />
+    <!--
+      The share card for X and other sites. Crawlers need absolute URLs: when
+      deploying, put the site's origin before the image path (and add og:url).
+    -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Spellbound" />
+    <meta
+      property="og:title"
+      content="Spellbound: wizard duels with a DualSense"
+    />
+    <meta
+      property="og:description"
+      content="Wizard duels in the browser, played with a DualSense: charge Confringo, Parry, Clash and drink your potions. A free fan game."
+    />
+    <meta property="og:image" content="/og-image.jpg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta
+      property="og:image:alt"
+      content="Two duellists locked in a Clash in a moonlit castle courtyard, under the Spellbound logo"
+    />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta
+      name="twitter:title"
+      content="Spellbound: wizard duels with a DualSense"
+    />
+    <meta
+      name="twitter:description"
+      content="Wizard duels in the browser, played with a DualSense: charge Confringo, Parry, Clash and drink your potions. A free fan game."
+    />
+    <meta name="twitter:image" content="/og-image.jpg" />
+    <meta
+      name="twitter:image:alt"
+      content="Two duellists locked in a Clash in a moonlit castle courtyard, under the Spellbound logo"
+    />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <!-- Linked, not imported, so the loading screen shows from the first paint. -->
+    <link rel="stylesheet" href="/src/style.css" />
+    <link rel="stylesheet" href="/src/menu.css" />
+    <link rel="stylesheet" href="/src/logo.css" />
+  </head>
+  <body>
+    <canvas id="scene"></canvas>
+    <div id="reticle" hidden></div>
+    <div id="charge-ring" hidden></div>
+    <div id="hud" hidden></div>
+    <!--
+      The menu frame (menu.css): the opaque backdrop, the logo in its one
+      fixed place, and the screen's own content below it. It is the loading
+      screen from the first paint, then every menu, the pause and the result.
+    -->
+    <section id="menu" data-intro="loading">
+      <!-- The gilt frame round the screen, one ornament per corner (menu.css). -->
+      <div class="menu-frame" aria-hidden="true">
+        <span></span><span></span><span></span><span></span>
+      </div>
+      <!-- The rune behind it all: its rings and its star turn opposite ways (menu.css). -->
+      <div class="menu-rune" aria-hidden="true">
+        <span class="menu-rune-rings"></span
+        ><span class="menu-rune-star"></span>
+      </div>
+      <h1 class="menu-logo">
+        <svg
+          class="logo"
+          viewBox="0 0 640 160"
+          role="img"
+          aria-label="Spellbound"
+        >
+          <defs>
+            <radialGradient id="logo-flash-fill">
+              <stop offset="0" stop-color="#ffffff" />
+              <stop offset="0.35" stop-color="#fff2cc" stop-opacity="0.9" />
+              <stop offset="1" stop-color="#d8b46a" stop-opacity="0" />
+            </radialGradient>
+          </defs>
+          <text
+            class="logo-word"
+            x="320"
+            y="74"
+            text-anchor="middle"
+            textLength="580"
+            lengthAdjust="spacing"
+          >
+            SPELLBOUND
+          </text>
+          <g class="logo-beam logo-crimson">
+            <line
+              x1="24"
+              y1="118"
+              x2="316"
+              y2="118"
+              stroke="#d9473c"
+              stroke-width="6"
+            />
+            <line
+              x1="24"
+              y1="118"
+              x2="314"
+              y2="118"
+              stroke="#ffc2b8"
+              stroke-width="1.6"
+            />
+          </g>
+          <g class="logo-beam logo-emerald">
+            <line
+              x1="324"
+              y1="118"
+              x2="616"
+              y2="118"
+              stroke="#3fae7a"
+              stroke-width="6"
+            />
+            <line
+              x1="326"
+              y1="118"
+              x2="616"
+              y2="118"
+              stroke="#c4f2d9"
+              stroke-width="1.6"
+            />
+          </g>
+          <!-- The Clash's flash as the beams meet (logo.css plays it once). -->
+          <g class="logo-burst" aria-hidden="true">
+            <circle
+              class="logo-flash"
+              cx="320"
+              cy="118"
+              r="60"
+              fill="url(#logo-flash-fill)"
+            />
+          </g>
+          <g class="logo-flare">
+            <circle cx="320" cy="118" r="20" fill="#fff0c8" opacity="0.22" />
+            <path
+              d="M320 88 L325 112 L350 118 L325 124 L320 148 L315 124 L290 118 L315 112 Z"
+              fill="#fff6dc"
+            />
+            <circle cx="320" cy="118" r="7" fill="#ffffff" />
+          </g>
+        </svg>
+      </h1>
+      <!-- Loading: the beams growing toward their Clash are the bar. -->
+      <div
+        id="loading"
+        role="progressbar"
+        aria-valuemin="0"
+        aria-valuemax="100"
+        aria-valuenow="0"
+      ></div>
+      <!-- The screen's own content, under the logo (overlay.ts). -->
+      <div id="overlay" hidden></div>
+    </section>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
