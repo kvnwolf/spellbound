@@ -1107,7 +1107,8 @@ describe("AI Special Spells", () => {
     expect(maestro.paidOff / maestro.casts).toBeGreaterThan(
       novato.paidOff / novato.casts + 0.15
     );
-  });
+    // Plays many whole Duels: slow on a busy machine.
+  }, 20_000);
 });
 
 /**
