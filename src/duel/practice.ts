@@ -163,6 +163,7 @@ export const createPracticeKeeper = (
    */
   const restock = <T extends Meters>(self: T): T => {
     const key = `${self.id}:potions`;
+
     const spent = potionKinds.some(
       (kind) => self.potions[kind] < charges[kind]
     );
