@@ -151,12 +151,16 @@ export const createLooseWandView = (
 
   const wands = new Map<DuelistId, ReturnType<typeof createWand>>();
   const homecomings = new Map<DuelistId, Homecoming>();
+  // One Wand exists (hidden) from the start, so the load-time prewarm
+  // compiles its shaders before the first Disarm; the first Duelist takes it.
+  let spare: ReturnType<typeof createWand> | undefined = createWand();
 
   const wandOf = (id: DuelistId) => {
     let found = wands.get(id);
 
     if (!found) {
-      found = createWand();
+      found = spare ?? createWand();
+      spare = undefined;
       wands.set(id, found);
     }
 
