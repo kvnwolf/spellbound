@@ -313,6 +313,7 @@ const start = async () => {
   };
 
   const viewSettings = {
+    arena: courtyard,
     aura: wandAura,
     dodgeSeconds: tuning.defence.dodge.seconds,
     duelist: tuning.duelist,

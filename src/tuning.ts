@@ -1273,6 +1273,20 @@ export const tuning = {
       },
       /** Charging: `OverhandThrow` held at `chargeAt` seconds (the wind-up). A Clash: `Push_Loop` held at `clashAt`, the Wand trembling `tremble` metres `trembleRate` times a second. */
       chargeAt: 0.12,
+      /**
+       * A Clash, as in the films: the Wand arm thrust out along the beam, the
+       * tip `reach` metres further down it than `wandTip`; the chest leans
+       * `lean` radians into the push and turns `twist` radians to put the
+       * Wand shoulder forward; the free arm braced back and down for
+       * balance, the wrist `brace` metres from its shoulder (the Duelist's
+       * frame: +x left, +y up, +z ahead), the hand a fist.
+       */
+      clash: {
+        brace: [0.17, -0.38, -0.28],
+        lean: 0.12,
+        reach: 0.12,
+        twist: 0.3,
+      },
       clashAt: 0,
       /** Drinking: the left wrist goes to `lips` (metres from the head joint, the Duelist's frame) and the head tips back up to `headBack` radians as the vial empties. */
       drink: { headBack: 0.45, lips: [0.03, -0.02, 0.2] },
@@ -1387,8 +1401,39 @@ export const tuning = {
        * `frequency` Hz with `damping` (under 1, so it rebounds once).
        */
       kick: { damping: 0.5, frequency: 4, impulse: 4.5, sideShare: 0.5 },
-      /** The Knockout: `Death01` held lying from `lieAt` seconds; getting up (`LayToIdle`) fades out over its last `riseFadeSeconds`. */
-      knockout: { lieAt: 1.9, riseFadeSeconds: 0.35 },
+      /**
+       * The Knockout: `Death01` held lying from `lieAt` seconds; getting up
+       * (`LayToIdle`) fades out over its last `riseFadeSeconds`. The fall
+       * lays the body down behind the feet, so it finds `room` to lie in:
+       * the body as it lies is `body`, discs `[x, z, radius]` on the floor
+       * of the Duelist's frame (metres, +x left, +z ahead: feet, legs, hips,
+       * chest, head and the two flung hands). Every turn of the fall
+       * `turnStep` apart is tried, either way up to half a circle, each
+       * slid at most `maxShift` metres to keep `clearance` from the walls,
+       * Cover and Obstructions; the least turning and sliding wins
+       * (`shiftCost` radians a metre). The body eases to that turn and
+       * slide at `sharpness` as it falls, and back once it is up again.
+       */
+      knockout: {
+        lieAt: 1.9,
+        riseFadeSeconds: 0.35,
+        room: {
+          body: [
+            [0, 0.3, 0.34],
+            [0, -0.15, 0.28],
+            [0, -0.6, 0.28],
+            [0, -0.95, 0.28],
+            [0, -1.22, 0.18],
+            [0.39, -1.33, 0.1],
+            [-0.47, -1.53, 0.1],
+          ],
+          clearance: 0.05,
+          maxShift: 0.6,
+          sharpness: 7,
+          shiftCost: 4,
+          turnStep: Math.PI / 12,
+        },
+      },
       /**
        * The Dodge roll: `Roll` from `from` to `to` seconds of the clip over
        * the Dodge, then on at its own pace while it fades out over
@@ -1450,8 +1495,7 @@ export const tuning = {
      * cast flicks it (`flicks`: `raise` radians up, `inward` across, the hand
      * reaching `reach` metres ahead) over `flickSeconds` from the tip, so
      * the Spell leaves the Wand as it starts. Elbows bend toward
-     * `elbowHint`. Disarmed, the empty hand swings with the clips. In a Clash the
-     * free hand grips the Wand `clashGrip` metres behind the fist.
+     * `elbowHint`. Disarmed, the empty hand swings with the clips.
      */
     wand: {
       /**
@@ -1474,7 +1518,6 @@ export const tuning = {
         pointing: [0.05, 0.8, -0.6],
         tip: [-0.18, 2.16, -0.26],
       },
-      clashGrip: 0.11,
       elbowHint: [-0.5, -1, -0.6],
       flickSeconds: 0.2,
       flicks: {

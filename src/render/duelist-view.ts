@@ -27,12 +27,16 @@
  * Wand, and lowers again shortly after. A Charge raises it overhead instead,
  * and its release throws it down over the top, the Spell leaving as the tip
  * passes `wandTip`. Disarmed, that hand reaches for the
- * loose Wand instead; in a Clash the free hand grips the Wand too.
+ * loose Wand instead. In a Clash the Wand arm thrusts out along the beam,
+ * the chest leaning into it, and the free arm braces back, a fist.
  * Petrified, the pose freezes and the body turns to stone.
  *
  * It keeps every cue of the procedural wizard it replaces: the Lock-on rim
  * glow, the full-Focus Wand aura, the empty hand while Disarmed, the vial
  * raised while drinking and the auras of Potions at work.
+ *
+ * A Knockout's fall turns and slides as it goes down so the body lies on
+ * open floor, never through a wall, Cover or an Obstruction (`fall-room.ts`).
  *
  * A Practice rival down at zero Health falls and lies as at a Knockout,
  * and gets up as after one the moment its Health is back. A Training
@@ -49,6 +53,7 @@ import {
 import type { AnimationAction, Object3D } from "three/webgpu";
 
 import type {
+  ArenaLayout,
   DuelEvent,
   DuelistId,
   PotionKind,
@@ -58,6 +63,8 @@ import { springStep } from "../duel/geometry";
 import type { Point3 } from "../duel/geometry";
 import type { Tuning } from "../tuning";
 import type { DummyLook } from "./dummy-look";
+import { fallRoom, unmoved } from "./fall-room";
+import type { FallPlacement } from "./fall-room";
 import type { DuelistSample } from "./interpolate";
 import { locomotionClips } from "./wizard-assets";
 import type { WizardAssets } from "./wizard-assets";
@@ -100,6 +107,8 @@ export type PotionLookSettings = Tuning["potionLook"] & {
 };
 
 export interface DuelistViewSettings {
+  /** The Arena the Duelist is drawn in: a Knockout lies clear of its walls, Cover and Obstructions. */
+  readonly arena: ArenaLayout;
   readonly duelist: Tuning["duelist"];
   readonly glow: Tuning["lockOnGlow"];
   readonly stone: Tuning["petrifiedLook"];
@@ -226,6 +235,7 @@ export const createDuelistView = (
   dummy?: DummyLook
 ): DuelistView => {
   const {
+    arena,
     aura,
     dodgeSeconds,
     duelist,
@@ -278,6 +288,14 @@ export const createDuelistView = (
   }
 
   const durationOf = (clip: string) => actions.get(clip)?.duration ?? 1;
+
+  // The free hand's fist: the Wand hand's grip on the mirrored fingers.
+  const leftFist = [...assets.grip].flatMap(([name, fist]) => {
+    const finger = rig.model.getObjectByName(name.replace(/_r$/u, "_l"));
+
+    return finger ? [[finger, fist] as const] : [];
+  });
+
   const upper = createLayer();
   const lower = createLayer();
 
@@ -420,6 +438,11 @@ export const createDuelistView = (
   let rollAge = idle;
   let knockoutAge = idle;
   let riseAge = idle;
+  /** Where the fall is drawn (turned and slid clear of walls and Cover), eased toward `fallGoal`. */
+  const fall = { turn: 0, x: 0, z: 0 };
+  let fallGoal: FallPlacement = unmoved;
+  /** The ground point and facing `fallGoal` was found for. */
+  let fallFrom: { x: number; yaw: number; z: number } | null = null;
   let knockbackAge = idle;
   let staggerAge = idle;
   let rollYaw = 0;
@@ -1297,12 +1320,13 @@ export const createDuelistView = (
     pointing.normalize();
     pointing.lerp(vector(wand.shield).normalize(), weight.shield).normalize();
 
-    // A Clash: along the beam, straight ahead at the opponent, trembling.
+    // A Clash: along the beam, straight ahead at the opponent, thrust out
+    // down it and trembling.
     if (weight.clash > 0) {
       const pitch = Math.max(-1, Math.min(1, sample.aim.pitch));
-      pointing
-        .lerp(new Vector3(0, Math.sin(pitch), Math.cos(pitch)), weight.clash)
-        .normalize();
+      const beam = new Vector3(0, Math.sin(pitch), Math.cos(pitch));
+      pointing.lerp(beam, weight.clash).normalize();
+      tipLocal.addScaledVector(beam, motion.clash.reach * weight.clash);
 
       const shake =
         motion.tremble * Math.sin(clock * motion.trembleRate * Math.PI * 2);
@@ -1396,7 +1420,10 @@ export const createDuelistView = (
     holdWandLow(sample);
   };
 
-  /** In a Clash the free hand grips the Wand behind the fist. */
+  /**
+   * The free arm: the vial to the lips while drinking; in a Clash braced
+   * back and down for balance (`motion.clash.brace`), the hand a fist.
+   */
   const poseFreeArm = (sample: DuelistSample) => {
     // Drinking: the vial goes to the lips, the head tipping back as it empties.
     if (sample.drinking && weight.drink > 1e-3) {
@@ -1413,14 +1440,14 @@ export const createDuelistView = (
       return;
     }
 
-    rig.wand.updateWorldMatrix(true, false);
-    rig.wand.getWorldPosition(handTarget);
-    rig.wand.getWorldQuaternion(handRotation);
-    handTarget.addScaledVector(
-      up.clone().applyQuaternion(handRotation),
-      -wand.clashGrip
-    );
+    joints.upperArms[0].updateWorldMatrix(true, false);
+    joints.upperArms[0].getWorldPosition(handTarget);
+    handTarget.add(directionToWorld(vector(motion.clash.brace), scratch));
     reach(0, handTarget, null, weight.clash);
+
+    for (const [finger, fist] of leftFist) {
+      finger.quaternion.slerp(fist, weight.clash);
+    }
   };
 
   /** The right fist closes round the Wand (open while Disarmed). */
@@ -1577,6 +1604,25 @@ export const createDuelistView = (
   };
 
   /**
+   * In a Clash the chest leans into the push and turns the Wand shoulder
+   * forward, down the beam (`motion.clash`); the head still looks along it.
+   */
+  const leanIntoClash = () => {
+    if (weight.clash <= 1e-3) {
+      return;
+    }
+
+    const { lean: forward, twist: turned } = motion.clash;
+    const share = weight.clash / joints.spine.length;
+    directionToWorld(leftAxis.set(1, 0, 0), leftAxis);
+
+    for (const spine of joints.spine) {
+      turnAbout(spine, leftAxis, forward * share);
+      turnAbout(spine, up, turned * share);
+    }
+  };
+
+  /**
    * Turns the legs toward the motion; the chest turns back to the facing
    * only as far as a spine can (`counterTwist`), all the way while the Wand
    * is up, and the head looks the rest of the way (`headTurn` at most).
@@ -1636,6 +1682,7 @@ export const createDuelistView = (
       }
     }
 
+    leanIntoClash();
     lookAhead(sample);
 
     breatheAndSway();
@@ -1769,6 +1816,46 @@ export const createDuelistView = (
     }
   };
 
+  /**
+   * Down or getting up, the fall turns and slides (`motion.knockout.room`)
+   * so the body lies clear of the walls, Cover and Obstructions instead of
+   * through them; back on their feet, it eases back to the facing.
+   */
+  const placeFall = (
+    sample: DuelistSample,
+    facingYaw: number,
+    seconds: number
+  ) => {
+    const { room } = motion.knockout;
+    const down = sample.knockedOut || riseAge < durationOf("LayToIdle");
+    const { x, z } = sample.position;
+
+    if (!down) {
+      fallFrom = null;
+      fallGoal = unmoved;
+    } else if (
+      fallFrom?.x !== x ||
+      fallFrom.z !== z ||
+      fallFrom.yaw !== facingYaw
+    ) {
+      fallFrom = { x, yaw: facingYaw, z };
+      fallGoal = fallRoom(sample.position, facingYaw, arena, room);
+    }
+
+    fall.turn = approach(fall.turn, fallGoal.turn, room.sharpness, seconds);
+    fall.x = approach(fall.x, fallGoal.x, room.sharpness, seconds);
+    fall.z = approach(fall.z, fallGoal.z, room.sharpness, seconds);
+
+    // The slide is in the world; the body's frame is turned to the facing.
+    const cos = Math.cos(facingYaw);
+    const sin = Math.sin(facingYaw);
+    turn.position.set(
+      fall.x * cos - fall.z * sin,
+      0,
+      fall.x * sin + fall.z * cos
+    );
+  };
+
   /** Poses the whole body for `seconds`. */
   const pose = (sample: DuelistSample, seconds: number) => {
     clock += seconds;
@@ -1797,7 +1884,8 @@ export const createDuelistView = (
     // into how its motion changes (from the feet, on the ground only).
     const facingYaw = Math.atan2(sample.facing.x, sample.facing.z);
     const grounded = (1 - rolling) * (1 - weight.air) * (1 - weight.knockback);
-    turn.rotation.y = wrap(rollYaw - facingYaw) * rolling;
+    placeFall(sample, facingYaw, seconds);
+    turn.rotation.y = wrap(rollYaw - facingYaw) * rolling + fall.turn;
     turn.rotation.x = lean.forward * grounded;
     turn.rotation.z = -lean.left * grounded;
     object.updateMatrixWorld(true);
