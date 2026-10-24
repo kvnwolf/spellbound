@@ -13,7 +13,7 @@ import type {
   SpellState,
 } from "../duel/duel";
 import type { Point3 } from "../duel/geometry";
-import { reduceScreens } from "../screens/screens";
+import { noTraining, reduceScreens } from "../screens/screens";
 import type { MenuInput, Screen } from "../screens/screens";
 import { tuning } from "../tuning";
 import type { Tuning } from "../tuning";
@@ -62,7 +62,9 @@ const haptics: Tuning["haptics"] = {
   menu: {
     back: { left: 0, right: 0.3, seconds: 0.1 },
     confirm: { left: 0.2, right: 0.6, seconds: 0.1 },
+    lesson: { left: 0.4, right: 0.7, seconds: 0.4 },
     move: { left: 0, right: 0.2, seconds: 0.05 },
+    training: { left: 0.5, right: 0.8, seconds: 1 },
   },
   parry: { left: 0.2, right: 1, seconds: 0.1 },
   petrified: { left: 0, right: 0.3 },
@@ -708,7 +710,7 @@ describe("adaptive triggers", () => {
 /** What one menu input on `screen` is felt as: the screens step, and the menu sound it makes (if any) goes to the director. */
 const press = (screen: Screen, input: MenuInput) => {
   const after = reduceScreens(
-    { runs: 0, screen },
+    { runs: 0, screen, training: noTraining },
     { input, type: "input" },
     settings.screens
   ).screen;
@@ -718,7 +720,9 @@ const press = (screen: Screen, input: MenuInput) => {
   return direct()([], 0, { live: false, menu: sound ? [sound] : [] });
 };
 
-const main = (selected: "controls" | "duel" | "practice"): Screen => ({
+const main = (
+  selected: "controls" | "duel" | "practice" | "training"
+): Screen => ({
   kind: "main",
   selected,
 });
@@ -758,6 +762,21 @@ describe("the menus", () => {
 
   it("feels nothing for a step back with nowhere to go", () => {
     expect(press(main("duel"), "back").rumble).toStrictEqual(silence);
+  });
+
+  it("pulses full as a Training lesson is completed, and fuller as Training is", () => {
+    const lesson = direct()([], 0, {
+      live: true,
+      menu: [{ kind: "lesson-complete" }],
+    });
+
+    const training = direct()([], 0, {
+      live: true,
+      menu: [{ kind: "training-complete" }],
+    });
+
+    expect(lesson.rumble).toStrictEqual({ left: 0.4, right: 0.7 });
+    expect(training.rumble).toStrictEqual({ left: 0.5, right: 0.8 });
   });
 
   it("fades each pulse out over its length, even as the Duel it started begins", () => {

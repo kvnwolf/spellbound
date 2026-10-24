@@ -298,6 +298,14 @@ export const createHapticsDirector = (
       return settings.menu.move;
     }
 
+    if (kind === "lesson-complete") {
+      return settings.menu.lesson;
+    }
+
+    if (kind === "training-complete") {
+      return settings.menu.training;
+    }
+
     return kind === "menu-back" ? settings.menu.back : settings.menu.confirm;
   };
 

@@ -344,6 +344,58 @@
   color: rgb(239 228 200 / 25%);
 }
 
+/* A completed entry (a Training lesson, or Training played through): a gold tick after the label. */
+#overlay .overlay-done {
+  margin-inline-start: 0.6em;
+  color: var(--gold);
+  letter-spacing: 0;
+}
+
+/* A first-timer's pointer under Entrenamiento: a small gold line, gently breathing. */
+#overlay li.hinted {
+  border-color: rgb(216 180 106 / 40%);
+}
+
+#overlay .overlay-hint {
+  display: block;
+  margin-top: 0.2rem;
+  color: var(--gold);
+  font-size: 0.62em;
+  letter-spacing: 0.08em;
+  text-transform: none;
+  animation: overlay-hint-breathe 1.6s ease-in-out infinite alternate;
+}
+
+@keyframes overlay-hint-breathe {
+  from {
+    opacity: 0.6;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+/* Ten lessons: two columns of five, read down the first then the second, so they fit the screen. */
+#overlay[data-screen="lessons"] ul {
+  grid-auto-flow: column;
+  grid-template-rows: repeat(5, auto);
+  gap: 0.25rem 1.2rem;
+}
+
+#overlay[data-screen="lessons"] li {
+  padding-block: 0.38rem;
+  font-size: clamp(0.9rem, 1.8vw, 1.15rem);
+  text-align: start;
+}
+
+@media (width < 760px) {
+  #overlay[data-screen="lessons"] ul {
+    grid-auto-flow: row;
+    grid-template-rows: none;
+  }
+}
+
 /* The click-to-activate hint is for the connect prompt and the root menus, small and quiet under them. */
 #overlay .overlay-effects {
   margin-top: 0.5rem;

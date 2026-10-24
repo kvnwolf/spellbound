@@ -155,7 +155,11 @@ export const text = {
     quit: "Salir",
     /** In a Practice, Salir names where it goes. */
     quitToMenu: "Salir al menú",
+    /** In a Training lesson: out to the main menu. */
+    quitTraining: "Salir del entrenamiento",
     restart: "Reiniciar",
+    /** In a Training lesson: on to the next one, this one left undone. */
+    skipLesson: "Saltar lección",
   },
   /**
    * Punched onto the screen under the reticle, like a Spell's name, when the
@@ -213,6 +217,61 @@ export const text = {
   /** Over the title: one click anywhere starts, turning on the sound and the DualSense's effects too. */
   start: "Haz clic para comenzar",
   title: "Spellbound",
+  /** Entrenamiento: its lessons, and each goal as it shows top-centre in the lesson. */
+  training: {
+    /** A goal's count against what it asks for, after the goal. */
+    counter: (count: number, target: number, unit = "") =>
+      `(${String(count)}/${String(target)}${unit})`,
+    /** Ticks a completed lesson, and Entrenamiento once all are played through. */
+    done: "✓",
+    /** Under Entrenamiento on the main menu until Training has been played through. */
+    firstTime: "¿Primera vez? Empieza aquí",
+    /** Each goal, with its button: face buttons are drawn as their icons. */
+    goals: {
+      block: "Bloquea hechizos manteniendo L1",
+      clash: "Gana un Clash: suelta △ con la carga llena y pulsa △ sin parar",
+      confringo: "Mantén △ para cargar Confringo y acierta al maniquí",
+      disarmed: "Deja que el maniquí te desarme",
+      dodge: "Esquiva rodando con ○",
+      lockOff: "Suelta la fijación con R3",
+      lockOn: "Fija al maniquí con R3",
+      look: "Mira alrededor con el stick derecho",
+      parry: "Haz un Parry: pulsa L1 justo antes de que te alcance",
+      perfectDodge: "Esquiva perfecta: ○ justo antes de que te alcance",
+      perfectRelease:
+        "Liberación perfecta: suelta △ justo cuando la carga se llena",
+      pickup: "Recoge tu varita caminando sobre ella",
+      potion: "Bebe pociones: mantén L2 y pulsa un botón",
+      run: "Corre manteniendo R1",
+      special: "Lanza hechizos especiales: mantén R2 y pulsa un botón",
+      stupefy: "Acierta Stupefy con □",
+      walk: "Camina con el stick izquierdo",
+    },
+    heading: "Entrenamiento",
+    /** Above the goal: which lesson of how many. */
+    lessonCount: (number: number, total: number) =>
+      `Lección ${String(number)} de ${String(total)}`,
+    /** Over the goal once the lesson is completed. */
+    lessonDone: "¡Lección completada!",
+    lessons: {
+      clash: "Clash",
+      disarmed: "Desarmado",
+      dodge: "Esquiva",
+      heavy: "Hechizo pesado",
+      light: "Hechizo ligero",
+      lockOn: "Fijar objetivo",
+      move: "Moverse y mirar",
+      potions: "Pociones",
+      shield: "Escudo y Parry",
+      specials: "Hechizos especiales",
+    },
+    /** Over the lesson list. */
+    pick: "Elige una lección",
+    /** Once the last lesson is completed, before the main menu. */
+    trainingDone: "¡Entrenamiento completado!",
+    /** The units of the goals counted in metres or degrees. */
+    units: { look: "°", run: " m", walk: " m" },
+  },
   unsupportedBrowser: {
     body: "Spellbound necesita WebGPU. Ábrelo en una versión reciente de Chrome.",
     heading: "Navegador no compatible",

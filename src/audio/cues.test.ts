@@ -609,6 +609,25 @@ const tab = (open: "controls" | "mechanics"): Screen => ({
   tab: open,
 });
 
+/** A Training lesson on screen. */
+const lessonScreen = (name: "disarmed" | "move"): DuelScreen => ({
+  difficulty: "duelista",
+  kind: "duel",
+  over: null,
+  practice: "idle",
+  run: 1,
+  training: { doneSecondsLeft: null, lesson: name },
+});
+
+/** That lesson completed, its call-out holding. */
+const lessonCompleted = (screen: DuelScreen): DuelScreen => ({
+  ...screen,
+  training: {
+    doneSecondsLeft: 2,
+    lesson: screen.training?.lesson ?? "move",
+  },
+});
+
 describe(menuSoundFor, () => {
   const duel: DuelScreen = {
     difficulty: "duelista",
@@ -653,6 +672,32 @@ describe(menuSoundFor, () => {
     expect(menuSoundFor(pause, duel, input("back"))).toStrictEqual({
       kind: "menu-back",
     });
+  });
+
+  it("rings out a completed Training lesson, and the last one louder", () => {
+    const lessonDone = { type: "lesson-done" } as const;
+
+    expect(
+      menuSoundFor(
+        lessonScreen("move"),
+        lessonCompleted(lessonScreen("move")),
+        lessonDone
+      )
+    ).toStrictEqual({ kind: "lesson-complete" });
+    expect(
+      menuSoundFor(
+        lessonScreen("disarmed"),
+        lessonCompleted(lessonScreen("disarmed")),
+        lessonDone
+      )
+    ).toStrictEqual({ kind: "training-complete" });
+    expect(
+      menuSoundFor(
+        lessonCompleted(lessonScreen("move")),
+        lessonCompleted(lessonScreen("move")),
+        lessonDone
+      )
+    ).toBeNull();
   });
 
   it("stays quiet for what changes no screen", () => {

@@ -1284,7 +1284,11 @@ export const tuning = {
     menu: {
       back: { left: 0, right: 0.32, seconds: 0.06 },
       confirm: { left: 0.08, right: 0.45, seconds: 0.07 },
+      /** A Training lesson completed: a full, rounded swell. */
+      lesson: { left: 0.35, right: 0.6, seconds: 0.4 },
       move: { left: 0, right: 0.28, seconds: 0.045 },
+      /** Training played through: fuller and longer. */
+      training: { left: 0.5, right: 0.75, seconds: 0.9 },
     },
     /** A sharp, short pulse on a Parry. */
     parry: { left: 0.2, right: 1, seconds: 0.09 },
@@ -1788,8 +1792,12 @@ export const tuning = {
 
   /** The game flow between the title, the Difficulty select, the Duel and its result. */
   screens: {
+    /** A Training lesson's "¡Lección completada!" holds this long before the next lesson starts. */
+    lessonDoneSeconds: 2.5,
     /** The Duel's victory or defeat call-out plays this long before the result screen. */
     resultDelaySeconds: 3,
+    /** The last lesson's "¡Entrenamiento completado!" holds this long before the main menu. */
+    trainingDoneSeconds: 4,
   },
 
   /**
@@ -1841,6 +1849,51 @@ export const tuning = {
 
   /** The Duel simulation advances on a fixed timestep at this rate (Hz). */
   tickRate: 60,
+
+  /**
+   * Training: ten lessons, each a Practice against the Training Dummy that
+   * fits it and one goal after another on screen. Each goal's count is met
+   * when the Duel has reported it this many times (or, for walking, looking
+   * round and running, this many metres or degrees).
+   */
+  training: {
+    goals: {
+      /** Spells stopped on the Shield (L1). */
+      block: 3,
+      /** Clashes won by pumping △. */
+      clash: 1,
+      /** Confringos (△, Charged) that land. */
+      confringo: 1,
+      /** Times Disarmed by the dummy's Expelliarmus. */
+      disarmed: 1,
+      /** Dodges (○). */
+      dodge: 2,
+      /** Lock-on releases (R3). */
+      lockOff: 1,
+      /** Lock-ons (R3). */
+      lockOn: 1,
+      /** Degrees the camera turns with the right stick, either way. */
+      look: 360,
+      /** Parries (L1 just before a Spell lands). */
+      parry: 1,
+      /** Perfect Dodges. */
+      perfectDodge: 1,
+      /** Perfect Releases. */
+      perfectRelease: 1,
+      /** Wands picked up off the floor by walking over them. */
+      pickup: 1,
+      /** Potions drunk (L2 + a face button) all the way down. */
+      potion: 2,
+      /** Metres run holding R1. */
+      run: 8,
+      /** Special Spells cast (R2 + a face button). */
+      special: 3,
+      /** Stupefys (□) that land. */
+      stupefy: 3,
+      /** Metres walked with the left stick. */
+      walk: 5,
+    },
+  },
 
   /**
    * Full Focus (Expelliarmus ready): the Wand in hand glows scarlet,

@@ -15,6 +15,7 @@ import type {
   TeamId,
 } from "../duel/duel";
 import type { Point3 } from "../duel/geometry";
+import { lessons } from "../duel/training";
 import type { Screen, ScreenEvent } from "../screens/screens";
 import type { Tuning } from "../tuning";
 
@@ -465,9 +466,18 @@ export const cuesFor = (frame: CueFrame): Cue[] => {
   ];
 };
 
-/** A menu's sound: a highlight moving, a choice taken, a step back. */
+/**
+ * A menu's sound: a highlight moving, a choice taken, a step back; and the
+ * screens' own confirmations, a Training lesson completed and Training
+ * played through.
+ */
 export interface MenuSound {
-  readonly kind: "menu-back" | "menu-confirm" | "menu-move";
+  readonly kind:
+    | "lesson-complete"
+    | "menu-back"
+    | "menu-confirm"
+    | "menu-move"
+    | "training-complete";
 }
 
 /** What a menu event that took the screens from `before` to `after` sounds like; null when nothing changed. */
@@ -478,6 +488,14 @@ export const menuSoundFor = (
 ): MenuSound | null => {
   if (JSON.stringify(before) === JSON.stringify(after)) {
     return null;
+  }
+
+  if (event.type === "lesson-done") {
+    const lesson = after.kind === "duel" ? after.training?.lesson : undefined;
+
+    return {
+      kind: lesson === lessons.at(-1) ? "training-complete" : "lesson-complete",
+    };
   }
 
   if (

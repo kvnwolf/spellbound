@@ -207,20 +207,25 @@ export const sampleFor = (
   ...pick(sound.kind, sound, settings),
 });
 
+/** The sample each menu sound plays: a Training lesson borrows the Round-won stinger, Training the victory fanfare. */
+const menuSampleOf: Readonly<Record<MenuSound["kind"], SampleId>> = {
+  "lesson-complete": "round-won",
+  "menu-back": "menu-back",
+  "menu-confirm": "menu-confirm",
+  "menu-move": "menu-move",
+  "training-complete": "victory",
+};
+
 /** A menu's sound: its own sample, dry. */
 export const menuSampleFor = (sound: MenuSound): SamplePlay => ({
   bus: "ui",
   ducks: false,
   gain: 1,
   rate: 1,
-  sample: sound.kind,
+  sample: menuSampleOf[sound.kind],
 });
 
-const menuSamples: readonly MenuSound["kind"][] = [
-  "menu-back",
-  "menu-confirm",
-  "menu-move",
-];
+const menuSamples: readonly SampleId[] = Object.values(menuSampleOf);
 
 /** The sample each held sound loops. */
 export const loopSampleOf: Readonly<Record<LoopSound["kind"], SampleId>> = {
@@ -268,6 +273,7 @@ export const musicFor = (screen: Screen): MusicState => {
     screen.kind === "main" ||
     screen.kind === "difficulty" ||
     screen.kind === "rivals" ||
+    screen.kind === "lessons" ||
     screen.kind === "result"
   ) {
     return { ambience: false, dimmed: false, theme: "menu-theme" };

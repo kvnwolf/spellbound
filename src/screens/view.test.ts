@@ -49,16 +49,51 @@ describe("what each screen shows", () => {
     );
   });
 
-  it("names the game over the main menu and lists Duelo, Práctica, Entrenamiento and Controles, Entrenamiento greyed out", () => {
-    const view = viewOf({ kind: "main", selected: "practice" });
+  it("names the game over the main menu and lists Duelo, Práctica, Entrenamiento and Controles", () => {
+    const view = viewOf(
+      { kind: "main", selected: "practice" },
+      { completed: [], finished: true }
+    );
 
     expect(view?.heading).toBe(text.title);
     expect(view?.items).toStrictEqual([
       { label: "Duelo", selected: false },
       { label: "Práctica", selected: true },
-      { disabled: true, label: "Entrenamiento", selected: false },
+      { done: true, label: "Entrenamiento", selected: false },
       { label: "Controles", selected: false },
     ]);
+  });
+
+  it("points a first-timer at Entrenamiento until Training has been played through", () => {
+    const training = viewOf(
+      { kind: "main", selected: "duel" },
+      { completed: ["move", "lockOn"], finished: false }
+    )?.items?.[2];
+
+    expect(training).toStrictEqual({
+      hint: "¿Primera vez? Empieza aquí",
+      label: "Entrenamiento",
+      selected: false,
+    });
+  });
+
+  it("lists the ten lessons on Entrenamiento, the completed ones ticked", () => {
+    const view = viewOf(
+      { kind: "lessons", selected: "light" },
+      { completed: ["move", "heavy"], finished: false }
+    );
+
+    expect(view).toMatchObject({
+      body: text.training.pick,
+      heading: "Entrenamiento",
+    });
+    expect(view?.items?.slice(0, 4)).toStrictEqual([
+      { done: true, label: "1. Moverse y mirar", selected: false },
+      { label: "2. Fijar objetivo", selected: false },
+      { label: "3. Hechizo ligero", selected: true },
+      { done: true, label: "4. Hechizo pesado", selected: false },
+    ]);
+    expect(view?.items).toHaveLength(10);
   });
 
   it("heads the Difficulty select of a Duel with Duelo, and that of a Practice with Práctica", () => {
@@ -127,6 +162,23 @@ describe("what each screen shows", () => {
       "Cambiar rival",
       "Controles",
       "Salir al menú",
+    ]);
+  });
+
+  it("offers Continuar, Saltar lección, Controles and Salir del entrenamiento when a lesson is paused", () => {
+    const lesson: DuelScreen = {
+      ...duel,
+      practice: "idle",
+      training: { doneSecondsLeft: null, lesson: "move" },
+    };
+
+    expect(
+      viewOf({ duel: lesson, kind: "pause", selected: "continue" })?.items
+    ).toStrictEqual([
+      { label: "Continuar", selected: true },
+      { label: "Saltar lección", selected: false },
+      { label: "Controles", selected: false },
+      { label: "Salir del entrenamiento", selected: false },
     ]);
   });
 

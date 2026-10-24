@@ -14,16 +14,17 @@ import type { PotionKind } from "../duel/potions";
 import { practiceRivals } from "../duel/practice";
 import { boundTo, spellSlots } from "../duel/spell-slots";
 import type { SpecialSpellKind, SpellSlot } from "../duel/spell-slots";
+import { lessons } from "../duel/training";
 import { text } from "../text";
 import { tuning } from "../tuning";
 import {
   controlsTabs,
   mainMenuOptions,
+  noTraining,
   pauseOptionsFor,
   resultOptions,
-  unavailableMainMenuOptions,
 } from "./screens";
-import type { ControlsTab, Screen } from "./screens";
+import type { ControlsTab, Screen, TrainingRecord } from "./screens";
 
 export interface ScreenView {
   readonly screen: Screen["kind"];
@@ -34,6 +35,10 @@ export interface ScreenView {
     readonly selected: boolean;
     /** Listed but not available yet: greyed out, never highlighted. */
     readonly disabled?: true;
+    /** Completed: ticked. */
+    readonly done?: true;
+    /** A short line under the label, drawing the eye to it. */
+    readonly hint?: string;
   }[];
   /** A click anywhere does this (the title's start), said over a veil. */
   readonly action?: string;
@@ -168,7 +173,29 @@ const padBodies = {
   unsupported: text.requiresDualSense,
 };
 
-export const viewOf = (screen: Screen): ScreenView | undefined => {
+/**
+ * Entrenamiento on the main menu: ticked once played through, and pointed
+ * out to a first-timer until then.
+ */
+const markTraining = (
+  items: readonly MenuItem[],
+  training: TrainingRecord
+): MenuItem[] =>
+  items.map((item) => {
+    if (item.label !== text.mainMenu.training) {
+      return item;
+    }
+
+    return training.finished
+      ? { ...item, done: true }
+      : { ...item, hint: text.training.firstTime };
+  });
+
+/** What `screen` shows; the menus that name Training read what is remembered of it. */
+export const viewOf = (
+  screen: Screen,
+  training: TrainingRecord = noTraining
+): ScreenView | undefined => {
   if (screen.kind === "unsupported") {
     return {
       body: text.unsupportedBrowser.body,
@@ -192,11 +219,13 @@ export const viewOf = (screen: Screen): ScreenView | undefined => {
   if (screen.kind === "main") {
     return {
       heading: text.title,
-      items: menu(
-        mainMenuOptions,
-        screen.selected,
-        (option) => text.mainMenu[option],
-        unavailableMainMenuOptions
+      items: markTraining(
+        menu(
+          mainMenuOptions,
+          screen.selected,
+          (option) => text.mainMenu[option]
+        ),
+        training
       ),
       screen: screen.kind,
     };
@@ -211,6 +240,26 @@ export const viewOf = (screen: Screen): ScreenView | undefined => {
         label: text.controls.tabs[tab],
         selected: tab === screen.tab,
       })),
+    };
+  }
+
+  if (screen.kind === "lessons") {
+    return {
+      body: text.training.pick,
+      heading: text.training.heading,
+      items: menu(
+        lessons,
+        screen.selected,
+        (lesson) =>
+          `${String(lessons.indexOf(lesson) + 1)}. ${text.training.lessons[lesson]}`
+      ).map((item, index) => {
+        const lesson = lessons[index];
+
+        return lesson !== undefined && training.completed.includes(lesson)
+          ? { ...item, done: true as const }
+          : item;
+      }),
+      screen: screen.kind,
     };
   }
 

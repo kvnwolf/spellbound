@@ -27,6 +27,8 @@ import { idleIntent } from "./duel/intent";
 import type { Intent } from "./duel/intent";
 import { practiceRulesFor } from "./duel/practice";
 import type { PracticeRival } from "./duel/practice";
+import { advanceLesson, lessonPlans, startLesson } from "./duel/training";
+import type { LessonProgress } from "./duel/training";
 import { createFixedStepClock } from "./game-loop";
 import { createHud } from "./hud";
 import { createLoadingScreen } from "./loading-screen";
@@ -57,9 +59,16 @@ import {
   reduceScreens,
   showsDuel,
 } from "./screens/screens";
-import type { DuelScreen, PadKind, ScreenEvent } from "./screens/screens";
+import type {
+  DuelScreen,
+  PadKind,
+  Screen,
+  ScreenEvent,
+} from "./screens/screens";
 import { viewOf } from "./screens/view";
 import { createSpellSlotsHud } from "./spell-slots-hud";
+import { createTrainingHud } from "./training-hud";
+import { loadTraining, saveTraining } from "./training-store";
 import { tuning } from "./tuning";
 
 const localId: DuelistId = "local";
@@ -76,6 +85,19 @@ const element = <T extends HTMLElement>(
   }
 
   return found;
+};
+
+/** The Training lesson on show, running, paused or waiting for the controller. */
+const trainingOf = (screen: Screen): DuelScreen["training"] => {
+  if (screen.kind === "duel") {
+    return screen.training;
+  }
+
+  if (screen.kind === "pause") {
+    return screen.duel.training;
+  }
+
+  return screen.kind === "disconnected" ? trainingOf(screen.resume) : undefined;
 };
 
 const start = async () => {
@@ -101,10 +123,16 @@ const start = async () => {
   }
 
   // Which screen the game is on; the Duel only runs on the Duel screen.
-  let screens = initialScreenState(true);
+  // What Training remembers is kept in this browser.
+  let screens = initialScreenState(true, loadTraining());
 
   const send = (event: ScreenEvent) => {
+    const before = screens;
     screens = reduceScreens(screens, event, tuning.screens);
+
+    if (screens.training !== before.training) {
+      saveTraining(screens.training);
+    }
   };
 
   const menuInput = createMenuInput(tuning.menu);
@@ -149,14 +177,15 @@ const start = async () => {
 
   /**
    * What the screens ask for: a Duel against the AI at its Difficulty, or a
-   * Practice (same courtyard, Practice rules) against a Training Dummy or the AI.
+   * Practice (same courtyard, Practice rules) against a Training Dummy or
+   * the AI, which a Training lesson is too, set up as the lesson needs.
    */
-  type Match = Pick<DuelScreen, "difficulty" | "practice">;
+  type Match = Pick<DuelScreen, "difficulty" | "practice" | "training">;
 
   // Behind the menus sits a fresh Duel (run 0), frozen at its start.
   const waiting: Match = { difficulty: "duelista", practice: null };
 
-  const createDuelFor = ({ difficulty, practice }: Match) =>
+  const createDuelFor = ({ difficulty, practice, training }: Match) =>
     createDuel({
       arena: courtyard,
       difficulty,
@@ -165,7 +194,11 @@ const start = async () => {
         { id: opponentId, spawn: courtyardSpawns.far, team: "far" },
       ],
       practice:
-        practice === null ? undefined : practiceRulesFor(practice, localId),
+        practice === null
+          ? undefined
+          : practiceRulesFor(practice, localId, {
+              fullFocus: training && lessonPlans[training.lesson].fullFocus,
+            }),
       tuning,
     });
 
@@ -191,6 +224,8 @@ const start = async () => {
   let duel = createDuelFor(waiting);
   let controllers = createControllers(waiting);
   let activeRun = 0;
+  // The Training lesson being played: its goals, counted from the Duel.
+  let lesson: LessonProgress | undefined;
 
   const shake = createCameraShake(tuning.cameraShake);
 
@@ -415,6 +450,9 @@ const start = async () => {
   // "¡Clash!" and the △ pump prompt.
   const clashHud = createClashHud(hudElement, localId, tuning.hud.clash);
 
+  // A Training lesson's goal, top-centre.
+  const trainingHud = createTrainingHud(hudElement, tuning);
+
   // Opponents' floating Health bars and the damage numbers on them.
   const worldHud = createWorldHud(hudElement, localId, {
     ...tuning.hud,
@@ -460,6 +498,7 @@ const start = async () => {
     previous = duel.snapshot();
     current = previous;
     activeRun = run;
+    lesson = match.training && startLesson(match.training.lesson);
   };
 
   const intentsFor = (snapshot: DuelSnapshot) => {
@@ -487,6 +526,16 @@ const start = async () => {
     }
   };
 
+  /** This frame's menu sounds, heard and felt: the screens going from `before` with `event`. */
+  const soundMenu = (before: Screen, event: ScreenEvent) => {
+    audio.menu(before, screens.screen, event);
+    const sound = menuSoundFor(before, screens.screen, event);
+
+    if (sound) {
+      menuSounds.push(sound);
+    }
+  };
+
   /**
    * Tells the screens what the controller did this frame, then builds a new
    * Duel if they now call for one: a Duel or Practice they just started is a
@@ -499,12 +548,7 @@ const start = async () => {
     for (const event of menuInput.read(pad, seconds)) {
       const before = screens.screen;
       send(event);
-      audio.menu(before, screens.screen, event);
-      const sound = menuSoundFor(before, screens.screen, event);
-
-      if (sound) {
-        menuSounds.push(sound);
-      }
+      soundMenu(before, event);
     }
 
     const { screen } = screens;
@@ -515,13 +559,38 @@ const start = async () => {
       (screen.kind === "connect" ||
         screen.kind === "main" ||
         screen.kind === "difficulty" ||
-        screen.kind === "rivals") &&
+        screen.kind === "rivals" ||
+        screen.kind === "lessons") &&
       activeRun !== 0
     ) {
       startRun(0, waiting);
     }
 
     return screen;
+  };
+
+  /**
+   * Counts one tick toward the Training lesson's goals; the screens hear
+   * when its last goal is met, and it rings out and pulses.
+   */
+  const countLesson = (events: readonly DuelEvent[]) => {
+    if (!lesson || lesson.done) {
+      return;
+    }
+
+    lesson = advanceLesson(
+      lesson,
+      { after: current, before: previous, events },
+      localId,
+      tuning
+    );
+
+    if (lesson.done) {
+      const before = screens.screen;
+      const event = { type: "lesson-done" } as const;
+      send(event);
+      soundMenu(before, event);
+    }
   };
 
   /** Runs the ticks owed for `simSeconds`; the screens hear when the Duel ends. */
@@ -534,6 +603,7 @@ const start = async () => {
       const result = duel.step(intentsFor(current));
       current = result.snapshot;
       events.push(...result.events);
+      countLesson(result.events);
     }
 
     for (const event of events) {
@@ -748,7 +818,7 @@ const start = async () => {
       send({ seconds, type: "tick" });
     }
 
-    const view = viewOf(screens.screen);
+    const view = viewOf(screens.screen, screens.training);
 
     if (view) {
       overlay.show(view);
@@ -777,6 +847,14 @@ const start = async () => {
     hud.show(current, events, seconds);
     specialsHud.show(current);
     clashHud.show(current, events);
+    const training = trainingOf(screens.screen);
+    trainingHud.show(
+      training &&
+        lesson && {
+          done: training.doneSecondsLeft !== null,
+          progress: lesson,
+        }
+    );
     clashVfx.handle(events);
     clashVfx.update(previous.clash, current.clash, alpha, simSeconds, (id) =>
       views.get(id)?.wandTipPosition()

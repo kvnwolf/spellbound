@@ -118,6 +118,22 @@ export const createOverlay = (element: HTMLElement) => {
           entry.ariaDisabled = item.disabled ? "true" : null;
           entry.style.setProperty("--entry", String(index));
 
+          // A completed entry is ticked; a hint draws the eye under the label.
+          if (item.done) {
+            const tick = document.createElement("span");
+            tick.className = "overlay-done";
+            tick.textContent = text.training.done;
+            entry.append(tick);
+          }
+
+          if (item.hint !== undefined) {
+            const hint = document.createElement("small");
+            hint.className = "overlay-hint";
+            hint.textContent = item.hint;
+            entry.classList.add("hinted");
+            entry.append(hint);
+          }
+
           return entry;
         })
       );

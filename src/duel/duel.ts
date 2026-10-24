@@ -1667,7 +1667,12 @@ export const createDuel = (config: DuelConfig): Duel => {
 
   let current: DuelSnapshot = {
     clash: null,
-    duelists: lineUp(),
+    // A Training lesson on Special Spells starts the learner with full Focus.
+    duelists: lineUp().map((self) =>
+      practice?.fullFocus === true && self.id === practice.learner
+        ? { ...self, focus: tuning.focus.max }
+        : self
+    ),
     round: {
       number: 1,
       phase: practice ? "fighting" : "intro",

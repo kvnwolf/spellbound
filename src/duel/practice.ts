@@ -27,13 +27,26 @@ export interface PracticeRules {
    * Training Dummy can cast one on its beat without earning Focus.
    */
   readonly rivalsCastFree: boolean;
+  /**
+   * The learner starts with full Focus instead of none, as a Training lesson
+   * on Special Spells sets them up.
+   */
+  readonly fullFocus: boolean;
 }
 
-/** The rules for a Practice against `rival`: only Maniquí desarmador casts free. */
+/**
+ * The rules for a Practice against `rival`: only Maniquí desarmador casts
+ * free, and the learner starts with no Focus unless `fullFocus` is asked for.
+ */
 export const practiceRulesFor = (
   rival: PracticeRival,
-  learner: string
-): PracticeRules => ({ learner, rivalsCastFree: rival === "disarms" });
+  learner: string,
+  { fullFocus = false }: { readonly fullFocus?: boolean } = {}
+): PracticeRules => ({
+  fullFocus,
+  learner,
+  rivalsCastFree: rival === "disarms",
+});
 
 /** The meters Practice keeps up, as every Duelist carries them. */
 interface Meters {

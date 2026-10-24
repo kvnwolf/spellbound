@@ -22,6 +22,14 @@ _Avoid_: Death, kill
 A Duel with nothing at stake, for learning: no Knockout and no Round end, the practising Duelist's Health, Stamina and Focus are refilled, and the rival's Health comes back a moment after reaching zero; Cooldowns and Spell costs still apply.
 _Avoid_: Sandbox, free play
 
+**Training**:
+Ten Lessons played in order that teach the Duel, each a Practice against the Training Dummy that fits it; what has been completed is remembered in the browser.
+_Avoid_: Tutorial
+
+**Lesson**:
+One step of Training: one goal after another on screen, each met from what the Duel reports (a Spell landing, a Shield blocking, a Wand picked up), never from the buttons pressed.
+_Avoid_: Level, mission
+
 ### Participants
 
 **Duelist**:

@@ -111,6 +111,8 @@ const menuSounds: MenuSound[] = [
   { kind: "menu-back" },
   { kind: "menu-confirm" },
   { kind: "menu-move" },
+  { kind: "lesson-complete" },
+  { kind: "training-complete" },
 ];
 
 const loopKinds: LoopSound["kind"][] = [
@@ -143,6 +145,7 @@ describe("the music the screens call for", () => {
       { kind: "main", selected: "duel" },
       { kind: "difficulty", practice: false, selected: "novato" },
       { kind: "rivals", selected: "idle" },
+      { kind: "lessons", selected: "move" },
       {
         difficulty: "maestro",
         kind: "result",
@@ -295,6 +298,17 @@ describe("the sample a sound plays", () => {
     expect(menuSampleFor({ kind: "menu-move" })).toMatchObject({
       bus: "ui",
       sample: "menu-move",
+    });
+  });
+
+  it("plays a completed lesson's Round-won stinger, and Training's victory fanfare, dry", () => {
+    expect(menuSampleFor({ kind: "lesson-complete" })).toMatchObject({
+      bus: "ui",
+      sample: "round-won",
+    });
+    expect(menuSampleFor({ kind: "training-complete" })).toMatchObject({
+      bus: "ui",
+      sample: "victory",
     });
   });
 

@@ -1,8 +1,9 @@
 /**
  * The screen state machine: which screen the game is on, from the unsupported
  * browser, the title and the connect prompt through the main menu (the root once a
- * DualSense is there), the Difficulty select and the Practice rival picker,
- * to the Duel or Practice, its pause and the result. Pure: it is fed events
+ * DualSense is there), the Difficulty select, the Practice rival picker and
+ * Entrenamiento's lessons, to the Duel, Practice or Training lesson, its
+ * pause and the result; it also keeps what Training remembers. Pure: it is fed events
  * (the start click, the controller coming and going, menu inputs, the Duel
  * ending, time) and
  * lands on the next screen. It owns no three.js, no DOM and no clock; the
@@ -13,6 +14,8 @@ import { difficulties } from "../duel/difficulty";
 import type { Difficulty } from "../duel/difficulty";
 import { practiceRivals } from "../duel/practice";
 import type { PracticeRival } from "../duel/practice";
+import { lessonPlans, lessons } from "../duel/training";
+import type { Lesson } from "../duel/training";
 
 /** What is plugged in, as far as the screens care. */
 export type PadKind = "dualsense" | "none" | "unsupported";
@@ -25,11 +28,6 @@ export const mainMenuOptions = [
 ] as const;
 
 export type MainMenuOption = (typeof mainMenuOptions)[number];
-
-/** Main menu entries whose screens have not landed yet: listed, greyed out and never highlighted. */
-export const unavailableMainMenuOptions: ReadonlySet<MainMenuOption> = new Set([
-  "training",
-]);
 
 /** The pause of a Duel. */
 export const pauseOptions = [
@@ -47,9 +45,18 @@ export const practicePauseOptions = [
   "quit",
 ] as const;
 
+/** The pause of a Training lesson; Salir del entrenamiento goes to the main menu. */
+export const trainingPauseOptions = [
+  "continue",
+  "skipLesson",
+  "controls",
+  "quitTraining",
+] as const;
+
 export type PauseOption =
   | (typeof pauseOptions)[number]
-  | (typeof practicePauseOptions)[number];
+  | (typeof practicePauseOptions)[number]
+  | (typeof trainingPauseOptions)[number];
 
 export const resultOptions = ["rematch", "changeDifficulty"] as const;
 
@@ -69,6 +76,15 @@ export interface DuelScreen {
   readonly run: number;
   /** Set once the Duel has a winner: how long its call-out still plays before the result. */
   readonly over: { readonly won: boolean; readonly secondsLeft: number } | null;
+  /**
+   * Set for a Training lesson, a Practice against the lesson's Training
+   * Dummy: which lesson, and once it is completed, how long its call-out
+   * still holds before the next one.
+   */
+  readonly training?: {
+    readonly lesson: Lesson;
+    readonly doneSecondsLeft: number | null;
+  };
 }
 
 export interface MainScreen {
@@ -122,6 +138,8 @@ export type Screen =
     }
   /** The Practice rival picker: the Training Dummies and Rival real. */
   | { readonly kind: "rivals"; readonly selected: PracticeRival }
+  /** Entrenamiento's lessons, to start from any of them. */
+  | { readonly kind: "lessons"; readonly selected: Lesson }
   | DuelScreen
   | PauseScreen
   /** The DualSense dropped out mid-Duel; `resume` is where to return to. */
@@ -138,10 +156,21 @@ export type Screen =
       readonly selected: ResultOption;
     };
 
+/** What the player has done in Training, remembered between visits. */
+export interface TrainingRecord {
+  /** The lessons completed at least once, in lesson order. */
+  readonly completed: readonly Lesson[];
+  /** The last lesson has been completed: Training has been played through. */
+  readonly finished: boolean;
+}
+
+export const noTraining: TrainingRecord = { completed: [], finished: false };
+
 export interface ScreenState {
   readonly screen: Screen;
   /** Duels started so far. */
   readonly runs: number;
+  readonly training: TrainingRecord;
 }
 
 export type MenuInput =
@@ -163,24 +192,40 @@ export type ScreenEvent =
   /** Some button went down, whichever it is. */
   | { readonly type: "press" }
   | { readonly type: "duel-ended"; readonly won: boolean }
+  /** The Training lesson on screen saw its last goal met. */
+  | { readonly type: "lesson-done" }
   | { readonly type: "tick"; readonly seconds: number };
 
 export interface ScreenSettings {
   /** How long a finished Duel's call-out plays before the result screen. */
   readonly resultDelaySeconds: number;
+  /** How long a completed lesson's call-out holds before the next lesson. */
+  readonly lessonDoneSeconds: number;
+  /** How long the last lesson's call-out holds before the main menu. */
+  readonly trainingDoneSeconds: number;
 }
 
 /** The Difficulty highlighted the first time the select opens. */
 const defaultDifficulty: Difficulty = "duelista";
 
-export const initialScreenState = (supported: boolean): ScreenState => ({
+/** The first screen, with what is remembered of Training. */
+export const initialScreenState = (
+  supported: boolean,
+  training: TrainingRecord = noTraining
+): ScreenState => ({
   runs: 0,
   screen: supported ? { kind: "title", pad: "none" } : { kind: "unsupported" },
+  training,
 });
 
-/** The pause options for this Duel or Practice. */
-export const pauseOptionsFor = (duel: DuelScreen): readonly PauseOption[] =>
-  duel.practice === null ? pauseOptions : practicePauseOptions;
+/** The pause options for this Duel, Practice or Training lesson. */
+export const pauseOptionsFor = (duel: DuelScreen): readonly PauseOption[] => {
+  if (duel.training) {
+    return trainingPauseOptions;
+  }
+
+  return duel.practice === null ? pauseOptions : practicePauseOptions;
+};
 
 /**
  * Moves a highlight one step through `options`, over any `unavailable` ones,
@@ -228,6 +273,42 @@ const toControls = (
   screen: { from, kind: "controls", tab: controlsTabs[0] },
 });
 
+/** The lesson after `lesson`, or null after the last. */
+const lessonAfter = (lesson: Lesson): Lesson | null =>
+  lessons[lessons.indexOf(lesson) + 1] ?? null;
+
+/** Starts a Training lesson: a Practice against its Training Dummy, as a new run. */
+const startLesson = (state: ScreenState, lesson: Lesson): ScreenState => ({
+  ...state,
+  runs: state.runs + 1,
+  screen: {
+    difficulty: defaultDifficulty,
+    kind: "duel",
+    over: null,
+    practice: lessonPlans[lesson].rival,
+    run: state.runs + 1,
+    training: { doneSecondsLeft: null, lesson },
+  },
+});
+
+/** Entrenamiento's lessons, on the first not completed yet (or the first, all done). */
+const toLessons = (state: ScreenState): ScreenState => ({
+  ...state,
+  screen: {
+    kind: "lessons",
+    selected:
+      lessons.find((lesson) => !state.training.completed.includes(lesson)) ??
+      lessons[0],
+  },
+});
+
+/** On to the lesson after `lesson`, or out to the main menu after the last. */
+const nextLesson = (state: ScreenState, lesson: Lesson): ScreenState => {
+  const next = lessonAfter(lesson);
+
+  return next === null ? toMain(state, "training") : startLesson(state, next);
+};
+
 /** The Difficulty select highlighting `selected`, for a Duel or a Practice. */
 const toSelect = (
   state: ScreenState,
@@ -252,6 +333,7 @@ const startDuel = (
   difficulty: Difficulty,
   practice: PracticeRival | null = null
 ): ScreenState => ({
+  ...state,
   runs: state.runs + 1,
   screen: {
     difficulty,
@@ -325,12 +407,11 @@ const onMainInput = (
     return toControls(state, screen);
   }
 
-  const selected = step(
-    mainMenuOptions,
-    screen.selected,
-    input,
-    unavailableMainMenuOptions
-  );
+  if (input === "confirm" && screen.selected === "training") {
+    return toLessons(state);
+  }
+
+  const selected = step(mainMenuOptions, screen.selected, input);
 
   return { ...state, screen: { ...screen, selected } };
 };
@@ -374,6 +455,24 @@ const onRivalsInput = (
   return { ...state, screen: { ...screen, selected } };
 };
 
+const onLessonsInput = (
+  state: ScreenState,
+  screen: Extract<Screen, { kind: "lessons" }>,
+  input: MenuInput
+): ScreenState => {
+  if (input === "back") {
+    return toMain(state, "training");
+  }
+
+  if (input === "confirm") {
+    return startLesson(state, screen.selected);
+  }
+
+  const selected = step(lessons, screen.selected, input);
+
+  return { ...state, screen: { ...screen, selected } };
+};
+
 const onPauseInput = (
   state: ScreenState,
   screen: PauseScreen,
@@ -389,6 +488,14 @@ const onPauseInput = (
     const selected = step(pauseOptionsFor(duel), screen.selected, input);
 
     return { ...state, screen: { ...screen, selected } };
+  }
+
+  if (screen.selected === "skipLesson" && duel.training) {
+    return nextLesson(state, duel.training.lesson);
+  }
+
+  if (screen.selected === "quitTraining") {
+    return toMain(state, "training");
   }
 
   if (screen.selected === "restart") {
@@ -476,6 +583,10 @@ const onInput = (state: ScreenState, input: MenuInput): ScreenState => {
     return onControlsInput(state, screen, input);
   }
 
+  if (screen.kind === "lessons") {
+    return onLessonsInput(state, screen, input);
+  }
+
   if (screen.kind === "duel") {
     return input === "options"
       ? {
@@ -492,9 +603,73 @@ const onInput = (state: ScreenState, input: MenuInput): ScreenState => {
   return screen.kind === "result" ? onResultInput(state, screen, input) : state;
 };
 
+/** Counts a completed lesson's call-out down, then moves on. */
+const onTrainingTick = (
+  state: ScreenState,
+  screen: DuelScreen,
+  seconds: number
+): ScreenState => {
+  const { training } = screen;
+
+  if (!training || training.doneSecondsLeft === null) {
+    return state;
+  }
+
+  const doneSecondsLeft = training.doneSecondsLeft - seconds;
+
+  return doneSecondsLeft > 0
+    ? {
+        ...state,
+        screen: { ...screen, training: { ...training, doneSecondsLeft } },
+      }
+    : nextLesson(state, training.lesson);
+};
+
+/** A Training lesson completed: remembered, and its call-out held. */
+const onLessonDone = (
+  state: ScreenState,
+  settings: ScreenSettings
+): ScreenState => {
+  const { screen } = state;
+
+  if (
+    screen.kind !== "duel" ||
+    !screen.training ||
+    screen.training.doneSecondsLeft !== null
+  ) {
+    return state;
+  }
+
+  const { lesson } = screen.training;
+  const last = lessonAfter(lesson) === null;
+
+  return {
+    ...state,
+    screen: {
+      ...screen,
+      training: {
+        doneSecondsLeft: last
+          ? settings.trainingDoneSeconds
+          : settings.lessonDoneSeconds,
+        lesson,
+      },
+    },
+    training: {
+      completed: lessons.filter(
+        (each) => each === lesson || state.training.completed.includes(each)
+      ),
+      finished: state.training.finished || last,
+    },
+  };
+};
+
 /** Counts the finished Duel's call-out down, then shows the result. */
 const onTick = (state: ScreenState, seconds: number): ScreenState => {
   const { screen } = state;
+
+  if (screen.kind === "duel" && screen.training) {
+    return onTrainingTick(state, screen, seconds);
+  }
 
   if (screen.kind !== "duel" || !screen.over) {
     return state;
@@ -542,6 +717,10 @@ export const reduceScreens = (
 
   if (event.type === "tick") {
     return onTick(state, event.seconds);
+  }
+
+  if (event.type === "lesson-done") {
+    return onLessonDone(state, settings);
   }
 
   if (event.type === "press") {
