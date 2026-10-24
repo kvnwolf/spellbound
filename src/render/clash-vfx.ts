@@ -7,7 +7,8 @@
  * `tuning.clashLook`.
  *
  * - Each Duelist's half of the beam is a jet of light in their Spell's
- *   colours, as the films draw a Spell: a ribbon from their Wand tip to the
+ *   colours, the Spells' own jet strained (`createClashJet` in `jet.ts`),
+ *   as the films draw a Spell: a ribbon from their Wand tip to the
  *   meeting point, turned to the camera, with a white-hot core, a halo that
  *   churns with noise flowing toward the meeting point, pulses running down
  *   it, filaments twisting round it, and soft ends. It swells as it nears
@@ -34,7 +35,6 @@ import {
   length,
   mix,
   mx_noise_float,
-  positionGeometry,
   sin,
   smoothstep,
   uniform,
@@ -47,12 +47,7 @@ import type { Camera, Node } from "three/webgpu";
 import {
   AdditiveBlending,
   Color,
-  DoubleSide,
   Group,
-  Matrix4,
-  Mesh,
-  MeshBasicNodeMaterial,
-  PlaneGeometry,
   PointLight,
   Sprite,
   SpriteNodeMaterial,
@@ -65,6 +60,8 @@ import type { Point3 } from "../duel/geometry";
 import type { Tuning } from "../tuning";
 import { arcPoint, createClashArcs, growOf } from "./clash-arcs";
 import type { Arc } from "./clash-arcs";
+import { createClashJet, layRibbon } from "./jet";
+import type { ClashJet } from "./jet";
 import type { SparkRing } from "./spark-ring";
 import { seededRandom } from "./spark-ring";
 
@@ -110,130 +107,6 @@ const paint = (target: Vector3, color: Color) => {
 
 const between = (random: () => number, range: { min: number; max: number }) =>
   range.min + (range.max - range.min) * random();
-
-/**
- * One Duelist's half of the beam: a jet of light from the Wand (along 0) to
- * the meeting point (along 1), on a ribbon the caller turns to the camera.
- * Its own uniforms: how long it is, the clock, a seed, its colours and the
- * surge running down it.
- */
-const createJet = (look: Look["beam"]) => {
-  const metresLong = uniform(1);
-  const time = uniform(0);
-  const seed = uniform(0);
-  const main = uniform(new Vector3());
-  const hot = uniform(new Vector3());
-  // Where the surge's front is (metres from the Wand) and how strong it is.
-  const surge = uniform(new Vector2(-100, 0));
-
-  const along = uv().x;
-  const across = uv().y.mul(2).sub(1);
-  const metres = along.mul(metresLong);
-  const flow = metres.mul(look.noiseScale).sub(time.mul(look.flowSpeed));
-  const churn = mx_noise_float(vec3(flow, across.mul(1.5), seed));
-
-  // Swollen where it pushes against the other.
-  const swell = smoothstep(1 - look.swell.reach, 1, along)
-    .pow(2)
-    .mul(look.swell.amount)
-    .add(1);
-
-  const core = exp(squared(across.div(swell.mul(look.core))).negate());
-
-  const halo = exp(
-    squared(
-      across.div(churn.mul(look.churn).add(1).mul(look.halo).mul(swell))
-    ).negate()
-  );
-
-  const pulses = sin(metres.mul(look.pulseRate).sub(time.mul(look.pulseSpeed)))
-    .mul(0.5)
-    .add(0.5)
-    .mul(look.pulse)
-    .add(1 - look.pulse);
-
-  const filament = (phase: number, rate: number) => {
-    const sway = mx_noise_float(vec3(flow.mul(0.5), seed, phase))
-      .mul(0.5)
-      .add(0.5);
-
-    const wiggle = sin(
-      metres.mul(rate).sub(time.mul(look.filamentSpeed)).add(seed.add(phase))
-    )
-      .mul(look.filamentAmplitude)
-      .mul(sway)
-      .mul(swell);
-
-    return exp(squared(across.sub(wiggle).div(look.filamentWidth)).negate());
-  };
-
-  const filaments = filament(0, 7).add(filament(2.1, 11)).add(filament(4.3, 5));
-
-  // The surge: a bright knot of light racing down the jet to the meeting point.
-  const surgeBand = exp(
-    squared(metres.sub(surge.x).div(look.surge.width)).negate()
-  ).mul(surge.y);
-
-  const ends = smoothstep(0, look.wandSoft, along).mul(
-    smoothstep(1, 1 - look.knotSoft, along)
-  );
-
-  // Brighter toward the meeting point, where the energy piles up.
-  const ramp = along.mul(1 - look.rampFrom).add(look.rampFrom);
-
-  const material = new MeshBasicNodeMaterial({
-    blending: AdditiveBlending,
-    depthWrite: false,
-    forceSinglePass: true,
-    side: DoubleSide,
-    transparent: true,
-  });
-
-  // The two jets strain against each other: a slow sway, pinned at both ends.
-  const sway = sin(along.mul(Math.PI))
-    .mul(
-      sin(
-        along
-          .mul(look.sway.waves * Math.PI * 2)
-          .sub(time.mul(look.sway.speed))
-          .add(seed.mul(3))
-      )
-    )
-    .mul(look.sway.amount);
-
-  material.positionNode = vec3(
-    positionGeometry.x,
-    positionGeometry.y.add(sway),
-    positionGeometry.z
-  );
-
-  material.colorNode = vec4(
-    hot
-      .mul(
-        core.mul(surgeBand.mul(look.surge.core).add(1)).mul(look.coreIntensity)
-      )
-      .add(
-        main.mul(
-          halo
-            .mul(pulses)
-            .mul(surgeBand.mul(look.surge.halo).add(1))
-            .mul(look.haloIntensity)
-        )
-      )
-      .add(mix(main, hot, 0.3).mul(filaments.mul(look.filamentIntensity)))
-      .mul(ends)
-      .mul(ramp),
-    1
-  );
-
-  const mesh = new Mesh(new PlaneGeometry(1, 1, look.segments, 1), material);
-
-  mesh.frustumCulled = false;
-
-  return { hot, main, mesh, metresLong, seed, surge, time };
-};
-
-type Jet = ReturnType<typeof createJet>;
 
 /**
  * The knot where the jets meet: a white-hot heart in a churning corona,
@@ -309,7 +182,7 @@ export const createClashVfx = ({
   object.add(effect);
   const random = seededRandom(23);
 
-  const jets = [createJet(look.beam), createJet(look.beam)] as const;
+  const jets = [createClashJet(look.beam), createClashJet(look.beam)] as const;
   jets[1].seed.value = 3.7;
   effect.add(jets[0].mesh, jets[1].mesh);
 
@@ -351,37 +224,24 @@ export const createClashVfx = ({
   const point = new Vector3();
   const beamAxis = new Vector3();
   const eye = new Vector3();
-  const axis = new Vector3();
+  const wand = new Vector3();
   const side = new Vector3();
-  const normal = new Vector3();
-  const basis = new Matrix4();
   const screenKnot = new Vector3();
   const screenWand = new Vector3();
   let sideIds: readonly [DuelistId, DuelistId] | undefined;
   let lengths = [1, 1];
 
   /** Lays a jet from the Wand `from` to the meeting point, turned to face the camera. */
-  const layJet = (jet: Jet, from: Point3, to: Vector3) => {
-    axis.set(to.x - from.x, to.y - from.y, to.z - from.z);
-    const metres = Math.max(axis.length(), 1e-3);
-    axis.divideScalar(metres);
-    jet.mesh.position.set(
-      (from.x + to.x) / 2,
-      (from.y + to.y) / 2,
-      (from.z + to.z) / 2
-    );
+  const layJet = (jet: ClashJet, from: Point3, to: Vector3) => {
     viewer?.getWorldPosition(eye);
-    side.copy(axis).cross(eye.sub(jet.mesh.position));
-
-    if (side.lengthSq() < 1e-8) {
-      side.set(0, 1, 0).cross(axis);
-    }
-
-    side.normalize();
-    normal.copy(axis).cross(side);
-    basis.makeBasis(axis, side, normal);
-    jet.mesh.quaternion.setFromRotationMatrix(basis);
-    jet.mesh.scale.set(metres, look.beam.width, 1);
+    layRibbon(
+      jet.mesh,
+      wand.set(from.x, from.y, from.z),
+      to,
+      look.beam.width,
+      eye
+    );
+    const metres = jet.mesh.scale.x;
     jet.metresLong.value = metres;
     jet.time.value = time;
 

@@ -713,9 +713,9 @@ export const tuning = {
      * filaments twisting round it (`filamentAmplitude`, `filamentWidth`,
      * `filamentSpeed`). It swells `swell.amount` over the last `swell.reach`
      * of its length, sways `sway.amount` (of its half-width, `sway.waves`
-     * along it, at `sway.speed`), softens over `wandSoft` and `knotSoft` at
-     * its ends and brightens from `rampFrom` at the Wand to full at the
-     * meeting point. A pump's `surge` races down it at `speed`, `width`
+     * along it, at `sway.speed`), softens over `tailSoft` at the Wand and
+     * `headSoft` at the meeting point and brightens from `rampFrom` at the
+     * Wand to full at the meeting point. A pump's `surge` races down it at `speed`, `width`
      * long, brightening the core and halo by `core` and `halo`.
      */
     beam: {
@@ -729,7 +729,7 @@ export const tuning = {
       flowSpeed: 16,
       halo: 0.28,
       haloIntensity: 1.1,
-      knotSoft: 0.06,
+      headSoft: 0.06,
       noiseScale: 1.4,
       pulse: 0.35,
       pulseRate: 2.4,
@@ -739,7 +739,7 @@ export const tuning = {
       surge: { core: 1.2, halo: 1.6, speed: 28, width: 0.35 },
       sway: { amount: 0.06, speed: 7, waves: 1.5 },
       swell: { amount: 0.8, reach: 0.35 },
-      wandSoft: 0.06,
+      tailSoft: 0.06,
       width: 0.9,
     },
     /**
