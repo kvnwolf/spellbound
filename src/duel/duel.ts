@@ -823,6 +823,8 @@ interface Bookkeeping {
   cooldownTicks: Record<SpecialSpellKind, number>;
   /** Ticks left of an Incendio Burn. */
   burnTicks: number;
+  /** Who cast the Incendio behind the Burn: its damage grows with their Strength. */
+  burnCasterId: DuelistId | undefined;
   /** Ticks left Petrified. */
   petrifiedTicks: number;
   /** The Wand knocked loose by Expelliarmus, while Disarmed. */
@@ -854,6 +856,7 @@ type Release =
 
 const freshBookkeeping = (): Bookkeeping => ({
   acceleration: { x: 0, z: 0 },
+  burnCasterId: undefined,
   burnTicks: 0,
   buttons: { dodge: false, jump: false, shield: false, sprint: false },
   chain: 0,
@@ -2467,6 +2470,7 @@ export const createDuel = (config: DuelConfig): Duel => {
 
     for (const each of caught) {
       books(each.id).burnTicks = ticksOf(incendio.burn.seconds);
+      books(each.id).burnCasterId = spell.casterId;
     }
 
     draft.events.push({
@@ -3077,7 +3081,11 @@ export const createDuel = (config: DuelConfig): Duel => {
         damage.set(
           self.id,
           (damage.get(self.id) ?? 0) +
-            incendio.burn.damagePerSecond * tickSeconds
+            incendio.burn.damagePerSecond *
+              tickSeconds *
+              (book.burnCasterId === undefined
+                ? 1
+                : strengthOf(book.burnCasterId))
         );
       }
     }

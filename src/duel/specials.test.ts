@@ -387,6 +387,35 @@ describe("Incendio", () => {
     expect(duelist(duel, "rival").health).toBeCloseTo(health - total, 0);
   });
 
+  it("hits and Burns harder under its caster's Strength Potion", () => {
+    const duel = fight();
+    buildFocus(duel, segmentCost(incendio.segments));
+    run(duel, 1, {
+      hero: intent({ potionSlots: { held: true, press: "up" } }),
+    });
+    run(duel, secondsToTicks(tuning.potions.drink.seconds + 0.1));
+    const { health } = duelist(duel, "rival");
+
+    const events = [
+      ...castFromSlot(duel, toIncendio),
+      ...run(duel, secondsToTicks(1 + incendio.burn.seconds)),
+    ];
+
+    const { damageScale } = tuning.potions.strength;
+
+    const total =
+      (incendio.damage +
+        incendio.burn.damagePerSecond * incendio.burn.seconds) *
+      damageScale;
+
+    expect(duelist(duel, "hero").potionEffects.strength).toBeGreaterThan(0);
+    expect(ofType(events, "spell-hit")).toMatchObject([
+      { damage: incendio.damage * damageScale, targetId: "rival" },
+    ]);
+    expect(duelist(duel, "rival").burnSeconds).toBe(0);
+    expect(duelist(duel, "rival").health).toBeCloseTo(health - total, 0);
+  });
+
   it("is blocked by a Shield, but its Burn reaches the Shielded Duelist inside the blast", () => {
     const duel = fight();
     buildFocus(duel, segmentCost(incendio.segments));
