@@ -3,6 +3,8 @@
  * menu items with the highlighted one marked (and any not available yet
  * greyed out). The overlay draws it; the Duel
  * screen itself shows nothing here, since the Duel and its HUD are the picture.
+ * Every string comes from `text` as it is when the view is taken, so a view
+ * taken after a change of language is in the new one.
  */
 import { humanBindings } from "../controllers/human-controller";
 import type { HumanAction } from "../controllers/human-controller";
@@ -16,20 +18,25 @@ import { boundTo, spellSlots } from "../duel/spell-slots";
 import type { SpecialSpellKind, SpellSlot } from "../duel/spell-slots";
 import { goalOf, lessonSections, lessons } from "../duel/training";
 import type { Lesson, LessonProgress } from "../duel/training";
-import { text } from "../text";
+import { language, text } from "../text";
 import { tuning } from "../tuning";
 import {
   controlsTabs,
+  defaultOptions,
   lessonDoneOptions,
   lockedOptions,
   mainMenuOptions,
   noTraining,
+  optionsEntries,
   pauseOptionsFor,
   resultOptions,
   trainingComplete,
 } from "./screens";
 import type {
   ControlsTab,
+  OptionsEntry,
+  PadKind,
+  PlayerOptions,
   Screen,
   ScrollScreen,
   TrainingRecord,
@@ -48,7 +55,13 @@ export interface ScreenView {
     readonly done?: true;
     /** A short line under the label, drawing the eye to it. */
     readonly hint?: string;
+    /** What it is set to, changed with left and right (Opciones). */
+    readonly value?: string;
+    /** A volume's share of its range, 0 to 1, drawn as a bar beside its value. */
+    readonly level?: number;
   }[];
+  /** What it takes to play, each a short line (the can't-play notice). */
+  readonly needs?: readonly string[];
   /** A click anywhere does this (the title's start), said over a veil. */
   readonly action?: string;
   /** Tabs over the content, switched with L1 and R1; the open one marked. */
@@ -164,14 +177,14 @@ const labelledActions: readonly HumanAction[] = [
   "potionSlots",
 ];
 
-const details: Partial<Record<HumanAction, string>> = text.controls.details;
-
 const controlLabels = (): ControlLabel[] => [
   ...labelledActions.map((action): ControlLabel => {
     const label = {
       control: humanBindings[action],
       label: text.controls.actions[action],
     };
+
+    const details: Partial<Record<HumanAction, string>> = text.controls.details;
 
     const detail = details[action];
 
@@ -215,11 +228,9 @@ const helpFor = (tab: ControlsTab): ControlsHelp =>
       }
     : { cards: text.controls.mechanics, tab };
 
-const padBodies = {
-  dualsense: text.connectDualSense,
-  none: text.connectDualSense,
-  unsupported: text.requiresDualSense,
-};
+/** What the connect prompt asks for, given what is plugged in. */
+const padBody = (pad: PadKind) =>
+  pad === "unsupported" ? text.requiresDualSense : text.connectDualSense;
 
 /**
  * Entrenamiento on the main menu: ticked once every lesson is completed,
@@ -303,15 +314,46 @@ const lessonsView = (
   };
 };
 
-/** What `screen` shows; the menus that name Training read what is remembered of it. */
+/** Opciones' entries: the language by its own name, each volume as a share. */
+const optionsItems = (
+  selected: OptionsEntry,
+  options: PlayerOptions
+): MenuItem[] =>
+  optionsEntries.map((entry): MenuItem => {
+    const item = { label: text.options[entry], selected: entry === selected };
+
+    if (entry === "language") {
+      return { ...item, value: text.options.languages[options.language] };
+    }
+
+    const level = options[entry] / tuning.screens.volumeSteps;
+
+    return {
+      ...item,
+      level,
+      value: text.options.volume(Math.round(level * 100)),
+    };
+  });
+
+/**
+ * What `screen` shows; the menus that name Training read what is remembered
+ * of it, and Opciones the player's Options.
+ */
 export const viewOf = (
   screen: Screen,
-  training: TrainingRecord = noTraining
+  training: TrainingRecord = noTraining,
+  options: PlayerOptions = defaultOptions(
+    language(),
+    tuning.screens.volumeSteps
+  )
 ): ScreenView | undefined => {
   if (screen.kind === "unsupported") {
+    const notice = text.unsupported[screen.reason];
+
     return {
-      body: text.unsupportedBrowser.body,
-      heading: text.unsupportedBrowser.heading,
+      body: notice.body,
+      heading: notice.heading,
+      needs: text.unsupported.needs,
       screen: screen.kind,
     };
   }
@@ -322,7 +364,7 @@ export const viewOf = (
 
   if (screen.kind === "connect") {
     return {
-      body: padBodies[screen.pad],
+      body: padBody(screen.pad),
       heading: text.title,
       screen: screen.kind,
     };
@@ -353,6 +395,14 @@ export const viewOf = (
         label: text.controls.tabs[tab],
         selected: tab === screen.tab,
       })),
+    };
+  }
+
+  if (screen.kind === "options") {
+    return {
+      heading: text.options.heading,
+      items: optionsItems(screen.selected, options),
+      screen: screen.kind,
     };
   }
 
@@ -430,9 +480,6 @@ export const viewOf = (
   return undefined;
 };
 
-/** The counter's units, for the goals counted in metres or degrees. */
-const units: Partial<Record<string, string>> = text.training.units;
-
 /**
  * A lesson's line top-centre: the goal on show with its buttons and its
  * count, "Acierta Stupefy con □ (1/3)", or "¡Lección completada!" once done.
@@ -443,6 +490,8 @@ export const goalLineOf = (progress: LessonProgress): string => {
   }
 
   const { count, goal, target } = goalOf(progress, tuning);
+  // The counter's units, for the goals counted in metres or degrees.
+  const units: Partial<Record<string, string>> = text.training.units;
 
   return `${withSlots(text.training.goals[goal])} ${text.training.counter(Math.floor(count), target, units[goal])}`;
 };

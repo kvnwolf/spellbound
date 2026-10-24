@@ -21,7 +21,7 @@ import {
   setData,
 } from "./slot-diamond";
 import type { DiamondSlot } from "./slot-diamond";
-import { text } from "./text";
+import { keepTranslated, text } from "./text";
 import type { Tuning } from "./tuning";
 
 type PotionHudSettings = Pick<Tuning, "potionSlots" | "potions">;
@@ -101,7 +101,9 @@ const createSlot = (
   if (kind) {
     potionVial(kind, badge, "ps-glyph");
     item.dataset.potion = kind;
-    name.textContent = text.potions[kind];
+    keepTranslated(() => {
+      name.textContent = text.potions[kind];
+    });
   }
 
   return {
@@ -128,7 +130,9 @@ const createEffects = (parent: HTMLElement, settings: PotionHudSettings) => {
   const effects = lasting.map((kind) => {
     const item = create("div", "ps-effect", root);
     item.dataset.potion = kind;
-    item.setAttribute("aria-label", text.potions[kind]);
+    keepTranslated(() => {
+      item.setAttribute("aria-label", text.potions[kind]);
+    });
     potionVial(kind, item, "ps-effect-glyph");
     const seconds = create("span", "ps-effect-seconds", item);
 
@@ -161,7 +165,9 @@ export const createPotionSlotsHud = (
   const frame = create("div", "ps-frame");
   vitals.prepend(frame);
   const diamond = createSlotDiamond(frame, "ps-diamond", dpadDiamond);
-  diamond.element.setAttribute("aria-label", text.potions.label);
+  keepTranslated(() => {
+    diamond.element.setAttribute("aria-label", text.potions.label);
+  });
 
   const slots = potionSlots.map((slot) =>
     createSlot(diamond.slot(slot), slot, settings)

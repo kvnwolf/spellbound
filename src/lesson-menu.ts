@@ -10,7 +10,7 @@
 import "./lesson-menu.css";
 import { writeWithIcons } from "./button-icons";
 import type { LessonsView } from "./screens/view";
-import { text } from "./text";
+import { keepTranslated, text } from "./text";
 
 const create = <K extends keyof HTMLElementTagNameMap>(
   tag: K,
@@ -42,11 +42,9 @@ export const createLessonMenu = (parent: HTMLElement): LessonMenu => {
   const root = create("div", "lesson-menu", parent);
   const header = create("header", "lesson-menu-header", root);
   const title = create("h2", "lesson-menu-title", header);
-  title.textContent = text.training.heading;
   const progress = create("p", "lesson-menu-progress", header);
   const list = create("div", "lesson-list", root);
   list.setAttribute("role", "listbox");
-  list.setAttribute("aria-label", text.training.heading);
   const preview = create("section", "lesson-preview", root);
   const stage = create("div", "lesson-preview-stage", preview);
   const canvas = create("canvas", "lesson-preview-canvas", stage);
@@ -138,6 +136,16 @@ export const createLessonMenu = (parent: HTMLElement): LessonMenu => {
   };
 
   let lastKey: string | undefined;
+
+  // In another language the list is built again, from the next view.
+  keepTranslated(() => {
+    title.textContent = text.training.heading;
+    list.setAttribute("aria-label", text.training.heading);
+    list.replaceChildren();
+    entries.clear();
+    built = false;
+    lastKey = undefined;
+  });
 
   // A resized window keeps the highlight in the list's view too.
   new ResizeObserver(() => {

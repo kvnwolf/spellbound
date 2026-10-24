@@ -9,7 +9,9 @@
  * The mix: the Duel's sounds go through the `sfx` bus, with a synthesised
  * stone-courtyard reverb; countdown, stingers, Lock-on ticks and menus
  * through the dry `ui` bus; themes and fanfares through `music`, the
- * courtyard at night through `ambience`. All meet in the master volume, then
+ * courtyard at night through `ambience`. The player's Options set two more
+ * volumes over them: the music's, and the effects' (every other bus). All
+ * meet in the master volume, then
  * a compressor and a soft clip under a fixed ceiling, so peaks stay under
  * 0 dBFS however much plays at once.
  *
@@ -23,12 +25,12 @@ import type { Object3D } from "three/webgpu";
 
 import type { ActivationHint } from "../activation-hint";
 import type { DuelEvent, DuelistId, DuelSnapshot } from "../duel/duel";
-import type { Screen, ScreenEvent } from "../screens/screens";
+import type { Screen } from "../screens/screens";
 import type { Tuning } from "../tuning";
 import { loadSamples } from "./bank";
 import type { Sample, SampleBank } from "./bank";
-import { cuesFor, loopsFor, menuSoundFor } from "./cues";
-import type { Loop, LoopSound } from "./cues";
+import { cuesFor, loopsFor } from "./cues";
+import type { Loop, LoopSound, MenuSound } from "./cues";
 import { createMusic } from "./music";
 import {
   loopSampleOf,
@@ -54,10 +56,18 @@ export interface AudioFrame {
   readonly screen: Screen;
 }
 
+/** The player's two volumes, each a gain from 0 (silent) to 1 (as mixed). */
+export interface Volumes {
+  readonly music: number;
+  readonly effects: number;
+}
+
 export interface DuelAudio {
   readonly frame: (frame: AudioFrame) => void;
-  /** A menu event took the screens from `before` to `after`. */
-  readonly menu: (before: Screen, after: Screen, event: ScreenEvent) => void;
+  /** Plays a menu's sound. */
+  readonly menu: (sound: MenuSound) => void;
+  /** Sets the player's music and effects volumes, now and for when the sound starts. */
+  readonly volumes: (volumes: Volumes) => void;
 }
 
 /** Transparent below `knee`, rounding smoothly toward 1 above it; inputs past ±1 hold at the curve's ends. */
@@ -104,7 +114,11 @@ const gainNode = (ctx: AudioContext, value: number) => {
 };
 
 /** The buses, the reverb, the music's duck and dim, and the master chain down to the speakers. */
-const createMixer = (ctx: AudioContext, settings: AudioSettings) => {
+const createMixer = (
+  ctx: AudioContext,
+  settings: AudioSettings,
+  volumes: Volumes
+) => {
   const master = gainNode(ctx, settings.muted ? 0 : settings.master);
   const compressor = ctx.createDynamicsCompressor();
   const { attack, knee, ratio, release, threshold } = settings.compressor;
@@ -125,16 +139,22 @@ const createMixer = (ctx: AudioContext, settings: AudioSettings) => {
     .connect(output)
     .connect(ctx.destination);
 
+  // The player's volumes: the music's, and the effects' over every other bus.
+  const musicVolume = gainNode(ctx, volumes.music);
+  const effectsVolume = gainNode(ctx, volumes.effects);
+  const ambienceVolume = gainNode(ctx, volumes.effects);
+  effectsVolume.connect(master);
+
   const sfx = gainNode(ctx, settings.buses.sfx);
   const ui = gainNode(ctx, settings.buses.ui);
   const reverb = ctx.createConvolver();
   reverb.buffer = impulseOf(ctx, settings.reverb);
-  sfx.connect(master);
+  sfx.connect(effectsVolume);
   sfx
     .connect(gainNode(ctx, settings.reverb.send))
     .connect(reverb)
-    .connect(master);
-  ui.connect(master);
+    .connect(effectsVolume);
+  ui.connect(effectsVolume);
 
   // Music and ambience share the dim stage behind the pause menu; only the music ducks.
   const dimGain = gainNode(ctx, 1);
@@ -144,9 +164,9 @@ const createMixer = (ctx: AudioContext, settings: AudioSettings) => {
   dimLowpass.connect(dimGain).connect(master);
   const duck = gainNode(ctx, 1);
   const music = gainNode(ctx, settings.buses.music);
-  music.connect(duck).connect(dimLowpass);
+  music.connect(musicVolume).connect(duck).connect(dimLowpass);
   const ambience = gainNode(ctx, settings.buses.ambience);
-  ambience.connect(dimLowpass);
+  ambience.connect(ambienceVolume).connect(dimLowpass);
 
   return {
     ambience,
@@ -156,6 +176,13 @@ const createMixer = (ctx: AudioContext, settings: AudioSettings) => {
     output,
     sfx,
     ui,
+    /** Sets the player's volumes, eased over `glide` seconds. */
+    volumes: (next: Volumes, glide: number) => {
+      const t = ctx.currentTime;
+      musicVolume.gain.setTargetAtTime(next.music, t, glide);
+      effectsVolume.gain.setTargetAtTime(next.effects, t, glide);
+      ambienceVolume.gain.setTargetAtTime(next.effects, t, glide);
+    },
   };
 };
 
@@ -271,8 +298,12 @@ interface HeldVoice {
 }
 
 /** The running engine, once a gesture has let the AudioContext start. */
-const createEngine = (ctx: AudioContext, settings: AudioSettings) => {
-  const mixer: Mixer = createMixer(ctx, settings);
+const createEngine = (
+  ctx: AudioContext,
+  settings: AudioSettings,
+  playerVolumes: Volumes
+) => {
+  const mixer: Mixer = createMixer(ctx, settings, playerVolumes);
   const bank: SampleBank = loadSamples(ctx, samplesUsed, settings.silenceFloor);
   const music = createMusic(ctx, bank, mixer, settings);
   const held = new Map<string, HeldVoice>();
@@ -434,6 +465,7 @@ export const createDuelAudio = ({
   settings,
 }: DuelAudioOptions): DuelAudio => {
   let engine: Engine | undefined;
+  let volumes: Volumes = { effects: 1, music: 1 };
   /** The snapshot the last live frame ended on; null while the Duel is not being played. */
   let before: DuelSnapshot | null = null;
 
@@ -444,7 +476,7 @@ export const createDuelAudio = ({
   const unlock = () => {
     if (!engine) {
       const ctx = new AudioContext({ latencyHint: "interactive" });
-      engine = createEngine(ctx, settings.audio);
+      engine = createEngine(ctx, settings.audio, volumes);
       ctx.addEventListener("statechange", () => {
         hint.report("sound", !running());
       });
@@ -493,12 +525,14 @@ export const createDuelAudio = ({
 
       engine.hold(loopsFor(snapshot, localId, settings), listener);
     },
-    menu: (from, to, event) => {
-      const sound = menuSoundFor(from, to, event);
-
-      if (sound && engine && running()) {
+    menu: (sound) => {
+      if (engine && running()) {
         engine.play(menuSampleFor(sound), 1, 0);
       }
+    },
+    volumes: (next) => {
+      volumes = next;
+      engine?.mixer.volumes(next, settings.audio.volumeGlide);
     },
   };
 };

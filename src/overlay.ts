@@ -2,7 +2,7 @@ import { writeWithIcons } from "./button-icons";
 import { createControlsHelp } from "./controls-help";
 import { createLessonMenu } from "./lesson-menu";
 import type { ScreenView } from "./screens/view";
-import { text } from "./text";
+import { keepTranslated, text } from "./text";
 
 /**
  * A screen's content in the menu frame (`#menu`, menu.css), under the logo:
@@ -24,10 +24,24 @@ export const createOverlay = (element: HTMLElement) => {
   // The fan-game disclaimer, at the foot of the title (menu.css).
   const legal = document.createElement("p");
   legal.className = "overlay-legal";
-  legal.textContent = text.legal;
+  keepTranslated(() => {
+    legal.textContent = text.legal;
+  });
+  // What it takes to play, on the can't-play notice.
+  const needs = document.createElement("ul");
+  needs.className = "overlay-needs";
   // The Controls' tab bar and open tab (controls-help.ts).
   const help = createControlsHelp();
-  element.append(heading, help.tabs, body, items, help.panel, veil, legal);
+  element.append(
+    heading,
+    help.tabs,
+    body,
+    needs,
+    items,
+    help.panel,
+    veil,
+    legal
+  );
   // Entrenamiento's lessons and the live preview (lesson-menu.ts).
   const lessonMenu = createLessonMenu(element);
   let shown: string | undefined;
@@ -133,6 +147,27 @@ export const createOverlay = (element: HTMLElement) => {
             entry.append(tick);
           }
 
+          // A setting: its value between the arrows that change it, and a
+          // volume's bar.
+          if (item.value !== undefined) {
+            const value = document.createElement("span");
+            value.className = "overlay-value";
+            const words = document.createElement("span");
+            words.className = "overlay-value-words";
+            words.textContent = item.value;
+            value.append(words);
+            entry.classList.add("setting");
+
+            if (item.level !== undefined) {
+              const bar = document.createElement("span");
+              bar.className = "overlay-level";
+              bar.style.setProperty("--level", String(item.level));
+              value.prepend(bar);
+            }
+
+            entry.append(value);
+          }
+
           if (item.hint !== undefined) {
             const hint = document.createElement("small");
             hint.className = "overlay-hint";
@@ -145,6 +180,16 @@ export const createOverlay = (element: HTMLElement) => {
         })
       );
       items.hidden = view.items === undefined;
+      needs.replaceChildren(
+        ...(view.needs ?? []).map((need, index) => {
+          const entry = document.createElement("li");
+          entry.textContent = need;
+          entry.style.setProperty("--entry", String(index));
+
+          return entry;
+        })
+      );
+      needs.hidden = view.needs === undefined;
       help.show(view);
       element.hidden = false;
       menu.hidden = false;

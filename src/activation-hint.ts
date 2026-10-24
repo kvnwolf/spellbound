@@ -1,4 +1,4 @@
-import { text } from "./text";
+import { keepTranslated, text } from "./text";
 
 export interface Pending {
   /** The DualSense's WebHID effects still wait for the first click. */
@@ -36,12 +36,18 @@ export const createActivationHint = (overlay: HTMLElement) => {
 
   const pending = { effects: false, sound: false };
 
+  const draw = () => {
+    const line = activationHintText(pending);
+    element.hidden = line === undefined;
+    element.textContent = line ?? "";
+  };
+
+  keepTranslated(draw);
+
   return {
     report: (feature: keyof Pending, isPending: boolean) => {
       pending[feature] = isPending;
-      const line = activationHintText(pending);
-      element.hidden = line === undefined;
-      element.textContent = line ?? "";
+      draw();
     },
   };
 };

@@ -21,7 +21,7 @@ import {
   setData,
 } from "./slot-diamond";
 import type { DiamondSlot } from "./slot-diamond";
-import { text } from "./text";
+import { keepTranslated, text } from "./text";
 import type { Tuning } from "./tuning";
 
 type SpellSlotsHudSettings = Pick<
@@ -73,7 +73,9 @@ const createFocusOrbs = (
   settings: SpellSlotsHudSettings
 ) => {
   const root = create("div", "ss-focus", parent);
-  root.setAttribute("aria-label", text.specials.focus);
+  keepTranslated(() => {
+    root.setAttribute("aria-label", text.specials.focus);
+  });
   const count = Math.round(settings.focus.max / settings.focus.segment);
 
   // Bottom to top, so the meter fills upward.
@@ -107,7 +109,9 @@ const createSlot = (
   if (kind) {
     specialGlyph(kind, badge);
     item.dataset.spell = kind;
-    name.textContent = text.specials[kind];
+    keepTranslated(() => {
+      name.textContent = text.specials[kind];
+    });
   }
 
   const timer = create("span", "ss-timer", badge);

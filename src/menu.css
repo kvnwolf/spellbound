@@ -413,6 +413,123 @@
   display: none;
 }
 
+/*
+ * Opciones: each entry its label on the left and what it is set to on the
+ * right, a volume with its bar; the highlighted one shows the arrows that
+ * change it.
+ */
+#overlay[data-screen="options"] ul {
+  min-width: min(34rem, 88vw);
+}
+
+#overlay li.setting {
+  display: flex;
+  gap: 2rem;
+  align-items: center;
+  justify-content: space-between;
+  text-align: start;
+}
+
+#overlay .overlay-value {
+  display: inline-flex;
+  gap: 0.8rem;
+  align-items: center;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.06em;
+  text-transform: none;
+}
+
+/* A volume's share, right-aligned so the bars line up whatever it reads. */
+#overlay .overlay-level + .overlay-value-words {
+  min-width: 4.6ch;
+  text-align: end;
+}
+
+/* The arrows hold their place on every entry, so the values line up; only the highlighted one shows them. */
+#overlay .overlay-value::before,
+#overlay .overlay-value::after {
+  color: rgb(216 180 106 / 80%);
+  font-size: 1.1em;
+  line-height: 1;
+  visibility: hidden;
+}
+
+#overlay li.selected .overlay-value::before,
+#overlay li.selected .overlay-value::after {
+  visibility: visible;
+}
+
+#overlay .overlay-value::before {
+  content: "\2039";
+}
+
+#overlay .overlay-value::after {
+  content: "\203A";
+}
+
+#overlay .overlay-level {
+  position: relative;
+  width: clamp(4rem, 12vw, 7rem);
+  height: 0.3rem;
+  overflow: hidden;
+  border-radius: 0.15rem;
+  background: rgb(239 228 200 / 15%);
+}
+
+#overlay .overlay-level::after {
+  position: absolute;
+  inset: 0;
+  background: currentcolor;
+  transform: scaleX(var(--level));
+  transform-origin: left;
+  transition: transform 120ms ease-out;
+  content: "";
+}
+
+/*
+ * The can't-play notice: the logo stays, high up, and under it the line
+ * saying where Spellbound is played and, as gilt tags, what it takes.
+ */
+#menu:has(#overlay[data-screen="unsupported"]) {
+  --logo-top: clamp(1.5rem, 14vh, 7rem);
+}
+
+/* As specific as the rule that hides the logo past the title, and after it. */
+#menu:has(#overlay[data-screen="unsupported"]:not([data-screen="title"]))
+  .menu-logo {
+  visibility: visible;
+  opacity: 1;
+}
+
+#overlay[data-screen="unsupported"] {
+  inset-block-start: calc(var(--logo-top) + var(--logo-height) + 2rem);
+  inset-block-end: 1rem;
+}
+
+#overlay[data-screen="unsupported"] p {
+  max-width: 34rem;
+  line-height: 1.5;
+}
+
+#overlay ul.overlay-needs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  justify-content: center;
+  min-width: 0;
+  max-width: 36rem;
+  margin-top: 0.75rem;
+}
+
+#overlay .overlay-needs li {
+  padding: 0.45rem 1rem;
+  color: var(--gold);
+  border-color: rgb(216 180 106 / 55%);
+  background: var(--ink);
+  font-size: clamp(0.85rem, 2vw, 1rem);
+  letter-spacing: 0.1em;
+}
+
 /* The fan-game disclaimer: small, at the foot of the title, fading out after it. */
 #overlay .overlay-legal {
   position: fixed;

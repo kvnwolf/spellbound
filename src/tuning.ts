@@ -381,6 +381,8 @@ export const tuning = {
     },
     /** Each play of a sound effect varies at random by up to this many cents of pitch and this share of volume, so repeats never sound identical. */
     variation: { cents: 50, gain: 0.1 },
+    /** A volume changed in Opciones eases to its new level with this time constant, seconds. */
+    volumeGlide: 0.05,
     /**
      * Each sample's own level, by catalog id: loudness-matched across the
      * files (their peaks kept under -1 dBFS), then balanced for the mix.
@@ -2396,6 +2398,8 @@ export const tuning = {
     lessonDoneSeconds: 1.2,
     /** The Duel's victory or defeat call-out plays this long before the result screen. */
     resultDelaySeconds: 3,
+    /** Opciones' music and effects volumes: this many steps from silent to as mixed, where both start. */
+    volumeSteps: 10,
   },
 
   /**
@@ -3331,6 +3335,13 @@ export const tuning = {
     /** How lessons set the learner up: Wiggenweld's lesson starts them on this share of full Health. */
     setup: { hurtHealthShare: 0.4 },
   },
+
+  /**
+   * How a volume step in Opciones is heard: the gain is its share of the
+   * steps raised to this power, so each step sounds about as much quieter
+   * as the last.
+   */
+  volumeCurve: 2,
 
   /**
    * Full Focus (Expelliarmus ready): the Wand in hand glows scarlet,

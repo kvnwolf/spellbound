@@ -13,7 +13,7 @@ import type {
   SpellState,
 } from "../duel/duel";
 import type { Point3 } from "../duel/geometry";
-import { noTraining, reduceScreens } from "../screens/screens";
+import { defaultOptions, noTraining, reduceScreens } from "../screens/screens";
 import type { MenuInput, Screen } from "../screens/screens";
 import { tuning } from "../tuning";
 import type { Tuning } from "../tuning";
@@ -710,7 +710,12 @@ describe("adaptive triggers", () => {
 /** What one menu input on `screen` is felt as: the screens step, and the menu sound it makes (if any) goes to the director. */
 const press = (screen: Screen, input: MenuInput) => {
   const after = reduceScreens(
-    { runs: 0, screen, training: noTraining },
+    {
+      options: defaultOptions("es", settings.screens.volumeSteps),
+      runs: 0,
+      screen,
+      training: noTraining,
+    },
     { input, type: "input" },
     settings.screens
   ).screen;
@@ -721,7 +726,7 @@ const press = (screen: Screen, input: MenuInput) => {
 };
 
 const main = (
-  selected: "controls" | "duel" | "practice" | "training"
+  selected: "controls" | "duel" | "options" | "practice" | "training"
 ): Screen => ({
   kind: "main",
   selected,
@@ -747,7 +752,7 @@ describe("the menus", () => {
 
   it("does not tick when the highlight is already at the end of the list", () => {
     expect(press(main("duel"), "up").rumble).toStrictEqual(silence);
-    expect(press(main("controls"), "down").rumble).toStrictEqual(silence);
+    expect(press(main("options"), "down").rumble).toStrictEqual(silence);
   });
 
   it("pulses firmer on a choice taken, softer on a step back", () => {

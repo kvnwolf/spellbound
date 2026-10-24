@@ -4,9 +4,9 @@
  * DualSense is there), the Difficulty select, the Practice rival picker and
  * Entrenamiento's lessons, to the Duel, Practice or Training lesson (with
  * its scrolls: the lesson's before it, its success after it, and the Club de
- * Duelo's welcome once Training is complete), its pause and the result; it
- * also keeps what Training remembers, which opens Duelo and Práctica once
- * every lesson is completed. Pure: it is fed events
+ * Duelo's welcome once Training is complete), its pause and the result, and
+ * Opciones; it also keeps what Training remembers, which opens Duelo and
+ * Práctica once every lesson is completed, and the player's Options. Pure: it is fed events
  * (the start click, the controller coming and going, menu inputs, the Duel
  * ending, time) and
  * lands on the next screen. It owns no three.js, no DOM and no clock; the
@@ -19,6 +19,8 @@ import { practiceRivals } from "../duel/practice";
 import type { PracticeRival } from "../duel/practice";
 import { lessonPlans, lessonSections, lessons } from "../duel/training";
 import type { Lesson } from "../duel/training";
+import { languages } from "../text";
+import type { Language } from "../text";
 
 /** What is plugged in, as far as the screens care. */
 export type PadKind = "dualsense" | "none" | "unsupported";
@@ -28,6 +30,7 @@ export const mainMenuOptions = [
   "practice",
   "training",
   "controls",
+  "options",
 ] as const;
 
 export type MainMenuOption = (typeof mainMenuOptions)[number];
@@ -99,6 +102,25 @@ export interface MainScreen {
   readonly selected: MainMenuOption;
 }
 
+/** Opciones' entries, each changed with left and right where it stands. */
+export const optionsEntries = ["language", "music", "effects"] as const;
+
+export type OptionsEntry = (typeof optionsEntries)[number];
+
+/**
+ * What the player chose in Opciones, remembered between visits: the language
+ * played in, and the music's and the effects' volumes, each in whole steps
+ * from 0 (silent) up to `ScreenSettings.volumeSteps` (as mixed).
+ */
+export interface PlayerOptions {
+  readonly language: Language;
+  readonly music: number;
+  readonly effects: number;
+}
+
+/** Why the game cannot be played here: a phone or tablet, or a browser without WebGPU. */
+export type CantPlay = "browser" | "device";
+
 /** The Controls' two tabs, switched with L1 and R1 (or the D-pad). */
 export const controlsTabs = ["controls", "mechanics"] as const;
 
@@ -129,8 +151,8 @@ export type ScrollScreen =
 export type DuelShowing = DuelScreen | PauseScreen | ScrollScreen;
 
 export type Screen =
-  /** WebGPU is missing: nothing else can happen. */
-  | { readonly kind: "unsupported" }
+  /** The game cannot be played here, and says why: nothing else can happen. */
+  | { readonly kind: "unsupported"; readonly reason: CantPlay }
   /**
    * The title, first: one start button, whose click is also what lets the
    * sound and the DualSense's effects start. `pad` is whatever is plugged in
@@ -165,6 +187,8 @@ export type Screen =
   | { readonly kind: "rivals"; readonly selected: PracticeRival }
   /** Entrenamiento's lessons, to start from any of them. */
   | { readonly kind: "lessons"; readonly selected: Lesson }
+  /** Opciones: the language and the volumes, the highlighted one changed with left and right. */
+  | { readonly kind: "options"; readonly selected: OptionsEntry }
   | DuelScreen
   | PauseScreen
   | ScrollScreen
@@ -207,6 +231,7 @@ export interface ScreenState {
   /** Duels started so far. */
   readonly runs: number;
   readonly training: TrainingRecord;
+  readonly options: PlayerOptions;
 }
 
 export type MenuInput =
@@ -237,18 +262,34 @@ export interface ScreenSettings {
   readonly resultDelaySeconds: number;
   /** How long a completed lesson's call-out holds before its success scroll. */
   readonly lessonDoneSeconds: number;
+  /** A volume's steps from silent to as mixed. */
+  readonly volumeSteps: number;
 }
 
 /** The Difficulty highlighted the first time the select opens. */
 const defaultDifficulty: Difficulty = "duelista";
 
-/** The first screen, with what is remembered of Training. */
+/** The Options of a first visit, in `language`: every volume as mixed. */
+export const defaultOptions = (
+  language: Language,
+  volumeSteps: number
+): PlayerOptions => ({ effects: volumeSteps, language, music: volumeSteps });
+
+/**
+ * The first screen, with what is remembered of Training and the Options: the
+ * title, or why the game cannot be played here.
+ */
 export const initialScreenState = (
-  supported: boolean,
-  training: TrainingRecord = noTraining
+  playable: true | CantPlay,
+  training: TrainingRecord,
+  options: PlayerOptions
 ): ScreenState => ({
+  options,
   runs: 0,
-  screen: supported ? { kind: "title", pad: "none" } : { kind: "unsupported" },
+  screen:
+    playable === true
+      ? { kind: "title", pad: "none" }
+      : { kind: "unsupported", reason: playable },
   training,
 });
 
@@ -483,6 +524,10 @@ const onMainInput = (
     return toLessons(state);
   }
 
+  if (input === "confirm" && screen.selected === "options") {
+    return { ...state, screen: { kind: "options", selected: "language" } };
+  }
+
   const selected = step(
     mainMenuOptions,
     screen.selected,
@@ -609,6 +654,59 @@ const onLessonsInput = (
   return { ...state, screen: { ...screen, selected } };
 };
 
+/** The language after `current`, going round, either way. */
+const otherLanguage = (current: Language, by: 1 | -1): Language =>
+  languages[
+    (languages.indexOf(current) + by + languages.length) % languages.length
+  ] ?? current;
+
+/** `options` with `entry` stepped once by `by`: the language round, a volume within its range. */
+const adjust = (
+  options: PlayerOptions,
+  entry: OptionsEntry,
+  by: 1 | -1,
+  volumeSteps: number
+): PlayerOptions => {
+  if (entry === "language") {
+    return { ...options, language: otherLanguage(options.language, by) };
+  }
+
+  return {
+    ...options,
+    [entry]: Math.min(Math.max(options[entry] + by, 0), volumeSteps),
+  };
+};
+
+/**
+ * Opciones: up and down move the highlight; left and right change what it
+ * is on (✕ too, on the language); ○ or Options goes back to the main menu.
+ */
+const onOptionsInput = (
+  state: ScreenState,
+  screen: Extract<Screen, { kind: "options" }>,
+  input: MenuInput,
+  settings: ScreenSettings
+): ScreenState => {
+  if (input === "back" || input === "options") {
+    return toMain(state, "options");
+  }
+
+  const toggles = input === "confirm" && screen.selected === "language";
+
+  if (input === "left" || input === "right" || toggles) {
+    const by = input === "left" ? -1 : 1;
+
+    return {
+      ...state,
+      options: adjust(state.options, screen.selected, by, settings.volumeSteps),
+    };
+  }
+
+  const selected = step(optionsEntries, screen.selected, input);
+
+  return { ...state, screen: { ...screen, selected } };
+};
+
 const onPauseInput = (
   state: ScreenState,
   screen: PauseScreen,
@@ -690,7 +788,11 @@ const onResultInput = (
     : toSelect(state, screen.difficulty);
 };
 
-const onInput = (state: ScreenState, input: MenuInput): ScreenState => {
+const onInput = (
+  state: ScreenState,
+  input: MenuInput,
+  settings: ScreenSettings
+): ScreenState => {
   const { screen } = state;
 
   if (screen.kind === "connect") {
@@ -717,6 +819,10 @@ const onInput = (state: ScreenState, input: MenuInput): ScreenState => {
 
   if (screen.kind === "lessons") {
     return onLessonsInput(state, screen, input);
+  }
+
+  if (screen.kind === "options") {
+    return onOptionsInput(state, screen, input, settings);
   }
 
   if (screen.kind === "duel") {
@@ -849,7 +955,7 @@ export const reduceScreens = (
   }
 
   if (event.type === "input") {
-    return onInput(state, event.input);
+    return onInput(state, event.input, settings);
   }
 
   if (event.type === "tick") {

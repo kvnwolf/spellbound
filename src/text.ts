@@ -1,5 +1,15 @@
-/** Every player-facing string in Spellbound, in Spanish, so translation stays in one place. */
-export const text = {
+/**
+ * Every player-facing string in Spellbound. The Spanish dictionary is here,
+ * and it sets the shape: the English one (`text-en.ts`) is typed against it,
+ * so a key missing from either fails to compile. `text` is the dictionary of
+ * the language being played, swapped in place by `setLanguage`; read it when
+ * drawing, never keep a part of it, and redraw what was drawn once when
+ * `onLanguageChange` calls.
+ */
+import { en } from "./text-en";
+
+/** The Spanish dictionary, the one every other is typed against. */
+const es = {
   /** On the connect prompt and the Difficulty select, naming what the first click still turns on: the sound, the DualSense's WebHID effects, or both. */
   activationHint: {
     both: "Haz clic en la página para activar el sonido y los efectos del DualSense",
@@ -147,8 +157,20 @@ export const text = {
   mainMenu: {
     controls: "Controles",
     duel: "Duelo",
+    options: "Opciones",
     practice: "Práctica",
     training: "Entrenamiento",
+  },
+  /** Opciones: the language and the two volumes, changed with left and right. */
+  options: {
+    effects: "Efectos",
+    heading: "Opciones",
+    language: "Idioma",
+    /** Each language by its own name, the same in every dictionary. */
+    languages: { en: "English", es: "Español" },
+    music: "Música",
+    /** A volume, from 0 to 100. */
+    volume: (percent: number) => `${String(percent)}\u00A0%`,
   },
   pause: {
     /** In a Practice: back to the rival picker. */
@@ -457,8 +479,81 @@ export const text = {
     /** The units of the goals counted in metres or degrees. */
     units: { look: "°", run: " m", swiftRun: " m", walk: " m" },
   },
-  unsupportedBrowser: {
-    body: "Spellbound necesita WebGPU. Ábrelo en una versión reciente de Chrome.",
-    heading: "Navegador no compatible",
+  /**
+   * Instead of the game, for who cannot play it: on a phone or a tablet, or
+   * in a browser without WebGPU. What it takes is listed under the line.
+   */
+  unsupported: {
+    browser: {
+      body: "Spellbound necesita WebGPU: juégalo en una computadora con una versión reciente de Chrome o Edge y un mando DualSense.",
+      heading: "Navegador no compatible",
+    },
+    device: {
+      body: "Spellbound se juega en una computadora, con Chrome o Edge y un mando DualSense.",
+      heading: "Juega en tu computadora",
+    },
+    needs: ["Computadora", "Chrome o Edge", "Mando DualSense"],
   },
 } as const;
+
+/** A dictionary's wording: the Spanish one's keys, its strings any string. */
+type Wording<T> = T extends string
+  ? string
+  : T extends (...args: infer Args) => infer Result
+    ? (...args: Args) => Wording<Result>
+    : T extends readonly (infer Item)[]
+      ? readonly Wording<Item>[]
+      : { readonly [Key in keyof T]: Wording<T[Key]> };
+
+export type Dictionary = Wording<typeof es>;
+
+export const languages = ["es", "en"] as const;
+
+export type Language = (typeof languages)[number];
+
+const dictionaries: Readonly<Record<Language, Dictionary>> = { en, es };
+
+/** The language a first visit plays in: Spanish if the browser's starts with `es`, else English. */
+export const languageFor = (browserLanguage?: string): Language =>
+  browserLanguage?.toLowerCase().startsWith("es") === true ? "es" : "en";
+
+/** The dictionary of the language being played: Spanish until told otherwise. */
+export const text: Dictionary = { ...es };
+
+let active: Language = "es";
+const listeners = new Set<(language: Language) => void>();
+
+/** The language being played. */
+export const language = (): Language => active;
+
+/** Plays in `next`: swaps `text` in place, then tells every listener. */
+export const setLanguage = (next: Language) => {
+  if (next === active) {
+    return;
+  }
+
+  active = next;
+  Object.assign(text, dictionaries[next]);
+
+  for (const listener of listeners) {
+    listener(next);
+  }
+};
+
+/** Calls `listener` after every change of language; returns how to stop. */
+export const onLanguageChange = (listener: (language: Language) => void) => {
+  listeners.add(listener);
+
+  return () => {
+    listeners.delete(listener);
+  };
+};
+
+/**
+ * Runs `draw` now and again after every change of language: for what is
+ * written once and kept (a label, a heading), not redrawn every frame.
+ */
+export const keepTranslated = (draw: () => void) => {
+  draw();
+  onLanguageChange(draw);
+};

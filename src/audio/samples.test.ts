@@ -146,6 +146,7 @@ describe("the music the screens call for", () => {
       { kind: "difficulty", practice: false, selected: "novato" },
       { kind: "rivals", selected: "idle" },
       { kind: "lessons", selected: "move" },
+      { kind: "options", selected: "music" },
       {
         difficulty: "maestro",
         kind: "result",
@@ -211,7 +212,7 @@ describe("the music the screens call for", () => {
   });
 
   it("is silent when the browser cannot run the game", () => {
-    expect(musicFor({ kind: "unsupported" })).toStrictEqual({
+    expect(musicFor({ kind: "unsupported", reason: "browser" })).toStrictEqual({
       ambience: false,
       dimmed: false,
       theme: null,

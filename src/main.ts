@@ -1,5 +1,6 @@
 /**
- * Wires the game together: the WebGPU check, the courtyard, one Duel between
+ * Wires the game together: the language and the can't-play checks (a phone
+ * or tablet, no WebGPU), the courtyard, one Duel between
  * a DualSense-driven Duelist and an AI opponent, and the frame loop
  * that steps the fixed-rate simulation, feeds its events to the VFX, HUD and
  * camera, and renders interpolated snapshots at display rate.
@@ -20,6 +21,7 @@ import {
 } from "./controllers/lesson-demo";
 import { createRandom } from "./controllers/random";
 import { createRival } from "./controllers/rival";
+import { isPhoneOrTablet } from "./device-check";
 import { createDualSenseEffects } from "./dualsense-effects";
 import { createHapticsDirector } from "./dualsense/haptics";
 import { readDualSense, scanGamepads } from "./dualsense/input";
@@ -49,6 +51,7 @@ import type { Lesson, LessonProgress } from "./duel/training";
 import { createFixedStepClock } from "./game-loop";
 import { createHud } from "./hud";
 import { createLoadingScreen } from "./loading-screen";
+import { loadOptions, saveOptions } from "./options-store";
 import { createOverlay } from "./overlay";
 import { knockoutSide, knockoutViewpoint } from "./render/camera-framing";
 import { clashViewpoint, createCameraRig } from "./render/camera-rig";
@@ -75,18 +78,24 @@ import { createWorldHud } from "./render/world-hud";
 import {
   duelOf,
   initialScreenState,
+  noTraining,
   practiceOf,
   reduceScreens,
   showsDuel,
 } from "./screens/screens";
 import type {
+  CantPlay,
   DuelScreen,
   PadKind,
+  PlayerOptions,
   Screen,
   ScreenEvent,
+  ScreenState,
 } from "./screens/screens";
 import { scrollOf, viewOf } from "./screens/view";
 import { createSpellSlotsHud } from "./spell-slots-hud";
+import { setLanguage } from "./text";
+import type { Language } from "./text";
 import { createTrainingHud } from "./training-hud";
 import { createTrainingScroll } from "./training-scroll";
 import { loadTraining, saveTraining } from "./training-store";
@@ -128,31 +137,69 @@ const feetOf = (
       : []
   );
 
+/** Plays in `language`: every string, and the page's own language. */
+const showLanguage = (language: Language) => {
+  setLanguage(language);
+  document.documentElement.lang = language;
+};
+
+/** A volume step as a gain, each step about as much quieter as the last. */
+const gainOf = (level: number) =>
+  (level / tuning.screens.volumeSteps) ** tuning.volumeCurve;
+
+/** The player's volume steps as gains. */
+const volumesOf = (options: PlayerOptions) => ({
+  effects: gainOf(options.effects),
+  music: gainOf(options.music),
+});
+
 const start = async () => {
+  // The player's Options, remembered or a first visit's in the browser's
+  // language: the language is set before anything is written.
+  const firstOptions = loadOptions(
+    navigator.language,
+    tuning.screens.volumeSteps
+  );
+
+  showLanguage(firstOptions.language);
   // Loading, from the first paint: the renderer, the wizard (most of the
   // bytes) and the shaders, then the menus.
   const loading = createLoadingScreen(element("#menu", HTMLElement));
   const canvas = element("#scene", HTMLCanvasElement);
   const overlay = createOverlay(element("#overlay", HTMLElement));
+
+  /** Says why the game cannot be played here, instead of loading it. */
+  const cantPlay = (reason: CantPlay) => {
+    loading.done();
+
+    const view = viewOf(
+      initialScreenState(reason, noTraining, firstOptions).screen
+    );
+
+    if (view) {
+      overlay.show(view);
+    }
+  };
+
+  if (isPhoneOrTablet()) {
+    cantPlay("device");
+
+    return;
+  }
+
   const renderer = await createWebGPURenderer(canvas);
   const { stages } = tuning.loading;
   loading.progress(stages.renderer);
 
   if (!renderer) {
-    loading.done();
-
-    const view = viewOf(initialScreenState(false).screen);
-
-    if (view) {
-      overlay.show(view);
-    }
+    cantPlay("browser");
 
     return;
   }
 
   // Which screen the game is on; the Duel only runs on the Duel screen.
-  // What Training remembers is kept in this browser.
-  let screens = initialScreenState(true, loadTraining());
+  // What Training remembers, and the Options, are kept in this browser.
+  let screens = initialScreenState(true, loadTraining(), firstOptions);
 
   const send = (event: ScreenEvent) => {
     const before = screens;
@@ -160,6 +207,10 @@ const start = async () => {
 
     if (screens.training !== before.training) {
       saveTraining(screens.training);
+    }
+
+    if (screens.options !== before.options) {
+      saveOptions(screens.options);
     }
   };
 
@@ -744,14 +795,34 @@ const start = async () => {
     }
   };
 
-  /** This frame's menu sounds, heard and felt: the screens going from `before` with `event`. */
-  const soundMenu = (before: Screen, event: ScreenEvent) => {
-    audio.menu(before, screens.screen, event);
-    const sound = menuSoundFor(before, screens.screen, event);
+  /**
+   * This frame's menu sounds, heard and felt: the screens going from
+   * `before` with `event`, or an Option changed in place.
+   */
+  const soundMenu = (before: ScreenState, event: ScreenEvent) => {
+    const sound =
+      menuSoundFor(before.screen, screens.screen, event) ??
+      (before.options === screens.options
+        ? null
+        : ({ kind: "menu-move" } as const));
 
     if (sound) {
+      audio.menu(sound);
       menuSounds.push(sound);
     }
+  };
+
+  // The Options last played under: a change is heard, and read, at once.
+  let applied: PlayerOptions | undefined;
+
+  const applyOptions = () => {
+    if (screens.options === applied) {
+      return;
+    }
+
+    applied = screens.options;
+    showLanguage(applied.language);
+    audio.volumes(volumesOf(applied));
   };
 
   /**
@@ -764,7 +835,7 @@ const start = async () => {
     syncPad();
 
     for (const event of menuInput.read(pad, seconds)) {
-      const before = screens.screen;
+      const before = screens;
       send(event);
       soundMenu(before, event);
     }
@@ -805,7 +876,7 @@ const start = async () => {
     );
 
     if (lesson.done) {
-      const before = screens.screen;
+      const before = screens;
       const event = { type: "lesson-done" } as const;
       send(event);
       soundMenu(before, event);
@@ -1058,6 +1129,7 @@ const start = async () => {
     menuSounds = [];
     scanned = scan.kind;
     const screen = syncScreens(seconds);
+    applyOptions();
     syncDemo(screen, seconds);
 
     // The Duel only advances on its own screen: never behind a menu, the
@@ -1100,7 +1172,7 @@ const start = async () => {
       send({ seconds, type: "tick" });
     }
 
-    const view = viewOf(screens.screen, screens.training);
+    const view = viewOf(screens.screen, screens.training, screens.options);
 
     if (view) {
       overlay.show(view);

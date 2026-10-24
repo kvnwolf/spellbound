@@ -1,8 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import { lessons, startLesson } from "../duel/training";
 import type { Lesson } from "../duel/training";
-import { text } from "../text";
+import { language, onLanguageChange, setLanguage, text } from "../text";
 import type { DuelScreen, Screen } from "./screens";
 import { goalLineOf, scrollOf, viewOf } from "./view";
 
@@ -58,7 +58,7 @@ describe("what each screen shows", () => {
     );
   });
 
-  it("names the game over the main menu and lists Duelo, Práctica, Entrenamiento and Controles, Training ticked once complete", () => {
+  it("names the game over the main menu and lists Duelo, Práctica, Entrenamiento, Controles and Opciones, Training ticked once complete", () => {
     const view = viewOf(
       { kind: "main", selected: "practice" },
       { certified: true, completed: [...lessons] }
@@ -70,6 +70,7 @@ describe("what each screen shows", () => {
       { label: "Práctica", selected: true },
       { done: true, label: "Entrenamiento", selected: false },
       { label: "Controles", selected: false },
+      { label: "Opciones", selected: false },
     ]);
   });
 
@@ -88,6 +89,7 @@ describe("what each screen shows", () => {
         selected: true,
       },
       { label: "Controles", selected: false },
+      { label: "Opciones", selected: false },
     ]);
   });
 
@@ -534,5 +536,153 @@ describe("a lesson's goal line", () => {
     expect(goalLineOf({ ...startLesson("light"), done: true, goal: 1 })).toBe(
       "¡Lección completada!"
     );
+  });
+});
+
+describe("Opciones", () => {
+  const options = { effects: 3, language: "es", music: 10 } as const;
+
+  it("lists Idioma, Música and Efectos with what each is set to, the volumes as a share and a bar", () => {
+    expect(
+      viewOf({ kind: "options", selected: "music" }, undefined, options)
+    ).toStrictEqual({
+      heading: "Opciones",
+      items: [
+        { label: "Idioma", selected: false, value: "Español" },
+        { label: "Música", level: 1, selected: true, value: "100\u00A0%" },
+        { label: "Efectos", level: 0.3, selected: false, value: "30\u00A0%" },
+      ],
+      screen: "options",
+    });
+  });
+});
+
+describe("the can't-play notice", () => {
+  it("tells a phone or tablet that Spellbound is played on a computer, and what it takes", () => {
+    expect(viewOf({ kind: "unsupported", reason: "device" })).toStrictEqual({
+      body: "Spellbound se juega en una computadora, con Chrome o Edge y un mando DualSense.",
+      heading: "Juega en tu computadora",
+      needs: ["Computadora", "Chrome o Edge", "Mando DualSense"],
+      screen: "unsupported",
+    });
+  });
+
+  it("tells a browser without WebGPU to play in an up-to-date Chrome or Edge", () => {
+    expect(viewOf({ kind: "unsupported", reason: "browser" })).toMatchObject({
+      body: "Spellbound necesita WebGPU: juégalo en una computadora con una versión reciente de Chrome o Edge y un mando DualSense.",
+      heading: "Navegador no compatible",
+    });
+  });
+});
+
+describe("in English", () => {
+  afterEach(() => {
+    setLanguage("es");
+  });
+
+  it("plays in Spanish until told otherwise", () => {
+    expect(language()).toBe("es");
+    expect(labels({ kind: "main", selected: "duel" })).toContain("Duelo");
+  });
+
+  it("takes every view from then on in English", () => {
+    setLanguage("en");
+
+    expect(labels({ kind: "main", selected: "duel" })).toStrictEqual([
+      "Duel",
+      "Practice",
+      "Training",
+      "Controls",
+      "Options",
+    ]);
+    expect(viewOf({ kind: "title", pad: "none" })?.action).toBe(
+      "Click to begin"
+    );
+    expect(viewOf({ kind: "connect", pad: "none" })?.body).toBe(
+      "Connect your DualSense and press ✕"
+    );
+  });
+
+  it("names the language by its own name and the volumes the English way in Opciones", () => {
+    setLanguage("en");
+
+    expect(
+      viewOf({ kind: "options", selected: "language" }, undefined, {
+        effects: 10,
+        language: "en",
+        music: 5,
+      })?.items
+    ).toStrictEqual([
+      { label: "Language", selected: true, value: "English" },
+      { label: "Music", level: 0.5, selected: false, value: "50%" },
+      { label: "Effects", level: 1, selected: false, value: "100%" },
+    ]);
+  });
+
+  it("tells a phone or tablet the same in English", () => {
+    setLanguage("en");
+
+    expect(viewOf({ kind: "unsupported", reason: "device" })).toStrictEqual({
+      body: "Spellbound is played on a computer, in Chrome or Edge, with a DualSense controller.",
+      heading: "Play on your computer",
+      needs: ["Computer", "Chrome or Edge", "DualSense controller"],
+      screen: "unsupported",
+    });
+  });
+
+  it("gives the Potions their English names and Focus as Determination", () => {
+    setLanguage("en");
+
+    const help = viewOf({
+      from: { kind: "main", selected: "controls" },
+      kind: "controls",
+      tab: "controls",
+    })?.help;
+
+    expect(
+      help?.tab === "controls" &&
+        help.potionSlots.slots.map((slot) => slot.label)
+    ).toStrictEqual([
+      "Maxima Potion",
+      "Wiggenweld Potion",
+      "Invigoration Draught",
+      "Felix Felicis",
+    ]);
+    expect(text.specials.focus).toBe("Determination");
+    expect(text.training.certificate.heading).toBe("Duelling Club");
+  });
+
+  it("writes a lesson's goal and scroll in English, the slot still drawn as its button", () => {
+    setLanguage("en");
+
+    expect(goalLineOf(startLesson("petrificus"))).toBe(
+      "Petrify the dummy: hold R2 and press □ (0/1)"
+    );
+    expect(goalLineOf({ ...startLesson("move"), count: 2.6 })).toBe(
+      "Walk with the left stick (2/5 m)"
+    );
+    expect(
+      scrollOf({ duel: inLesson("swiftness"), kind: "briefing" })
+    ).toMatchObject({
+      controls: "Hold L2 and press →",
+      eyebrow: "Lesson 14 of 17",
+      heading: "Invigoration Draught",
+    });
+  });
+
+  it("tells whoever redraws what was drawn once, only when the language changes", () => {
+    const heard: string[] = [];
+
+    const stop = onLanguageChange((next) => {
+      heard.push(next);
+    });
+
+    setLanguage("en");
+    setLanguage("en");
+    setLanguage("es");
+    stop();
+    setLanguage("en");
+
+    expect(heard).toStrictEqual(["en", "es"]);
   });
 });

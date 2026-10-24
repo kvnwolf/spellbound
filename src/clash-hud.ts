@@ -11,7 +11,7 @@ import { writeWithIcons } from "./button-icons";
 import { clashOpponentOf } from "./duel/duel";
 import type { DuelEvent, DuelistId, DuelSnapshot } from "./duel/duel";
 import { create } from "./slot-diamond";
-import { text } from "./text";
+import { keepTranslated, text } from "./text";
 import type { Tuning } from "./tuning";
 
 export interface ClashHud {
@@ -37,12 +37,16 @@ export const createClashHud = (
   settings: Tuning["hud"]["clash"]
 ): ClashHud => {
   const callout = create("div", "clash-callout", root);
-  callout.textContent = text.clash.callout;
-
   const prompt = create("div", "clash-prompt", root);
   const trigger = create("div", "clash-trigger", prompt);
-  writeWithIcons(trigger, text.clash.trigger);
-  writeWithIcons(create("div", "clash-pump", prompt), text.clash.pump);
+  const pump = create("div", "clash-pump", prompt);
+
+  keepTranslated(() => {
+    callout.textContent = text.clash.callout;
+    writeWithIcons(trigger, text.clash.trigger);
+    writeWithIcons(pump, text.clash.pump);
+  });
+
   const bar = create("div", "clash-bar", prompt);
   const fill = create("div", "clash-bar-fill", bar);
   const marker = create("div", "clash-bar-marker", bar);

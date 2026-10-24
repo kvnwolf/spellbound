@@ -31,7 +31,7 @@ One step of Training: a scroll first, with the game paused, saying what it teach
 _Avoid_: Level, mission
 
 **Club de Duelo**:
-What Training welcomes the player to once every Lesson is completed, after the Duelling Club of _Chamber of Secrets_; from then on Duel and Practice are open.
+What Training welcomes the player to once every Lesson is completed, after the Duelling Club of _Chamber of Secrets_ (its name in English); from then on Duel and Practice are open.
 _Avoid_: Graduation, unlock
 
 ### Participants
@@ -79,7 +79,7 @@ A regenerating pool spent by Shielding, Dodging, jumping and sprinting, and by c
 _Avoid_: Energy, mana
 
 **Focus**:
-A three-segment meter a Duelist builds through skilful play and spends on Special Spells; it starts empty each Round and never decays. Shown to the player as "Determinación" (power magic demands determination, as the three D's of Apparition have it).
+A three-segment meter a Duelist builds through skilful play and spends on Special Spells; it starts empty each Round and never decays. Shown to the player as "Determinación", or "Determination" in English (power magic demands determination, as the three D's of Apparition have it).
 _Avoid_: Special meter, super, rage
 
 **Spell**:
@@ -174,11 +174,11 @@ _Avoid_: Potion Wheel, item menu, inventory
 A Potion that restores part of the drinker's Health at once.
 
 **Strength Potion**:
-A Potion that raises the drinker's Spell damage for a short time. Shown to the player as "Poción Máxima".
+A Potion that raises the drinker's Spell damage for a short time. Shown to the player as "Poción Máxima", or "Maxima Potion" in English.
 _Avoid_: Damage buff
 
 **Swiftness Potion**:
-A Potion that gives the drinker unlimited Stamina and extra speed for a short time. Shown to the player as "Poción Vigorizante".
+A Potion that gives the drinker unlimited Stamina and extra speed for a short time. Shown to the player as "Poción Vigorizante", or "Invigoration Draught" in English.
 _Avoid_: Speed buff
 
 **Felix Felicis**:
@@ -218,3 +218,13 @@ _Avoid_: Obstacle, wall
 **Obstruction**:
 Low Arena geometry that stops Duelists but that Spells fly over, such as the fountain basin.
 _Avoid_: Obstacle, blocker
+
+### The player
+
+**Options**:
+What the player chooses from the main menu and the browser remembers: the language played in (Spanish or English, the browser's on a first visit) and the music's and the effects' volumes.
+_Avoid_: Settings, preferences
+
+**Can't-play notice**:
+What a phone, a tablet or a browser without WebGPU shows instead of the game: Spellbound is played on a computer, in Chrome or Edge, with a DualSense.
+_Avoid_: Error page, unsupported screen

@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import { lessons } from "../duel/training";
-import { initialScreenState, noTraining, reduceScreens } from "./screens";
+import { languageFor } from "../text";
+import {
+  defaultOptions,
+  initialScreenState,
+  noTraining,
+  reduceScreens,
+} from "./screens";
 import type {
   MenuInput,
   ScreenEvent,
@@ -12,7 +18,11 @@ import type {
 const settings = {
   lessonDoneSeconds: 2,
   resultDelaySeconds: 3,
+  volumeSteps: 10,
 };
+
+/** A first visit's Options, in Spanish. */
+const firstVisit = defaultOptions("es", settings.volumeSteps);
 
 /** Every lesson completed and the Club de Duelo's welcome seen: Duelo and Práctica open. */
 const graduated: TrainingRecord = { certified: true, completed: [...lessons] };
@@ -35,7 +45,7 @@ const anyButton = { type: "press" } as const;
 const tick = (seconds: number) => ({ seconds, type: "tick" }) as const;
 const start = { type: "start" } as const;
 
-const onTitle = () => initialScreenState(true, graduated);
+const onTitle = () => initialScreenState(true, graduated, firstVisit);
 const onConnect = () => play(onTitle(), start);
 const onMain = () => play(onTitle(), padFound, start);
 
@@ -156,13 +166,15 @@ describe("connect prompt", () => {
     ).toStrictEqual({ kind: "main", selected: "duel" });
   });
 
-  it("reports an unsupported browser and nothing else", () => {
-    const unsupported = initialScreenState(false);
+  it("reports a browser without WebGPU, or a phone or tablet, and nothing else", () => {
+    for (const reason of ["browser", "device"] as const) {
+      const unsupported = initialScreenState(reason, graduated, firstVisit);
 
-    expect(unsupported.screen).toStrictEqual({ kind: "unsupported" });
-    expect(play(unsupported, padFound, press("confirm")).screen).toStrictEqual({
-      kind: "unsupported",
-    });
+      expect(unsupported.screen).toStrictEqual({ kind: "unsupported", reason });
+      expect(
+        play(unsupported, start, padFound, press("confirm")).screen
+      ).toStrictEqual({ kind: "unsupported", reason });
+    }
   });
 });
 
@@ -171,7 +183,7 @@ describe("main menu", () => {
     expect(onMain().screen).toStrictEqual({ kind: "main", selected: "duel" });
   });
 
-  it("moves through Duelo, Práctica, Entrenamiento and Controles", () => {
+  it("moves through Duelo, Práctica, Entrenamiento, Controles and Opciones", () => {
     expect(atMain(press("down"))).toMatchObject({ selected: "practice" });
     expect(atMain(press("down"), press("down"))).toMatchObject({
       selected: "training",
@@ -181,8 +193,14 @@ describe("main menu", () => {
     });
     expect(
       atMain(press("down"), press("down"), press("down"), press("down"))
-    ).toMatchObject({ selected: "controls" });
+    ).toMatchObject({ selected: "options" });
     expect(atMain(press("up"))).toMatchObject({ selected: "duel" });
+  });
+
+  it("stops at Opciones, the last entry", () => {
+    expect(
+      atMain(...Array.from({ length: 5 }, () => press("down")))
+    ).toMatchObject({ selected: "options" });
   });
 
   it("opens the Controls on Controles, on the Controles tab", () => {
@@ -821,6 +839,7 @@ describe("a whole session", () => {
     );
 
     expect(state).toStrictEqual({
+      options: firstVisit,
       runs: 3,
       screen: {
         difficulty: "duelista",
@@ -834,9 +853,152 @@ describe("a whole session", () => {
   });
 });
 
+/** Opciones, from the bottom of the main menu. */
+const onOptions = () =>
+  play(
+    onMain(),
+    ...Array.from({ length: 4 }, () => press("down")),
+    press("confirm")
+  );
+
+const atOptions = (...moves: ScreenEvent[]) => play(onOptions(), ...moves);
+
+describe("Opciones", () => {
+  it("plays a first visit in Spanish for a Spanish browser, else in English, every volume as mixed", () => {
+    expect(defaultOptions(languageFor("es-CR"), 10)).toStrictEqual({
+      effects: 10,
+      language: "es",
+      music: 10,
+    });
+    expect(["ES", "en-US", "pt-BR"].map(languageFor)).toStrictEqual([
+      "es",
+      "en",
+      "en",
+    ]);
+    expect(languageFor()).toBe("en");
+  });
+
+  it("opens from the main menu on Idioma", () => {
+    expect(onOptions().screen).toStrictEqual({
+      kind: "options",
+      selected: "language",
+    });
+  });
+
+  it("moves through Idioma, Música and Efectos, stopping at both ends", () => {
+    expect(atOptions(press("down")).screen).toMatchObject({
+      selected: "music",
+    });
+    expect(atOptions(press("down"), press("down")).screen).toMatchObject({
+      selected: "effects",
+    });
+    expect(
+      atOptions(press("down"), press("down"), press("down")).screen
+    ).toMatchObject({ selected: "effects" });
+    expect(atOptions(press("up")).screen).toMatchObject({
+      selected: "language",
+    });
+  });
+
+  it("switches the language with left, right or ✕, round and round", () => {
+    expect(atOptions(press("right")).options.language).toBe("en");
+    expect(atOptions(press("left")).options.language).toBe("en");
+    expect(atOptions(press("confirm")).options.language).toBe("en");
+    expect(atOptions(press("right"), press("right")).options.language).toBe(
+      "es"
+    );
+  });
+
+  it("changes only what is highlighted, and stays on Opciones", () => {
+    const state = atOptions(press("right"));
+
+    expect(state.screen).toStrictEqual({
+      kind: "options",
+      selected: "language",
+    });
+    expect(state.options).toStrictEqual({ ...firstVisit, language: "en" });
+  });
+
+  it("turns the music and the effects down a step at a time, to silent and no further", () => {
+    const quieter = atOptions(press("down"), press("left"), press("left"));
+
+    expect(quieter.options).toStrictEqual({ ...firstVisit, music: 8 });
+
+    const silent = atOptions(
+      press("down"),
+      press("down"),
+      ...Array.from({ length: 12 }, () => press("left"))
+    );
+
+    expect(silent.options).toStrictEqual({ ...firstVisit, effects: 0 });
+  });
+
+  it("turns a volume up again, never past as mixed", () => {
+    const state = atOptions(
+      press("down"),
+      press("left"),
+      press("left"),
+      press("left"),
+      press("right"),
+      press("right"),
+      press("right"),
+      press("right")
+    );
+
+    expect(state.options.music).toBe(settings.volumeSteps);
+  });
+
+  it("leaves a volume as it is on ✕", () => {
+    expect(atOptions(press("down"), press("confirm")).options).toBe(
+      onOptions().options
+    );
+  });
+
+  it("goes back to the main menu on Opciones with ○ or Options, keeping what was changed", () => {
+    for (const input of ["back", "options"] as const) {
+      const state = atOptions(press("right"), press(input));
+
+      expect(state.screen).toStrictEqual({ kind: "main", selected: "options" });
+      expect(state.options.language).toBe("en");
+    }
+  });
+
+  it("starts from the Options it is given, as remembered", () => {
+    const remembered = { effects: 3, language: "en", music: 0 } as const;
+
+    expect(
+      play(
+        initialScreenState(true, graduated, remembered),
+        padFound,
+        start,
+        ...Array.from({ length: 4 }, () => press("down")),
+        press("confirm"),
+        press("down"),
+        press("right")
+      ).options
+    ).toStrictEqual({ ...remembered, music: 1 });
+  });
+
+  it("opens with Training still to do, past the closed Duelo and Práctica", () => {
+    const state = play(
+      initialScreenState(true, noTraining, firstVisit),
+      padFound,
+      start,
+      press("down"),
+      press("down"),
+      press("confirm")
+    );
+
+    expect(state.screen).toStrictEqual({
+      kind: "options",
+      selected: "language",
+    });
+  });
+});
+
 /** The main menu, with `training` remembered. */
 const onMainWith = (training: TrainingRecord): ScreenState =>
-  play(initialScreenState(true, training), padFound, start);
+  play(initialScreenState(true, training, firstVisit), padFound, start);
 
 /** Entrenamiento, from the main menu, with `training` remembered. */
 const onLessons = (training: TrainingRecord = noTraining): ScreenState => {
@@ -903,7 +1065,12 @@ describe("Training is required", () => {
 
   it("goes to the main menu on Entrenamiento from the connect prompt too", () => {
     expect(
-      play(initialScreenState(true), start, padFound, press("confirm")).screen
+      play(
+        initialScreenState(true, noTraining, firstVisit),
+        start,
+        padFound,
+        press("confirm")
+      ).screen
     ).toStrictEqual({ kind: "main", selected: "training" });
   });
 
@@ -919,13 +1086,6 @@ describe("Training is required", () => {
 
 describe("Training", () => {
   const lessonDone = { type: "lesson-done" } as const;
-
-  it("remembers nothing of it to begin with", () => {
-    expect(initialScreenState(true).training).toStrictEqual({
-      certified: false,
-      completed: [],
-    });
-  });
 
   it("lists the lessons on Entrenamiento, highlighting the first", () => {
     expect(onLessons().screen).toStrictEqual({

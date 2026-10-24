@@ -84,9 +84,8 @@ const shoulders = [
 ] as const;
 
 /** The shoulder buttons' and R3's printed names, by control. */
-const triggerNames: ReadonlyMap<string, string> = new Map(
-  Object.entries(text.controls.triggers)
-);
+const triggerNames = (): ReadonlyMap<string, string> =>
+  new Map(Object.entries(text.controls.triggers));
 
 /** Where each control's leader line runs from the pad, and where its label hangs. */
 interface Callout {
@@ -312,7 +311,7 @@ const drawPad = (parent: Element, labelled: ReadonlySet<PadControl>) => {
 /** A label's first line: its button's mark, then what it does. */
 const writeLabel = (parent: Element, { control, label }: ControlLabel) => {
   const line = create("span", "ch-label-line", parent);
-  const name = triggerNames.get(control);
+  const name = triggerNames().get(control);
 
   if (isFace(control)) {
     create("span", "ch-key", line).append(buttonIcon(control));
