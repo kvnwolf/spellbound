@@ -126,6 +126,8 @@ interface Memory {
   wasLocked: boolean;
   strafe: -1 | 0 | 1;
   strafeUntil: number;
+  /** Stepping out from behind Cover on the `strafe` side until then. */
+  stepOutUntil: number;
   stuckTicks: number;
   /** Defences planned against Spells on their way, in the order they were planned. */
   defences: Defence[];
@@ -190,6 +192,7 @@ const freshMemory = (): Memory => ({
   seen: new Set(),
   spamUntil: Number.NEGATIVE_INFINITY,
   specialLookAt: 0,
+  stepOutUntil: Number.NEGATIVE_INFINITY,
   strafe: 0,
   strafeUntil: 0,
   stuckTicks: 0,
@@ -966,12 +969,27 @@ export const createAiController = ({
         (self.position.x - blocking.center.x) * across.x +
         (self.position.z - blocking.center.z) * across.z;
 
-      const way = offset >= 0 ? 1 : -1;
+      let move = relativeTo(
+        offset >= 0 ? across : { x: -across.x, z: -across.z },
+        ahead
+      );
 
-      return {
-        move: relativeTo({ x: across.x * way, z: across.z * way }, ahead),
-        sprint,
-      };
+      // Once stepping out one way, keep to it: out of the next column's
+      // shadow too, and strafing on once back in sight, never straight back.
+      const side = move.x >= 0 ? 1 : -1;
+
+      if (now >= memory.stepOutUntil || memory.strafe === 0) {
+        memory.strafe = side;
+      }
+
+      if (side !== memory.strafe) {
+        move = { x: -move.x, y: -move.y };
+      }
+
+      memory.stepOutUntil = now + ai.stepOutSeconds;
+      memory.strafeUntil = Math.max(memory.strafeUntil, memory.stepOutUntil);
+
+      return { move, sprint };
     }
 
     return {

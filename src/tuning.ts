@@ -209,6 +209,12 @@ export const tuning = {
     sprintBeyond: 0.5,
     /** Never raises the Shield with less Stamina than this left, and never Dodges into less than this. */
     staminaReserve: 15,
+    /**
+     * Stepping out from behind Cover, the AI strafes on the side it stepped
+     * out for at least this many seconds, so it never walks straight back
+     * into the column's shadow the tick it is back in sight.
+     */
+    stepOutSeconds: 1,
     /** How long the AI keeps one strafing direction (or standing still) before picking again. */
     strafeSeconds: { max: 2.4, min: 0.8 },
     /**

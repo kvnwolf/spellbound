@@ -5,6 +5,7 @@
  */
 import { describe, expect, it } from "vitest";
 
+import { courtyard, courtyardSpawns } from "../arena/courtyard";
 import { sightBlocked } from "../duel/aim";
 import type { Difficulty } from "../duel/difficulty";
 import { createDuel } from "../duel/duel";
@@ -16,6 +17,7 @@ import type {
   SpellState,
 } from "../duel/duel";
 import { distanceBetween } from "../duel/geometry";
+import type { GroundPoint } from "../duel/geometry";
 import { idleIntent } from "../duel/intent";
 import type { Intent } from "../duel/intent";
 import { tuning } from "../tuning";
@@ -484,6 +486,113 @@ describe("AI defence", () => {
       tuning.ai.cover.seconds.min
     );
   });
+});
+
+/** What an AI asked to walk sideways on a tick, and where it stood. */
+interface Walk {
+  readonly sideways: number;
+  readonly at: GroundPoint;
+}
+
+/**
+ * Two Maestro AIs, seeded `near` and `far`, dueling in the courtyard for `seconds`
+ * of play (or until the Duel is over): tick by tick, for each of them, how
+ * far sideways it asked to walk and where it stood.
+ */
+const aiVersusAi = (near: number, far: number, seconds: number) => {
+  const ids = ["near", "far"] as const;
+
+  const duel = createDuel({
+    arena: courtyard,
+    difficulty: "maestro",
+    duelists: ids.map((id) => ({ id, spawn: courtyardSpawns[id], team: id })),
+    tuning,
+  });
+
+  const ais = ids.map((id) => {
+    const walks: Walk[] = [];
+
+    const controller = createAiController({
+      arena: courtyard,
+      difficulty: "maestro",
+      random: createRandom(id === "near" ? near : far),
+      tuning,
+    });
+
+    return { controller, id, walks };
+  });
+
+  for (
+    let tick = 0;
+    tick < ticksOf(seconds) && duel.snapshot().winner === null;
+    tick += 1
+  ) {
+    const snapshot = duel.snapshot();
+    const intents: Record<string, Intent> = {};
+
+    for (const ai of ais) {
+      const intent = ai.controller.intent({ self: ai.id, snapshot });
+      intents[ai.id] = intent;
+      ai.walks.push({
+        at: find(snapshot, ai.id).position,
+        sideways: intent.move.x,
+      });
+    }
+
+    duel.step(intents);
+  }
+
+  return ais.map((ai) => ai.walks);
+};
+
+/**
+ * How many 40-tick stretches of `walks` turn the sideways walk round 6
+ * times or more and still end within half a metre of where they began:
+ * trembling in place.
+ */
+const trembles = (walks: readonly Walk[]) => {
+  const window = 40;
+  let count = 0;
+
+  for (let start = 0; start + window <= walks.length; start += 1) {
+    const stretch = walks.slice(start, start + window);
+    let turns = 0;
+    let last = 0;
+
+    for (const { sideways } of stretch) {
+      const way = Math.sign(sideways);
+
+      if (way !== 0 && last !== 0 && way !== last) {
+        turns += 1;
+      }
+
+      last = way === 0 ? last : way;
+    }
+
+    const first = stretch.at(0)?.at;
+    const end = stretch.at(-1)?.at;
+
+    if (first && end && turns >= 6 && distanceBetween(first, end) < 0.5) {
+      count += 1;
+    }
+  }
+
+  return count;
+};
+
+describe("AI round Cover", () => {
+  it.each([
+    [1, 2],
+    [837, 25_948],
+  ] as const)(
+    "steps out from behind a column one way, never trembling in place (seeds %i and %i)",
+    (near, far) => {
+      for (const walks of aiVersusAi(near, far, 260)) {
+        expect(trembles(walks)).toBe(0);
+      }
+    },
+    20_000
+  );
 });
 
 describe("AI attack", () => {
