@@ -230,10 +230,15 @@ export const tuning = {
     /**
      * Disarmed, the AI walks for its Wand the short way round Cover,
      * Obstructions and the opponent, keeping `clearance` metres (beyond its
-     * body) off each; stuck on the way, it goes round the other side for
-     * `detourSeconds`.
+     * body) off each and to the side it chose; stuck on the way, it goes
+     * round the other side for `detourSeconds`. Within `arriveRadius` of
+     * where the Wand lands it stands and waits for it.
      */
-    wand: { clearance: 0.3, detourSeconds: { max: 1.2, min: 0.6 } },
+    wand: {
+      arriveRadius: 0.5,
+      clearance: 0.3,
+      detourSeconds: { max: 1.2, min: 0.6 },
+    },
   },
 
   /**

@@ -1063,6 +1063,19 @@ describe("AI recovering its Wand", () => {
       }
     }
   );
+
+  it.each([
+    [4, 1004],
+    [9, 1009],
+  ] as const)(
+    "waits where its Wand lands instead of dithering over it (seeds %i and %i)",
+    (near, far) => {
+      for (const walks of aiVersusAi(near, far, 300)) {
+        expect(trembles(walks)).toBe(0);
+      }
+    },
+    20_000
+  );
 });
 
 /** A Spell of the player's in the air, flying toward the AI. */
