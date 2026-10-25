@@ -12,6 +12,12 @@ export interface RoundObstacle {
   readonly radius: number;
 }
 
+/** Which way to walk, and which side it goes round what is in the way (undefined with nothing in the way). */
+export interface Way {
+  readonly heading: GroundPoint;
+  readonly side: -1 | 1 | undefined;
+}
+
 /** Where along the walk from `from` to `to` (metres) the line first comes within `radius` of `center`; null if it never does. */
 const crossing = (
   from: GroundPoint,
@@ -53,7 +59,8 @@ const crossing = (
  * room) on the shorter side of the first one in the way: aimed past its
  * edge, so the walker skirts it and heads straight on once clear.
  * `preferSide` (1 or -1, right or left of the straight line) overrides
- * which side, for a walker that got stuck going the other way.
+ * which side, for a walker that got stuck going the other way or that keeps
+ * to the side it chose.
  */
 export const wayToward = (
   from: GroundPoint,
@@ -61,7 +68,7 @@ export const wayToward = (
   obstacles: readonly RoundObstacle[],
   clearance: number,
   preferSide?: -1 | 1
-): GroundPoint => {
+): Way => {
   const widened = obstacles.map((each) => ({
     center: each.center,
     radius: each.radius + clearance,
@@ -80,7 +87,7 @@ export const wayToward = (
   }
 
   if (!first) {
-    return direction(from, to);
+    return { heading: direction(from, to), side: undefined };
   }
 
   const straight = direction(from, to);
@@ -113,11 +120,13 @@ export const wayToward = (
 
     const way = along.x * wanted.x + along.z * wanted.z >= 0 ? 1 : -1;
 
-    return direction(from, {
+    const heading = direction(from, {
       x: from.x + along.x * way + out.x * 0.3,
       z: from.z + along.z * way + out.z * 0.3,
     });
+
+    return { heading, side };
   }
 
-  return direction(from, past);
+  return { heading: direction(from, past), side };
 };

@@ -126,6 +126,8 @@ interface Memory {
   wasLocked: boolean;
   strafe: -1 | 0 | 1;
   strafeUntil: number;
+  /** Stepping out from behind Cover on the `strafe` side until then. */
+  stepOutUntil: number;
   stuckTicks: number;
   /** Defences planned against Spells on their way, in the order they were planned. */
   defences: Defence[];
@@ -145,6 +147,8 @@ interface Memory {
   askedStride: number;
   /** Disarmed and stuck on the way to the Wand: go round obstacles on this side until then. */
   detour: { readonly side: -1 | 1; readonly until: number } | undefined;
+  /** Disarmed: the side it goes round whatever is in the way to the Wand, kept while something is. */
+  wandSide: -1 | 1 | undefined;
   /** When the AI next looks for a Special Spell to cast. */
   specialLookAt: number;
   /** When the AI last cast a Light or Heavy Spell. */
@@ -190,9 +194,11 @@ const freshMemory = (): Memory => ({
   seen: new Set(),
   spamUntil: Number.NEGATIVE_INFINITY,
   specialLookAt: 0,
+  stepOutUntil: Number.NEGATIVE_INFINITY,
   strafe: 0,
   strafeUntil: 0,
   stuckTicks: 0,
+  wandSide: undefined,
   wasLocked: false,
 });
 
@@ -841,7 +847,7 @@ export const createAiController = ({
     // Stuck on the way to its Wand: go round the other way for a while.
     if (memory.stuckTicks > ai.stuckTicks && self.looseWand) {
       memory.detour = {
-        side: memory.detour?.side === 1 ? -1 : 1,
+        side: (memory.detour?.side ?? memory.wandSide) === 1 ? -1 : 1,
         until: now + between(random, ai.wand.detourSeconds),
       };
       memory.stuckTicks = 0;
@@ -889,17 +895,24 @@ export const createAiController = ({
       { center: opponent.position, radius: bodyRadius },
     ];
 
-    const way = wayToward(
+    // There already: wait for the Wand to come down, rather than dither over it.
+    if (distanceBetween(self.position, wand.landing) <= ai.wand.arriveRadius) {
+      return { move: { x: 0, y: 0 }, sprint: false };
+    }
+
+    const { heading, side } = wayToward(
       self.position,
       wand.landing,
       obstacles,
       bodyRadius + ai.wand.clearance,
-      memory.detour?.side
+      memory.detour?.side ?? memory.wandSide
     );
+
+    memory.wandSide = side;
 
     const sprint = self.stamina > tuning.defence.dodge.cost + ai.staminaReserve;
 
-    return { move: relativeTo(way, ahead), sprint };
+    return { move: relativeTo(heading, ahead), sprint };
   };
 
   /** Where to walk this tick: keep within the band and strafe, or head for Cover. */
@@ -917,6 +930,8 @@ export const createAiController = ({
     if (self.looseWand) {
       return toWand(self, self.looseWand, opponent, ahead, now);
     }
+
+    memory.wandSide = undefined;
 
     // Hiding ends in time, or at once when the column it hid behind breaks.
     if (
@@ -966,12 +981,27 @@ export const createAiController = ({
         (self.position.x - blocking.center.x) * across.x +
         (self.position.z - blocking.center.z) * across.z;
 
-      const way = offset >= 0 ? 1 : -1;
+      let move = relativeTo(
+        offset >= 0 ? across : { x: -across.x, z: -across.z },
+        ahead
+      );
 
-      return {
-        move: relativeTo({ x: across.x * way, z: across.z * way }, ahead),
-        sprint,
-      };
+      // Once stepping out one way, keep to it: out of the next column's
+      // shadow too, and strafing on once back in sight, never straight back.
+      const side = move.x >= 0 ? 1 : -1;
+
+      if (now >= memory.stepOutUntil || memory.strafe === 0) {
+        memory.strafe = side;
+      }
+
+      if (side !== memory.strafe) {
+        move = { x: -move.x, y: -move.y };
+      }
+
+      memory.stepOutUntil = now + ai.stepOutSeconds;
+      memory.strafeUntil = Math.max(memory.strafeUntil, memory.stepOutUntil);
+
+      return { move, sprint };
     }
 
     return {
